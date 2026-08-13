@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: MIT
+%YAML 1.2
+---
+title: Bindings for the AFE5832 control AXI-Lite register block
+
+maintainers:
+  - Ultrasound B-mode imaging project maintainers
+
+type: driver
+
+properties:
+  compatible:
+    OneOf:
+      - items:
+        - enum:
+          - xlnx,afe5832-ctrl-ps-1.0
+          - xilinx.com,afe5832-ctrl-ps-1.0
+  reg:
+    description: Physical base address and size of the AXI-Lite register map
+
+required:
+  - compatible
+  - reg
+...

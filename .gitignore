@@ -1,0 +1,44 @@
+# Vivado generated state (the .xpr and managed .srcs inputs are tracked)
+/.Xil/
+/.vivado-user/
+/vivado/*.cache/
+/vivado/*.gen/
+/vivado/*.hw/
+/vivado/*.ip_user_files/
+/vivado/*.runs/
+/vivado/*.sim/
+/vivado/*.tmp/
+/vivado/*.jou
+/vivado/*.log
+/vivado/*.str
+/vivado/*.dcp
+/vivado/*.bit
+/vivado/*.xsa
+
+# Vitis workspace: track project definitions and application sources; regenerate
+# platform exports, BSP/FSBL content, CMake state and download artifacts.
+/workspace/.rigel_lopper/
+/workspace/_ide/
+/workspace/B_mode_focus_imaging/build/
+/workspace/B_mode_focus_imaging/compile_commands.json
+/workspace/B_mode_focus_imaging/src/compile_commands.json
+/workspace/B_mode_focus_imaging/src/.cache/
+/workspace/B_mode_focus_imaging/src/.clangd
+/workspace/B_mode_focus_imaging/_ide/bitstream/
+/workspace/B_mode_focus_imaging/_ide/hwspec.checksum
+/workspace/ubmi_p/export/
+/workspace/ubmi_p/hw/
+/workspace/ubmi_p/ps7_cortexa9_0/
+/workspace/ubmi_p/zynq_fsbl/
+vitis_journal.py
+.metadata/
+.settings/
+Debug/
+Release/
+
+# Reproducible build state and delivery artifacts
+/build/ipython/
+/build/vivado-temp/
+/build/vivado*.jou
+/build/vivado*.log
+/build/output/

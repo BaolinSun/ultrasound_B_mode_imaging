@@ -1,0 +1,163 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2026.1 (win64) Build 6511674 Tue Jun 16 11:02:23 MDT 2026
+| Date         : Fri Jul 17 11:51:10 2026
+| Host         : DESKTOP-9L7IKK4 running 64-bit major release  (build 9200)
+| Command      : report_ip_status
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+IP Status Summary
+
+1. Project IP Status
+--------------------
+Your project uses 29 IP. Some of these IP may have undergone changes in this release of the software. Please review the recommended actions.
+
+More information on the Xilinx versioning policy is available at www.xilinx.com.
+
+Project IP Instances
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| Instance Name                            | Status                          | Recommendation            | Change    | IP Name            | IP      | New Version     | New        | Original Part        |
+|                                          |                                 |                           | Log       |                    | Version |                 | License    |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| blk_mem_gen_0                            | IP revision change              | Upgrade IP                |  *(1)     | Block Memory       | 8.4     | 8.4 (Rev. 13)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           | Generator          | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 4)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| clk_gen                                  | IP revision change              | Upgrade IP                |  *(2)     | Clocking Wizard    | 6.0     | 6.0 (Rev. 19)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 6)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| dsp_16x16_32                             | IP definition has been replaced | Upgrade to alternative IP |  *(3)     | xbip_dsp48_macro   | 3.0     | DSP Macro (1.0) | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 18)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| dsp_20x16                                | IP definition has been replaced | Upgrade to alternative IP |  *(4)     | xbip_dsp48_macro   | 3.0     | DSP Macro (1.0) | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 18)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| dsp_madd_a                               | IP definition has been replaced | Upgrade to alternative IP |  *(5)     | xbip_dsp48_macro   | 3.0     | DSP Macro (1.0) | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 18)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| dsp_madd_b                               | IP definition has been replaced | Upgrade to alternative IP |  *(6)     | xbip_dsp48_macro   | 3.0     | DSP Macro (1.0) | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 18)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| fifo_32bx8192                            | IP revision change              | Upgrade IP                |  *(7)     | FIFO Generator     | 13.2    | 13.2 (Rev. 15)  | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 5)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| mult_16bx16b_d3                          | IP revision change              | Upgrade IP                |  *(8)     | Multiplier         | 12.0    | 12.0 (Rev. 25)  | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 16)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| mult_17bx20b_d3                          | IP revision change              | Upgrade IP                |  *(9)     | Multiplier         | 12.0    | 12.0 (Rev. 25)  | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 16)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| mult_26x12b_d3                           | IP revision change              | Upgrade IP                |  *(10)    | Multiplier         | 12.0    | 12.0 (Rev. 25)  | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 16)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| mult_36x16                               | IP revision change              | Upgrade IP                |  *(11)    | Multiplier         | 12.0    | 12.0 (Rev. 25)  | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 16)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| proc_sys_reset_0                         | IP revision change              | Upgrade IP                |  *(12)    | Processor System   | 5.0     | 5.0 (Rev. 17)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           | Reset              | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 13)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| pus_ctrl_system_afe5832_adc_14b_16la_0_0 | Up-to-date                      | No changes required       | Change    | afe5832_adc_14b_16 | 1.0     | 1.0 (Rev. 1)    | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           | Log not   |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           | available |                    | 1)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| pus_ctrl_system_afe5832_ctrl_module_0_0  | Up-to-date                      | No changes required       | Change    | afe5832_ctrl_modul | 1.0     | 1.0 (Rev. 1)    | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           | Log not   |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           | available |                    | 1)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| pus_ctrl_system_afe5832_ctrl_ps_0_0      | Up-to-date                      | No changes required       | Change    | afe5832_ctrl_ps_v1 | 1.0     | 1.0 (Rev. 7)    | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           | Log not   |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           | available |                    | 7)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| pus_ctrl_system_afe5832_spi_r_w_modu_0_0 | Up-to-date                      | No changes required       | Change    | afe5832_spi_r_w_mo | 1.0     | 1.0 (Rev. 1)    | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           | Log not   |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           | available |                    | 1)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| pus_ctrl_system_axi_bram_ctrl_0_0        | Up-to-date                      | No changes required       |  *(13)    | AXI BRAM           | 4.1     | 4.1 (Rev. 14)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           | Controller         | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 14)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| pus_ctrl_system_axi_mem_intercon_0       | Up-to-date (discontinued)       | No changes required       |  *(14)    | AXI Interconnect   | 2.1     | 2.1 (Rev. 39)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 39)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| pus_ctrl_system_proc_sys_reset_0_0       | Up-to-date                      | No changes required       |  *(15)    | Processor System   | 5.0     | 5.0 (Rev. 17)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           | Reset              | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 17)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| pus_ctrl_system_processing_system7_0_0   | Up-to-date                      | No changes required       |  *(16)    | ZYNQ7 Processing   | 5.5     | 5.5 (Rev. 9)    | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           | System             | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 9)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| pus_ctrl_system_ps7_0_axi_periph_0       | Up-to-date (discontinued)       | No changes required       |  *(17)    | AXI Interconnect   | 2.1     | 2.1 (Rev. 39)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 39)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| pus_ctrl_system_w_ddr_0_0                | Up-to-date                      | No changes required       | Change    | w_ddr_v1_0         | 1.1     | 1.1 (Rev. 3)    | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           | Log not   |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           | available |                    | 3)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| pus_ctrl_system_xlconstant_0_0           | Up-to-date (discontinued)       | No changes required       |  *(18)    | Constant           | 1.1     | 1.1 (Rev. 11)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 11)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| sqrt_44                                  | IP revision change              | Upgrade IP                |  *(19)    | CORDIC             | 6.0     | 6.0 (Rev. 26)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 16)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| square_33b_d17                           | IP revision change              | Upgrade IP                |  *(20)    | CORDIC             | 6.0     | 6.0 (Rev. 26)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           |                    | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 16)     |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| tdpram_16bx1024                          | IP revision change              | Upgrade IP                |  *(21)    | Block Memory       | 8.4     | 8.4 (Rev. 13)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           | Generator          | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 4)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| tdpram_32bx1024                          | IP revision change              | Upgrade IP                |  *(22)    | Block Memory       | 8.4     | 8.4 (Rev. 13)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           | Generator          | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 4)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| tdpram_32bx16384                         | IP revision change              | Upgrade IP                |  *(23)    | Block Memory       | 8.4     | 8.4 (Rev. 13)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           | Generator          | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 4)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+| tdpram_32bx8192                          | IP revision change              | Upgrade IP                |  *(24)    | Block Memory       | 8.4     | 8.4 (Rev. 13)   | Included   | xc7z030sbg485-2      |
+|                                          |                                 |                           |           | Generator          | (Rev.   |                 |            |                      |
+|                                          |                                 |                           |           |                    | 4)      |                 |            |                      |
++------------------------------------------+---------------------------------+---------------------------+-----------+--------------------+---------+-----------------+------------+----------------------+
+*(1) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/blk_mem_gen_v8_4/doc/blk_mem_gen_v8_4_changelog.txt
+*(2) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/clk_wiz_v6_0/doc/clk_wiz_v6_0_changelog.txt
+*(3) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/dsp_macro_v1_0/doc/dsp_macro_v1_0_changelog.txt
+*(4) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/dsp_macro_v1_0/doc/dsp_macro_v1_0_changelog.txt
+*(5) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/dsp_macro_v1_0/doc/dsp_macro_v1_0_changelog.txt
+*(6) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/dsp_macro_v1_0/doc/dsp_macro_v1_0_changelog.txt
+*(7) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/fifo_generator_v13_2/doc/fifo_generator_v13_2_changelog.txt
+*(8) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/mult_gen_v12_0/doc/mult_gen_v12_0_changelog.txt
+*(9) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/mult_gen_v12_0/doc/mult_gen_v12_0_changelog.txt
+*(10) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/mult_gen_v12_0/doc/mult_gen_v12_0_changelog.txt
+*(11) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/mult_gen_v12_0/doc/mult_gen_v12_0_changelog.txt
+*(12) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/proc_sys_reset_v5_0/doc/proc_sys_reset_v5_0_changelog.txt
+*(13) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/axi_bram_ctrl_v4_1/doc/axi_bram_ctrl_v4_1_changelog.txt
+*(14) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/axi_interconnect_v2_1/doc/axi_interconnect_v2_1_changelog.txt
+*(15) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/proc_sys_reset_v5_0/doc/proc_sys_reset_v5_0_changelog.txt
+*(16) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/processing_system7_v5_5/doc/processing_system7_v5_5_changelog.txt
+*(17) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/axi_interconnect_v2_1/doc/axi_interconnect_v2_1_changelog.txt
+*(18) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/xlconstant_v1_1/doc/xlconstant_v1_1_changelog.txt
+*(19) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/cordic_v6_0/doc/cordic_v6_0_changelog.txt
+*(20) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/cordic_v6_0/doc/cordic_v6_0_changelog.txt
+*(21) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/blk_mem_gen_v8_4/doc/blk_mem_gen_v8_4_changelog.txt
+*(22) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/blk_mem_gen_v8_4/doc/blk_mem_gen_v8_4_changelog.txt
+*(23) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/blk_mem_gen_v8_4/doc/blk_mem_gen_v8_4_changelog.txt
+*(24) c:/AMDDesignTools/2026.1/Vivado/data/ip/xilinx/blk_mem_gen_v8_4/doc/blk_mem_gen_v8_4_changelog.txt
+
+

@@ -1,0 +1,34 @@
+/*
+ * USB_CONFIG.h
+ *
+ *  Created on: 22 Aug 2018
+ *      Author: localadmin
+ */
+
+#ifndef SRC_USB_CONFIG_H_
+#define SRC_USB_CONFIG_H_
+
+#ifndef bMS_VendorCode
+#define bMS_VendorCode 0x3F
+#endif
+
+#ifndef VID
+#define VID 0x0424//0x0D7D
+#endif
+
+#ifndef PID
+#define PID 0x4940//0x010C
+#endif
+
+#ifndef DEV_NAME
+#define DEV_NAME "WINUSB TEST V1"
+#endif
+
+#ifndef MFG_NAME
+#define MFG_NAME "TFWS"
+#endif
+
+#define USB_EP_MaxPacketSize 0x0400 //1024
+
+
+#endif /* SRC_USB_CONFIG_H_ */

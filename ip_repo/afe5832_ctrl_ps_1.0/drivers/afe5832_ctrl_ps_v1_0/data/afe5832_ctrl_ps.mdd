@@ -1,0 +1,10 @@
+
+
+OPTION psf_version = 2.1;
+
+BEGIN DRIVER afe5832_ctrl_ps
+	OPTION supported_peripherals = (afe5832_ctrl_ps);
+	OPTION copyfiles = all;
+	OPTION VERSION = 1.0;
+	OPTION NAME = afe5832_ctrl_ps;
+END DRIVER

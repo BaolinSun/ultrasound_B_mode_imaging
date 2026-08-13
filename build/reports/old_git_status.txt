@@ -1,0 +1,3 @@
+﻿branch=usb_debug
+commit=a8dbaef3190d7107840b88696217efcecdb3397d
+status=clean

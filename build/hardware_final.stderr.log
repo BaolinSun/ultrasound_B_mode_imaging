@@ -1,0 +1,7 @@
+Vivado build failed with exit code 1
+ËùÔÚÎ»ÖÃ C:\Users\sdu318\MyProjects\ultrasound_B_mode_imaging\build\scripts\build_all.ps1:32 ×Ö·û: 30
++ ... de -ne 0) { throw "Vivado build failed with exit code $VivadoExitCode ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Vivado build failed with exit code 1:String) [], RuntimeException
+    + FullyQualifiedErrorId : Vivado build failed with exit code 1
+ 
