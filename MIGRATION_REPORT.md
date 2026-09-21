@@ -234,3 +234,33 @@ Bootgen 读取结果确认顺序：
 - USB/UART 主机协议互操作。
 - 根据 PCB 原理图补齐或确认 `tx_sdout[1]` 的管脚约束。
 - 自定义 IP 的 SPI clock/ADC AXIS clock interface 元数据。
+
+## 11. 通道映射与延时增量移植
+
+本次在 Vivado/Vitis 2026.1 工程中继续移植旧仓库
+`a8dbaef3190d7107840b88696217efcecdb3397d..b0d10d56251da3a93220aa829b0eb9fbc2252e90`
+的两个线性提交，未纳入其他分叉调试分支。
+
+- 新增统一的 64 阵元映射表，以及 Python/MATLAB 映射、TX7332 打包和一致性检查工具。
+- RX 入口按 AFE 相邻通道两两交换；重排为纯组合连线，后接原有 `clk_25` 输入寄存器，不增加流水延迟或 CDC。
+- 保留 `beamform_active` 两级同步器属性、AFE 复位同步链、W_DDR 第二级同步信号和原精确 XDC false path。
+- TX 模型采用 0.3 mm pitch 和 `6 us - (L-F)/c`，启动表为 16384 words；扫描时序和 TX7332 寄存器 0x18 更新到旧仓库最终值。
+- PC/GUI JSON 按确认要求逐字保留旧仓库受控版本。核查发现该 JSON 不等于同提交 MATLAB 当前公式重新生成的 5 us C 表，因此通过 SHA-256 锁定旧文件，不对其做语义重生成。
+
+验证结果：
+
+```text
+RX XSim self-check: PASS
+Python channel/TX/profile self-check: PASS
+Vivado synthesis/implementation: PASS
+Route: WNS +0.681 ns, TNS 0.000 ns
+       WHS +0.028 ns, THS 0.000 ns
+DRC: 0 errors
+CDC routed-netlist assertions: W_DDR=1, scan_enable=1,
+                               beamform_active=1, ADC reset PRE=3
+Vitis Platform/Application/FSBL: PASS
+Bootgen BOOT.BIN: PASS
+```
+
+实现后资源保持为 Slice LUT 35.01%、Slice Register 36.71%、BRAM Tile 63.58%、DSP 73.25%，均低于 80%。
+最终产物哈希记录在 `build/reports/artifact_manifest.sha256`。当前环境未安装 MATLAB/Octave，因而未直接执行 `.m` 自检；已使用独立 Python 数学模型逐 word 验证 6 us 启动表，并保留 MATLAB self-check 供安装 MATLAB 的环境复验。

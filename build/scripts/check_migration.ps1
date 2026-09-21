@@ -55,6 +55,7 @@ foreach ($Relative in @(
     Assert-TextEqual $Relative $Relative
 }
 Assert-CodeEqual 'bram\bram_config.c' 'bram\bram_config.c'
+Assert-TextEqual 'bram\delay_profile.c' 'bram\delay_profile.c'
 
 # The AFE source has migration-only base-address/interrupt edits. Compare every
 # register-write expression instead of requiring the complete file to be equal.
@@ -139,13 +140,27 @@ if ($IpConfigBefore.Count -eq 0 -or
 $TimingText = Get-Content (Join-Path $Root 'build\output\timing_summary.rpt') -Raw
 $TimingMatch = [regex]::Match(
     $TimingText,
-    'WNS\(ns\).*?\r?\n\s*-+.*?\r?\n\s*(?<WNS>-?\d+\.\d+)\s+(?<TNS>-?\d+\.\d+)',
+    'WNS\(ns\).*?\r?\n\s*-+.*?\r?\n\s*(?<WNS>-?\d+\.\d+)\s+(?<TNS>-?\d+\.\d+)\s+\d+\s+\d+\s+(?<WHS>-?\d+\.\d+)\s+(?<THS>-?\d+\.\d+)',
     [System.Text.RegularExpressions.RegexOptions]::Singleline
 )
 if (-not $TimingMatch.Success -or
-    [double]$TimingMatch.Groups['WNS'].Value -lt 0.0 -or
-    [double]$TimingMatch.Groups['TNS'].Value -lt 0.0) {
-    throw 'Implemented design does not have non-negative WNS/TNS.'
+    [double]$TimingMatch.Groups['WNS'].Value -lt 0.5 -or
+    [double]$TimingMatch.Groups['TNS'].Value -ne 0.0 -or
+    [double]$TimingMatch.Groups['WHS'].Value -le 0.0 -or
+    [double]$TimingMatch.Groups['THS'].Value -ne 0.0) {
+    throw 'Implemented design does not meet WNS >= 0.5 ns, TNS/THS = 0 and WHS > 0.'
+}
+
+$UtilizationText = Get-Content (Join-Path $Root 'build\output\utilization.rpt') -Raw
+foreach ($Resource in @('Slice LUTs', 'Slice Registers', 'Block RAM Tile', 'DSPs')) {
+    $ResourceMatch = [regex]::Match(
+        $UtilizationText,
+        "(?m)^\|\s*$([regex]::Escape($Resource))\s*\|.*?\|\s*(?<Percent>\d+(?:\.\d+)?)\s*\|\s*$"
+    )
+    if (-not $ResourceMatch.Success -or
+        [double]$ResourceMatch.Groups['Percent'].Value -ge 80.0) {
+        throw "$Resource utilization is missing or is not below 80 percent."
+    }
 }
 
 $XsaPath = Join-Path $Root 'build\output\ultrasound_B_mode_imaging.xsa'

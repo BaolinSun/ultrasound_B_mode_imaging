@@ -96,6 +96,13 @@ import_files -force -fileset sources_1 $rtl_files
 set include_dirs [list [file join $build_dir ${project_name}.srcs sources_1 imports]]
 set_property include_dirs $include_dirs [get_filesets sources_1]
 
+set sim_files [collect_source_files [file join $root_dir build src sim] {.v .sv}]
+if {[llength $sim_files] > 0} {
+    import_files -force -fileset sim_1 $sim_files
+    set_property top tb_rx_channel_reorder [get_filesets sim_1]
+    update_compile_order -fileset sim_1
+}
+
 set all_xci_files [collect_source_files [file join $root_dir build src ip] {.xci}]
 set xci_files {}
 foreach xci $all_xci_files {

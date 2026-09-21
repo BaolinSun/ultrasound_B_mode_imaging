@@ -103,6 +103,8 @@ wire									beamform_active;
 (* ASYNC_REG = "TRUE", SHREG_EXTRACT = "NO", DONT_TOUCH = "TRUE" *) reg beamform_active_sync_ff2;
 reg										ad_en_in;
 reg		[31:0][15:0]					ad_ch_in;
+wire									rx_physical_valid;
+wire	[511:0]						rx_physical_data;
 wire									scan_enable;
 wire									rtc_enable;
 wire									log_headen;
@@ -122,41 +124,23 @@ begin
 	end
 end
 //--------------------------------------------------------------------------------------------------
-always@(posedge clk_25)
+// CDC boundary note: data_en/data_ch are already synchronous to clk_25 here.
+// This fixed board-wiring permutation is combinational and adds no clock domain.
+rx_channel_reorder					rx_channel_reorder_i
+(
+	.raw_valid						(data_en			),
+	.raw_data						(data_ch			),
+	.physical_valid				(rx_physical_valid	),
+	.physical_data					(rx_physical_data	)
+);
+
+integer ad_channel_index;
+always_ff @(posedge clk_25)
 begin
-	ad_en_in     <= data_en;
-	ad_ch_in[0]  <= data_en? data_ch[15:0]    : 16'd0;
-	ad_ch_in[1]  <= data_en? data_ch[31:16]   : 16'd0;
-	ad_ch_in[2]  <= data_en? data_ch[47:32]   : 16'd0;
-	ad_ch_in[3]  <= data_en? data_ch[63:48]   : 16'd0;
-	ad_ch_in[4]  <= data_en? data_ch[79:64]   : 16'd0;
-	ad_ch_in[5]  <= data_en? data_ch[95:80]   : 16'd0;
-	ad_ch_in[6]  <= data_en? data_ch[111:96]  : 16'd0;
-	ad_ch_in[7]  <= data_en? data_ch[127:112] : 16'd0;
-	ad_ch_in[8]  <= data_en? data_ch[143:128] : 16'd0;
-	ad_ch_in[9]  <= data_en? data_ch[159:144] : 16'd0;
-	ad_ch_in[10] <= data_en? data_ch[175:160] : 16'd0;
-	ad_ch_in[11] <= data_en? data_ch[191:176] : 16'd0;
-	ad_ch_in[12] <= data_en? data_ch[207:192] : 16'd0;
-	ad_ch_in[13] <= data_en? data_ch[223:208] : 16'd0;
-	ad_ch_in[14] <= data_en? data_ch[239:224] : 16'd0;
-	ad_ch_in[15] <= data_en? data_ch[255:240] : 16'd0;
-	ad_ch_in[16] <= data_en? data_ch[271:256] : 16'd0;
-	ad_ch_in[17] <= data_en? data_ch[287:272] : 16'd0;
-	ad_ch_in[18] <= data_en? data_ch[303:288] : 16'd0;
-	ad_ch_in[19] <= data_en? data_ch[319:304] : 16'd0;
-	ad_ch_in[20] <= data_en? data_ch[335:320] : 16'd0;
-	ad_ch_in[21] <= data_en? data_ch[351:336] : 16'd0;
-	ad_ch_in[22] <= data_en? data_ch[367:352] : 16'd0;
-	ad_ch_in[23] <= data_en? data_ch[383:368] : 16'd0;
-	ad_ch_in[24] <= data_en? data_ch[399:384] : 16'd0;
-	ad_ch_in[25] <= data_en? data_ch[415:400] : 16'd0;
-	ad_ch_in[26] <= data_en? data_ch[431:416] : 16'd0;
-	ad_ch_in[27] <= data_en? data_ch[447:432] : 16'd0;
-	ad_ch_in[28] <= data_en? data_ch[463:448] : 16'd0;
-	ad_ch_in[29] <= data_en? data_ch[479:464] : 16'd0;
-	ad_ch_in[30] <= data_en? data_ch[495:480] : 16'd0;
-	ad_ch_in[31] <= data_en? data_ch[511:496] : 16'd0;
+	ad_en_in <= rx_physical_valid;
+	for(ad_channel_index = 0; ad_channel_index < 32; ad_channel_index = ad_channel_index + 1) begin
+		ad_ch_in[ad_channel_index] <= rx_physical_valid? rx_physical_data[ad_channel_index*16 +: 16] : 16'd0;
+	end
 end
 //--------------------------------------------------------------------------------------------------
 para_top								para_top_i

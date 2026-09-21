@@ -41,4 +41,7 @@ Release/
 /build/vivado-temp/
 /build/vivado*.jou
 /build/vivado*.log
+/build/channel_map_sim*.jou
+/build/channel_map_sim*.log
 /build/output/
+/tools/__pycache__/

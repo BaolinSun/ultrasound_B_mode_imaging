@@ -42,7 +42,11 @@ void led_blink(u8 times,u32 time);
 
 
 int main() {
+	u32 pre_buffer_cnt = 50;
+	u32 now_buffer_cnt = 0;
 	u32 cnt = 0;
+	XTime begin;
+	XTime end;
 
 	Xil_DCacheDisable();
 	// �жϳ�ʼ��
@@ -65,7 +69,7 @@ int main() {
 	sleep(1);
 	led_init();	// OK
 
-	sleep(1);
+	sleep(0.2);
 	para_down();
 
 	usb_init();
