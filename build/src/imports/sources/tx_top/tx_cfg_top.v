@@ -6,9 +6,12 @@ module tx_cfg_top
 	input									reset,
 
 	input									scan_enable,
-	input									rtc_trig,
+	input									tx_cfg_req,
 	input			[6:0]					rtc_line,
-	input									spi_start,	//³õÊ¼»¯²ÎÊý·¢ËÍÖÁramÖÐÍê³É
+	input									rtc_polarity,
+	output									tx_cfg_ready,
+	output									tx_cfg_done,
+	input									spi_start,	//ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ramï¿½ï¿½ï¿½ï¿½ï¿½
 	input			[6:0]					tx_st_reg_num,
 	output									tx_st_reg_rden,
 	output			[8:0]					tx_st_reg_rdaddr,
@@ -21,6 +24,7 @@ module tx_cfg_top
 	
 	input									tx_spi_rdreq,
 	input			[9:0]					tx_spi_rdaddr,	
+	output									tx_spi_rdaccept,
 	
 	output	reg								tx_spi_trig0,
 	output	reg								tx_spi_mode0,
@@ -82,6 +86,10 @@ localparam			CFG_RDREG			=	4'b1000;
 reg					[3:0]					ST_CONFIG;
 reg					[3:0]					NT_CONFIG;
 
+// A read request may wait here while static/dynamic configuration is active.
+// Acknowledge it only on the cycle in which CFG_IDLE selects CFG_RDREG.
+assign tx_spi_rdaccept = (ST_CONFIG == CFG_IDLE) && !spi_start_pos && tx_spi_rdreq;
+
 always@(posedge clk)
 begin
 	if(reset | scan_enable_neg)
@@ -135,6 +143,45 @@ wire		[31:0]						tx1_streg_spi_txdata0;
 wire		[9:0]						tx1_streg_spi_addr1;
 wire		[31:0]						tx1_streg_spi_txdata1;
 
+reg			[31:0]					reg18_base_tx0_0;
+reg			[31:0]					reg18_base_tx0_1;
+reg			[31:0]					reg18_base_tx1_0;
+reg			[31:0]					reg18_base_tx1_1;
+reg			[3:0]					reg18_valid;
+
+// Capture the actual static register 18h values independently for all four
+// TX7332 devices. Dynamic PI writes only change PAT_INV (bit 6).
+always@(posedge clk)
+begin
+	if(reset || spi_start_pos) begin
+		reg18_base_tx0_0 <= 32'd0;
+		reg18_base_tx0_1 <= 32'd0;
+		reg18_base_tx1_0 <= 32'd0;
+		reg18_base_tx1_1 <= 32'd0;
+		reg18_valid <= 4'b0000;
+	end else if(tx_streg_spi_trig) begin
+		if(tx0_streg_spi_addr0 == 10'h018) begin
+			reg18_base_tx0_0 <= tx0_streg_spi_txdata0 & 32'hFFFF_FFBF;
+			reg18_valid[0] <= 1'b1;
+		end
+		if(tx0_streg_spi_addr1 == 10'h018) begin
+			reg18_base_tx0_1 <= tx0_streg_spi_txdata1 & 32'hFFFF_FFBF;
+			reg18_valid[1] <= 1'b1;
+		end
+		if(tx1_streg_spi_addr0 == 10'h018) begin
+			reg18_base_tx1_0 <= tx1_streg_spi_txdata0 & 32'hFFFF_FFBF;
+			reg18_valid[2] <= 1'b1;
+		end
+		if(tx1_streg_spi_addr1 == 10'h018) begin
+			reg18_base_tx1_1 <= tx1_streg_spi_txdata1 & 32'hFFFF_FFBF;
+			reg18_valid[3] <= 1'b1;
+		end
+	end
+end
+
+assign tx_cfg_ready = (&reg18_valid) && (ST_CONFIG == CFG_RTREG);
+assign tx_cfg_done = rtreg_cfg_done;
+
 tx_cfg_streg							tx_cfg_streg_i
 (
 	.clk								(clk					),
@@ -177,8 +224,13 @@ tx_cfg_rtreg							tx_cfg_rtreg_i
 	.clk								(clk					),
 	.reset								(reset					),
 	.rtc_line							(rtc_line				),
-	.rtreg_cfg_en						(rtc_trig				),
+	.polarity							(rtc_polarity			),
+	.rtreg_cfg_en						(tx_cfg_req				),
 	.rtreg_cfg_done						(rtreg_cfg_done			),
+	.reg18_base_tx0_0					(reg18_base_tx0_0		),
+	.reg18_base_tx0_1					(reg18_base_tx0_1		),
+	.reg18_base_tx1_0					(reg18_base_tx1_0		),
+	.reg18_base_tx1_1					(reg18_base_tx1_1		),
 	.tx_rt_reg_num						(tx_rt_reg_num			),
 	.tx_rt_reg_rden						(tx_rt_reg_rden			),
 	.tx_rt_reg_rdaddr					(tx_rt_reg_rdaddr		),
@@ -198,8 +250,10 @@ tx_cfg_rtreg							tx_cfg_rtreg_i
 );
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
-wire									tx_rdreg_spi_trig;
-wire									tx_rdreg_spi_mode;			//	0=tx	1=rx
+wire									tx_rdreg_spi_trig0;
+wire									tx_rdreg_spi_mode0;			//	0=tx	1=rx
+wire									tx_rdreg_spi_trig1;
+wire									tx_rdreg_spi_mode1;			//	0=tx	1=rx
 wire		[9:0]						tx0_rdreg_spi_addr0;
 wire		[31:0]						tx0_rdreg_spi_txdata0;
 wire		[9:0]						tx0_rdreg_spi_addr1;

@@ -129,7 +129,7 @@ AFE_INIT_ROWS = [
     ("DTGC", "0xB6", "0x4800"),
     ("DTGC", "0xA1", "0x1090"),
     ("DTGC", "0xA2", "0x03FF"),
-    ("ADC", "0xC7", "0x2800"),
+    ("ADC", "0xC7", "0x2805"),  # LNA 21 dB + PGA 27 dB
     ("ADC", "0xC6", "0x0000"),
     ("ADC", "0xC8", "0x0000"),
 ]

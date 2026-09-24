@@ -19,7 +19,7 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 
-module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0              // 0..31 (�? tap 步进依赖器件/模式)
+module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0              // 0..31 (姣? tap 姝ヨ繘渚濊禆鍣ㄤ欢/妯″紡)
 ) (
     input                   ref_200M_clk     ,
     input  wire             rst_n            ,
@@ -32,7 +32,7 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
     // 16 LVDS data pairs
     input  wire     [ 15:0] data_p           ,
     input  wire     [ 15:0] data_n           ,
-    /**********输出数据 axi-stream接口*********************/
+    /**********杈撳嚭鏁版嵁 axi-stream鎺ュ彛*********************/
     output wire     [511:0] m_axis_adc_tdata ,
     output wire             m_axis_adc_tvalid,
     input  wire             m_axis_adc_tready,
@@ -81,6 +81,7 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
 
     wire dclk  ;
     wire clkdiv;
+    wire out_data_clk;
 
     // BUFIO u_bufio (
     //     .I(dclk_se),
@@ -99,7 +100,7 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
     //     .CLR(1'b0   )
     // );
 
-    //�? MMCM 产生 clkdiv_mmcm = dclk /
+    //鐢? MMCM 浜х敓 clkdiv_mmcm = dclk /
 
     wire mmcm_out_data_locked;
     wire mmcm_rst            ;
@@ -107,21 +108,21 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
 
     wire clkdiv2_mmcm;
 
-// 可直接用外部复位或上电复�?
+// 鍙洿鎺ョ敤澶栭儴澶嶄綅鎴栦笂鐢靛浣?
     assign mmcm_rst = ~rst_n;
 
 // dclk=350MHz, clkdiv=50MHz
-// 你可以用 Clocking Wizard 自动算好这些数，然后替换下面的�??
+// 浣犲彲浠ョ敤 Clocking Wizard 鑷姩绠楀ソ杩欎簺鏁帮紝鐒跺悗鏇挎崲涓嬮潰鐨勫??
     MMCME2_BASE #(
         .BANDWIDTH         ("OPTIMIZED"),
         .CLKFBOUT_MULT_F   (3          ),   // VCO = 350 * 3/1 = 1050 MHz
         .CLKFBOUT_PHASE    (0.0        ),
-        .CLKIN1_PERIOD     (2.857      ),   // dclk 周期(ns)�?350MHz �? 2.857ns
+        .CLKIN1_PERIOD     (2.857      ),   // dclk 鍛ㄦ湡(ns)锛?350MHz 鈮? 2.857ns
         .DIVCLK_DIVIDE     (1          ),
         .CLKOUT0_DIVIDE_F  (3          ),   // 1050 / 3 = 350 MHz = dclk
         .CLKOUT0_PHASE     (0.0        ),
         .CLKOUT0_DUTY_CYCLE(0.5        ),
-        // 其他输出不用就随便填
+        // 鍏朵粬杈撳嚭涓嶇敤灏遍殢渚垮～
         .CLKOUT1_DIVIDE    (21         ),   // 1050 / 21 = 50 MHz = dclk/7
         .CLKOUT1_PHASE     (0.0        ),
         .CLKOUT1_DUTY_CYCLE(0.5        ),
@@ -143,7 +144,7 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
         .REF_JITTER1       (0.01       ),
         .STARTUP_WAIT      ("FALSE"    )
     ) u_mmcm (
-        .CLKIN1  (dclk_se             ),   // 直接�? dclk_se 做输�?
+        .CLKIN1  (dclk_se             ),   // 鐩存帴鐢? dclk_se 鍋氳緭鍏?
         .CLKFBIN (clkfb               ),
         .CLKFBOUT(clkfb               ),
         .CLKOUT0 (dclk_mmcm           ),
@@ -212,7 +213,7 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
         end
     endgenerate
 
-//  复位信号
+//  澶嶄綅淇″彿
     (* ASYNC_REG = "TRUE" *) reg [2:0] rst_200MCLK_reg;
     always @(posedge ref_200M_clk or negedge rst_n) begin
         if(~rst_n) begin
@@ -328,9 +329,9 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
     reg                [2:0] good_cnt    ;
     localparam integer       GOOD_N   = 4;
 
-    // 半帧缓存�?16 lane * 16bit
-    reg [15:0] even_buf[15:0]; // 存偶数�?�道(0,2,...,30)对应�? 16 lane 数据
-    reg [15:0] odd_buf [15:0]; // 存奇数�?�道(1,3,...,31)对应�? 16 lane 数据
+    // 鍗婂抚缂撳瓨锛?16 lane * 16bit
+    reg [15:0] even_buf[15:0]; // 瀛樺伓鏁伴?氶亾(0,2,...,30)瀵瑰簲鐨? 16 lane 鏁版嵁
+    reg [15:0] odd_buf [15:0]; // 瀛樺鏁伴?氶亾(1,3,...,31)瀵瑰簲鐨? 16 lane 鏁版嵁
 
 // reg have_even;
 // reg have_odd;
@@ -392,7 +393,14 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
     wire [15:0] data16 [15:0];
     generate
         for (genvar k=0; k<16; k=k+1) begin
-            assign data16[k] = {{6{data14[k][13]}}, data14[k][13:4]};   // right aligned, zero-extend on MSBs
+            // The AFE serializes 14 bits per frame but the ADC resolution is lower,
+            // so only part of the frame carries signal. DIGOUT is MSB-aligned in a
+            // 16-bit word with the unused LSBs zero, and the AFE's truncation block
+            // keeps the MSBs, so the low bits of data14 are structural zeros.
+            // KEEP IN SYNC with AFE5832_init() reg 0x04 [1:0]:
+            //   ADC_10_BITS -> data14[13:4]   ADC_12_BITS -> data14[13:2]
+            // data14 is two's complement, so this sign-extends (not zero-extends).
+            assign data16[k] = {{4{data14[k][13]}}, data14[k][13:2]};   // 12-bit mode
         end
     endgenerate
 
@@ -407,47 +415,47 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
             out_data       <= 'd0;
             snap_st        <= WAIT_EVEN;
         end else begin
-            out_data_valid <= 1'b0; // 默认不输�?
+            out_data_valid <= 1'b0; // 榛樿涓嶈緭鍑?
 
-            // 失锁/不对齐时，强制回到等待偶半帧
+            // 澶遍攣/涓嶅榻愭椂锛屽己鍒跺洖鍒扮瓑寰呭伓鍗婂抚
             if (!out_data_locked || !word_aligned) begin
                 snap_st <= WAIT_EVEN;
             end else begin
                 case (snap_st)
 
                     WAIT_EVEN : begin
-                        // 只接受偶半帧（FCLK 高）
+                        // 鍙帴鍙楀伓鍗婂抚锛團CLK 楂橈級
                         if (fclk_all_zero) begin
                             for (k=0; k<16; k=k+1) begin
                                 even_buf[k] <= data16[k];
                             end
                             snap_st <= WAIT_ODD;
                         end
-                        // 若此时来的是奇半帧（FCLK 低），直接忽略（保持 WAIT_EVEN�?
+                        // 鑻ユ鏃舵潵鐨勬槸濂囧崐甯э紙FCLK 浣庯級锛岀洿鎺ュ拷鐣ワ紙淇濇寔 WAIT_EVEN锛?
                     end
                     WAIT_ODD : begin
                         if (fclk_all_ones) begin
-                            // 接收奇半�?
+                            // 鎺ユ敹濂囧崐甯?
                             for (k=0; k<16; k=k+1) begin
                                 odd_buf[k] <= data16[k];
                             end
 
-                            // 输出完整 32ch 快照（�?�道0在最�?16bit�?
+                            // 杈撳嚭瀹屾暣 32ch 蹇収锛堥?氶亾0鍦ㄦ渶浣?16bit锛?
                             for (k=0; k<16; k=k+1) begin
                                 out_data[(16*(2*k))+:16]   <= even_buf[k]; // ch 2k
-                                out_data[(16*(2*k+1))+:16] <= data16[k];   // ch 2k+1，用本周期刚采到�? odd 数据
+                                out_data[(16*(2*k+1))+:16] <= data16[k];   // ch 2k+1锛岀敤鏈懆鏈熷垰閲囧埌鐨? odd 鏁版嵁
                             end
 
-                            out_data_valid <= 1'b1;      // 本周期为完整快照
-                            snap_st        <= WAIT_EVEN; // 完成后回到等待偶
+                            out_data_valid <= 1'b1;      // 鏈懆鏈熶负瀹屾暣蹇収
+                            snap_st        <= WAIT_EVEN; // 瀹屾垚鍚庡洖鍒扮瓑寰呭伓
                         end else if (fclk_all_zero) begin
-                            // 期望奇却又来了偶：认为序列错误，丢弃已缓存的偶，重新从偶�?�?
+                            // 鏈熸湜濂囧嵈鍙堟潵浜嗗伓锛氳涓哄簭鍒楅敊璇紝涓㈠純宸茬紦瀛樼殑鍋讹紝閲嶆柊浠庡伓寮?濮?
                             for (k=0; k<16; k=k+1) begin
                                 even_buf[k] <= data16[k];
                             end
                             snap_st <= WAIT_ODD;
                         end else begin
-                            // FCLK 不全1/�?0（理论上不该出现�? word_aligned 应为0），保守起见重置
+                            // FCLK 涓嶅叏1/鍏?0锛堢悊璁轰笂涓嶈鍑虹幇涓? word_aligned 搴斾负0锛夛紝淇濆畧璧疯閲嶇疆
                             snap_st <= WAIT_EVEN;
                         end
                     end

@@ -54,6 +54,7 @@ module para_st
 	output	reg	[31:0]							bf_start,
 	output	reg	[31:0]							bf_length,
 	output	reg	[3:0]							rtc_down,
+	output	reg	[3:0]							gain_shift,
 	output	reg									spi_start,
 	output	reg									scan_enable
 );
@@ -195,10 +196,16 @@ begin
 	if(reset) begin
 		spi_start <= 1'b0;
 		scan_enable <= 1'b0;
+		gain_shift <= 4'd0;
 	end else begin
 		if(ram_scan_time_wren & (ram_scan_time_addr[19:0] == 20'd10))	spi_start		<=	ram_scan_time_wrdata[0];
 		// Word 11 is the PS beamforming run request. scan_sync applies stop at a frame boundary.
 		if(ram_scan_time_wren & (ram_scan_time_addr[19:0] == 20'd11))	scan_enable		<=	ram_scan_time_wrdata[0];
+		// Word 12 is the RX digital gain shift applied in filter_iq: each step is
+		// +6.02 dB, and 0 reproduces the original fixed >>19 bit-exactly. Clamped to 8
+		// because filter_iq pre-shifts by (8 + gain_shift) into a 59-bit word and the
+		// accumulator is 43 bits, so 43 + 8 + 8 = 59 is the limit before MSBs are lost.
+		if(ram_scan_time_wren & (ram_scan_time_addr[19:0] == 20'd12))	gain_shift		<=	(ram_scan_time_wrdata[3:0] > 4'd8) ? 4'd8 : ram_scan_time_wrdata[3:0];
 	end
 
 		 if(ram_demod_sin_rdrdy		)	para_fanout_rddata	<=	ram_demod_sin_rddata;
@@ -208,7 +215,7 @@ begin
 	else if(ram_rx_apod_data_rdrdy	)	para_fanout_rddata	<=	ram_rx_apod_data_rddata;
 	else if(ram_rx_foc_elexy_rdrdy	)	para_fanout_rddata	<=	ram_rx_foc_elexy_rddata;
 	else if(ram_filter_coef_rdrdy	)	para_fanout_rddata	<=	ram_filter_coef_rddata;
-	else if(ram_notuse_addr_rdrdy	)	para_fanout_rddata	<=	32'h_eeee_eeee;
+	else if(ram_notuse_addr_rdrdy	)	para_fanout_rddata	<=	32'heeee_eeee;
 
 		 if(ram_demod_sin_rdrdy		)	para_fanout_rdvalid	<=	1'b1;
 	else if(ram_demod_cos_rdrdy		)	para_fanout_rdvalid	<=	1'b1;

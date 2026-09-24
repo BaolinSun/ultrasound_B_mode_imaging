@@ -85,7 +85,7 @@ begin
 
 		 if(ram_tx_rt_reg_rdrdy		)	para_fanout_rddata	<=	ram_tx_rt_reg_rddata;
 	else if(ram_rx_foc_delta_rdrdy	)	para_fanout_rddata	<=	ram_rx_foc_delta_rddata;
-	else if(ram_notuse_addr_rdrdy	)	para_fanout_rddata	<=	32'h_eeee_eeee;
+	else if(ram_notuse_addr_rdrdy	)	para_fanout_rddata	<=	32'heeee_eeee;
 
 		 if(ram_tx_rt_reg_rdrdy		)	para_fanout_rdvalid	<=	1'b1;
 	else if(ram_rx_foc_delta_rdrdy	)	para_fanout_rdvalid	<=	1'b1;

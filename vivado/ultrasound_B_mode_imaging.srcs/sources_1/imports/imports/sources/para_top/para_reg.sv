@@ -16,6 +16,7 @@ module para_reg
 	output	reg	[31:0]						tx_spi_rdaddr,
 	input		[31:0]						tx_spi_rxdata,
 	input									tx_spi_rxvalid,
+	output		[31:0]						tx_cfg_rddata_debug,
 	output	reg								scan_enable,
 	output	reg								rtc_enable,
 	output	reg								spi_start,
@@ -45,14 +46,48 @@ end
 //------------------------------------------------------------------------------------------------
 reg				[31:0]				tx_bypass;
 reg				[31:0]				tx_cfg_rddata;
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT = "NO", DONT_TOUCH = "TRUE" *) reg [1:0] tx_spi_rxvalid_sync;
+reg tx_spi_rxvalid_seen;
+reg tx_spi_req_busy;
+wire tx_spi_request_write = para_fanout_wren &&
+							(para_fanout_wraddr == `ADDR_TX_CFG_RD_REQ);
+assign tx_cfg_rddata_debug = tx_cfg_rddata;
 always@(posedge clk)
 begin
-	tx_cfg_rddata <= tx_spi_rxvalid ? tx_spi_rxdata : tx_cfg_rddata;
+	if(reset)
+	begin
+		tx_spi_rdreq <= 1'b0;
+		tx_spi_rdaddr <= 32'd0;
+		tx_spi_rxvalid_sync <= 2'b00;
+		tx_spi_rxvalid_seen <= 1'b0;
+		tx_spi_req_busy <= 1'b0;
+		tx_cfg_rddata <= 32'd0;
+	end
+	else
+	begin
+		tx_spi_rxvalid_sync	<= {tx_spi_rxvalid_sync[0], tx_spi_rxvalid};
+
+		// Request is a toggle and the address remains stable until the matching
+		// completion toggle returns from clk_200.  A second software request is
+		// ignored while one transaction is outstanding.
+		if(tx_spi_request_write && !tx_spi_req_busy) begin
+			tx_spi_rdaddr <= para_fanout_wrdata;
+			tx_spi_rdreq <= ~tx_spi_rdreq;
+			tx_spi_req_busy <= 1'b1;
+		end
+
+		// The 32-bit result has been held stable for two destination clocks by
+		// the time this synchronized completion toggle changes.
+		if(tx_spi_rxvalid_sync[1] != tx_spi_rxvalid_seen) begin
+			tx_cfg_rddata <= tx_spi_rxdata;
+			tx_spi_rxvalid_seen <= tx_spi_rxvalid_sync[1];
+			tx_spi_req_busy <= 1'b0;
+		end
+	end
 end
 
 always@(posedge clk)
 begin
-		 if(para_fanout_wren & (para_fanout_wraddr == `ADDR_TX_CFG_RD_REQ	))		tx_spi_rdaddr	<=	para_fanout_wrdata;
 		 if(para_fanout_wren & (para_fanout_wraddr == `ADDR_SCAN_ENABLE		))		scan_enable		<=	para_fanout_wrdata;
 		 if(para_fanout_wren & (para_fanout_wraddr == `ADDR_TX_ENABLE		))		rtc_enable		<=	para_fanout_wrdata;
 		 if(para_fanout_wren & (para_fanout_wraddr == `ADDR_SPI_START		))		spi_start		<=	para_fanout_wrdata;
@@ -65,7 +100,6 @@ begin
 	else if(para_fanout_rden & (para_fanout_rdaddr == `ADDR_TX_RESET			))	para_fanout_rddata	<=	tx_hw_reset		;
 	else if(para_fanout_rden)														para_fanout_rddata	<=	32'heeee_eeee;
 	
-	tx_spi_rdreq <= (para_fanout_wren & (para_fanout_wraddr == `ADDR_TX_CFG_RD_REQ	));
 	para_fanout_rdvalid <= para_fanout_rden;
 end
 

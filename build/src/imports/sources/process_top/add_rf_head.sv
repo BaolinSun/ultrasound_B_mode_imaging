@@ -5,7 +5,7 @@ module add_rf_head
 	input										rtc_enable,
 	input										rtc_trig,
 	input		[31:0]							rtc_rfdot,
-	input		[6:0]							rtc_line,
+	input		[7:0]							rtc_shot,
 	input		[3:0]							rtc_down,
 	
 	input										rf_dataen,
@@ -16,7 +16,8 @@ module add_rf_head
 	output	reg									trans_start,
 	output	reg									trans_last,
 	output	reg									trans_dataen,
-	output	reg	[19:0]							trans_data
+	output	reg	[20:0]							trans_data,
+	output	reg	[1:0]							trans_phase
 );
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
@@ -61,7 +62,7 @@ reg				[15:0]							pack_head4;
 reg				[15:0]							pack_head5;
 reg				[15:0]							pack_head6;
 reg				[15:0]							pack_head7;
-reg				[5:0]							pack_updot_x1024;	//	Ìî³ä1024
+reg				[5:0]							pack_updot_x1024;	//	ï¿½ï¿½ï¿½1024
 
 always@(posedge clk)
 begin
@@ -70,14 +71,19 @@ end
 
 always@(posedge clk)
 begin
-	pack_head0 <= {pack_updot_x1024, 10'b0};//RF³éÑùºóµÄÊµ¼ÊµãÊı
-	pack_head1 <=  rtc_rfdot[15:0];			//RF²É¼¯µÄÊµ¼ÊµãÊı
-	pack_head2 <= {9'd0,rtc_line[6:0]};		//·¢ÉäÏßºÅ
-	pack_head3 <= {12'd0, rtc_down};		//³éÈ¡ÏµÊı
+	pack_head0 <= {pack_updot_x1024, 10'b0};//RFï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Êµï¿½Êµï¿½ï¿½ï¿½
+	pack_head1 <=  rtc_rfdot[15:0];			//RFï¿½É¼ï¿½ï¿½ï¿½Êµï¿½Êµï¿½ï¿½ï¿½
+	pack_head2 <= {10'd0,rtc_shot[7:2]};		//æ¥æ”¶é€»è¾‘çº¿å·0..63
+	pack_head3 <= {12'd0, rtc_down};		//ï¿½ï¿½È¡Ïµï¿½ï¿½
 	pack_head4 <= 16'd0;
 	pack_head5 <= 16'd0;
-	pack_head6 <= {rtc_time[31:16]};		//²É¼¯Ê±¼ä
-	pack_head7 <= {rtc_time[15:0]};		//²É¼¯Ê±¼ä
+	pack_head6 <= {rtc_time[31:16]};		//ï¿½É¼ï¿½Ê±ï¿½ï¿½
+	pack_head7 <= {rtc_time[15:0]};		//ï¿½É¼ï¿½Ê±ï¿½ï¿½
+	// PI phase is an internal sideband and must never reuse a protocol header word.
+	if(reset)
+		trans_phase <= 2'd0;
+	else
+		trans_phase <= rtc_shot[1:0];
 end
 //--------------------------------------------------------------------------------------------------
 reg					[38:0]				dly_rf_dataen;

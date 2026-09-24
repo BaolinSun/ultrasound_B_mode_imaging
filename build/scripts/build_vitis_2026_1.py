@@ -14,7 +14,9 @@ import vitis
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
-WORKSPACE = os.path.join(ROOT, "workspace")
+WORKSPACE = os.path.abspath(
+    os.environ.get("ULTRASOUND_VITIS_WORKSPACE", os.path.join(ROOT, "workspace"))
+)
 XSA = os.path.join(ROOT, "build", "output", "ultrasound_B_mode_imaging.xsa")
 APP_SOURCE = os.path.join(ROOT, "build", "src", "ps")
 OUTPUT = os.path.join(ROOT, "build", "output")

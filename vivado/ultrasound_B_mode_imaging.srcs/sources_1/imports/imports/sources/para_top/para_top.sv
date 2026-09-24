@@ -66,13 +66,15 @@ module para_top
 	output		[31:0]							bf_start,
 	output		[31:0]							bf_length,
 	output		[3:0]							rtc_down,
+	output		[3:0]							gain_shift,
 	
 	output										spi_start,
 	output										tx_cfg_reset,
 	output										tx_spi_rdreq,
 	output		[31:0]							tx_spi_rdaddr,
 	input										tx_spi_rxvalid,
-	input		[31:0]							tx_spi_rxdata
+	input		[31:0]							tx_spi_rxdata,
+	output		[31:0]							tx_cfg_rddata_debug
 
 );
 //--------------------------------------------------------------------------------------------------
@@ -183,6 +185,7 @@ para_st											para_st_i
 	.bf_start									(bf_start),
 	.bf_length									(bf_length),
 	.rtc_down									(rtc_down),
+	.gain_shift									(gain_shift),
 	.spi_start									(spi_start),
 	.scan_enable								(scan_enable)
 );
@@ -226,6 +229,7 @@ para_reg										para_reg_i
 	.tx_spi_rdaddr								(tx_spi_rdaddr),
 	.tx_spi_rxvalid								(tx_spi_rxvalid),
 	.tx_spi_rxdata								(tx_spi_rxdata),
+	.tx_cfg_rddata_debug						(tx_cfg_rddata_debug),
 	.rtc_enable									(rtc_enable),
 	.tx_hw_reset								(tx_cfg_reset)
 

@@ -74,7 +74,7 @@ int main() {
 
 	usb_init();
 	xil_printf("@READY CONFIG\r\n");
-	xil_printf("Beamform auto-started\r\n");
+	xil_printf("Beamform ready; STOP.\r\n");
 	XGpioPs_WritePin(&gpiops, LED_2_EMIO_PIN, 1);
 	led_blink(5,250000);
 

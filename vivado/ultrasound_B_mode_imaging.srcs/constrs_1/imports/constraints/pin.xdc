@@ -95,6 +95,7 @@ set_property PACKAGE_PIN C8 [get_ports {tx_sen1[1]}]
 set_property PACKAGE_PIN E5 [get_ports {tx_dat0[1]}]
 set_property PACKAGE_PIN G6 [get_ports {tx_dat1[1]}]
 set_property PACKAGE_PIN F5 [get_ports {tx_sdout[0]}]
+set_property PACKAGE_PIN E7 [get_ports {tx_sdout[1]}]
 
 set_property IOSTANDARD LVDS [get_ports {tx_lvds_sync_p[*]}]
 set_property IOSTANDARD LVCMOS18 [get_ports {tx_sclk[*]}]
@@ -135,8 +136,9 @@ set_false_path -from [get_pins {proc_top_i/para_top_i/para_st_i/rtc_rfdot_reg[*]
 # Removed in 2026.1: filter_coef_rdcnt_reg is optimized away.
 # Removed in 2026.1: the legacy data_sample hierarchy no longer exists.
 set_false_path -from [get_pins {proc_top_i/para_top_i/para_st_i/rtc_down_reg[*]/C}] -to [get_pins {proc_top_i/bproc_top_i/add_rf_head_i/pack_head3_reg[*]/D}]
-set_false_path -from [get_pins {proc_top_i/scan_sync_i/rtc_line_reg[*]/C}] -to [get_pins {proc_top_i/bf_top_i/bf_delay_i/bf_foc_delta_rdaddr_reg[*]/D}]
-set_false_path -from [get_pins {proc_top_i/scan_sync_i/rtc_line_reg[*]/C}] -to [get_pins {proc_top_i/bproc_top_i/add_rf_head_i/pack_head2_reg[*]/D}]
+set_false_path -from [get_pins {proc_top_i/scan_sync_i/rtc_shot_reg[*]/C}] -to [get_pins {proc_top_i/bf_top_i/bf_delay_i/bf_foc_delta_rdaddr_reg[*]/D}]
+set_false_path -from [get_pins {proc_top_i/scan_sync_i/rtc_shot_reg[*]/C}] -to [get_pins {proc_top_i/bproc_top_i/add_rf_head_i/pack_head2_reg[*]/D}]
+set_false_path -from [get_pins {proc_top_i/scan_sync_i/rtc_shot_reg[*]/C}] -to [get_pins {proc_top_i/bproc_top_i/add_rf_head_i/trans_phase_reg[*]/D}]
 # Removed in 2026.1: the two SRL implementation names no longer exist.
 set_false_path -from [get_pins proc_top_i/scan_sync_i/rtc_rxen_reg/C] -to [get_pins proc_top_i/bproc_top_i/filter_iq_i/filter_coef_rden_reg/D]
 set_false_path -from [get_pins proc_top_i/scan_sync_i/rtc_rxen_reg/C] -to [get_pins proc_top_i/ad_en_in_reg/D]
@@ -146,10 +148,19 @@ set_false_path -from [get_pins {proc_top_i/para_top_i/para_st_i/rtc_rfdot_reg[*]
 # Freeze control CDC: constrain only the first stage of each two-flop synchronizer.
 set_false_path -from [get_pins proc_top_i/para_top_i/para_st_i/scan_enable_reg/C] -to [get_pins proc_top_i/scan_sync_i/rtc_enable_sync_ff1_reg/D]
 set_false_path -from [get_pins proc_top_i/scan_sync_i/beamform_active_reg/C] -to [get_pins proc_top_i/beamform_active_sync_ff1_reg/D]
+# Runtime receive gain crosses clk_para -> clk_25 through a protected two-stage
+# synchronizer; cut only the asynchronous input of its first stage.
+set_false_path -from [get_pins {proc_top_i/para_top_i/para_st_i/gain_shift_reg[*]/C}] -to [get_pins {proc_top_i/bproc_top_i/filter_iq_i/gain_shift_sync_ff1_reg[*]/D}]
+# TX7332 readback uses request/completion toggles plus stable bundled data.
+set_false_path -from [get_pins proc_top_i/para_top_i/para_reg_i/tx_spi_rdreq_reg/C] -to [get_pins {proc_top_i/tx_top_i/tx_spi_rdreq_sync_reg[0]/D}]
+set_false_path -from [get_pins proc_top_i/tx_top_i/tx_spi_rxvalid_reg/C] -to [get_pins {proc_top_i/para_top_i/para_reg_i/tx_spi_rxvalid_sync_reg[0]/D}]
+set_max_delay -datapath_only 5.000 -from [get_cells {proc_top_i/para_top_i/para_reg_i/tx_spi_rdaddr_reg[*]}] -to [get_cells {proc_top_i/tx_top_i/tx_spi_rdaddr_latched_reg[*]}]
+set_max_delay -datapath_only 10.000 -from [get_cells {proc_top_i/tx_top_i/tx_spi_rxdata_reg[*]}] -to [get_cells {proc_top_i/para_top_i/para_reg_i/tx_cfg_rddata_reg[*]}]
 # rst_clkdiv_reg is an asynchronous-assert, synchronous-deassert reset
 # synchronizer. Recovery/removal timing is intentionally cut only at its
 # asynchronous preset pins; the downstream synchronized reset remains timed.
 set_false_path -to [get_pins -quiet {pus_ctrl_system_wrapper_i/pus_ctrl_system_i/afe5832_adc_14b_16la_0/inst/rst_clkdiv_reg_reg[*]/PRE}]
+set_false_path -to [get_pins -quiet {pus_ctrl_system_wrapper_i/pus_ctrl_system_i/afe5832_adc_14b_16la_0/inst/rst_200MCLK_reg_reg[*]/CLR}]
 #########################################################################################
 
 #create_clock -period 4.000 -name dcp_0 -waveform {0.000 2.000} [get_ports dcp_0]

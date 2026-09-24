@@ -3,32 +3,35 @@
 
 module scan_sync
 (
-	input										clk,
-	input										reset,
+	input                            clk,
+	input                            reset,
 
-	input										rtc_enable,
-	input		 [31:0]							rtc_period,
-	input		 [15:0]							rt_length,
-	input		 [15:0]							tx_start,
-	input		 [15:0]							tx_length,
-	input		 [15:0]							rx_start,
-	input		 [31:0]							rx_length,
-	input		 [31:0]							bf_start,
-	input		 [31:0]							bf_length,
-	output	  reg								rtc_trig,
-	output	  reg								rtc_txen,
-	output	  reg								rtc_rxen,
-	output	  reg								rtc_bfen,
-	output	  reg								rtc_tgc_slope,
-	output	  reg								rtc_tgc_updown,
-	output	  reg	 [6:0]						rtc_line,
-	output	  reg								beamform_active
+	input                            rtc_enable,
+	input      [31:0]                rtc_period,
+	input      [15:0]                rt_length,
+	input      [15:0]                tx_start,
+	input      [15:0]                tx_length,
+	input      [15:0]                rx_start,
+	input      [31:0]                rx_length,
+	input      [31:0]                bf_start,
+	input      [31:0]                bf_length,
+	input                            tx_cfg_ready,
+	input                            tx_cfg_done,
+	output reg                       tx_cfg_req,
+	output reg                       rtc_trig,
+	output reg                       rtc_txen,
+	output reg                       rtc_rxen,
+	output reg                       rtc_bfen,
+	output reg                       rtc_tgc_slope,
+	output reg                       rtc_tgc_updown,
+	output     [6:0]                 rtc_line,
+	output reg [7:0]                 rtc_shot,
+	output reg                       beamform_active
 );
-//--------------------------------------------------------------------------------------------------
+
 // Synchronize the PS run request into the 200 MHz scan-control clock domain.
-//--------------------------------------------------------------------------------------------------
-(* ASYNC_REG = "TRUE" *) reg								rtc_enable_sync_ff1;
-(* ASYNC_REG = "TRUE" *) reg								rtc_enable_sync_ff2;
+(* ASYNC_REG = "TRUE" *) reg rtc_enable_sync_ff1;
+(* ASYNC_REG = "TRUE" *) reg rtc_enable_sync_ff2;
 
 always@(posedge clk)
 begin
@@ -40,11 +43,10 @@ begin
 		rtc_enable_sync_ff2 <= rtc_enable_sync_ff1;
 	end
 end
-//--------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------
-reg				   [31:0]						tx_period;
-reg				   [31:0]						rx_period;
-reg				   [31:0]						bf_period;
+
+reg [31:0] tx_period;
+reg [31:0] rx_period;
+reg [31:0] bf_period;
 
 always@(posedge clk)
 begin
@@ -58,31 +60,56 @@ begin
 		bf_period <= bf_start + bf_length;
 	end
 end
-//--------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------
-localparam		  SYNC_IDLE						=	2'b00;
-localparam		  SYNC_RUN						=	2'b01;
-localparam		  SYNC_DONE						=	2'b10;
-//--------------------------------------------------------------------------------------------------
-reg				   [1:0]						ST_SYNC;
-reg				   [1:0]						NT_SYNC;
-reg				   [34:0]						cnt_clk;
-reg												flag_rtc;
-reg												stop_pending;
+
+localparam SYNC_IDLE      = 3'b000;
+localparam SYNC_PREP_REQ  = 3'b001;
+localparam SYNC_PREP_WAIT = 3'b010;
+localparam SYNC_RUN       = 3'b011;
+localparam SYNC_DONE      = 3'b100;
+
+reg [2:0]  ST_SYNC;
+reg [2:0]  NT_SYNC;
+reg [34:0] cnt_clk;
+reg        flag_rtc;
+
+// Four physical shots form one PC-visible line:
+// shot[1:0] = 0:A+, 1:A-, 2:B+, 3:B-.
+// Existing delay and aperture tables continue to see the legacy 0..127 index.
+assign rtc_line = rtc_shot[7:1];
 
 always@(*)
 begin
 	NT_SYNC = SYNC_IDLE;
 	case(ST_SYNC)
-		SYNC_IDLE:	if(rtc_enable_sync_ff2)									NT_SYNC = SYNC_RUN;
-					else														NT_SYNC = SYNC_IDLE;
-		SYNC_RUN:	if(cnt_clk >= {rtc_period, 3'b010}) begin
-						// Finish the complete 128-line frame before freezing.
-						if((rtc_line == 7'd127) && !rtc_enable_sync_ff2)		NT_SYNC = SYNC_IDLE;
-						else													NT_SYNC = SYNC_DONE;
-					end else														NT_SYNC = SYNC_RUN;
-		SYNC_DONE:																NT_SYNC = SYNC_RUN;
-		default:																NT_SYNC = SYNC_IDLE;
+		SYNC_IDLE: begin
+			if(rtc_enable_sync_ff2 && tx_cfg_ready)
+				NT_SYNC = SYNC_PREP_REQ;
+			else
+				NT_SYNC = SYNC_IDLE;
+		end
+		SYNC_PREP_REQ:
+			NT_SYNC = SYNC_PREP_WAIT;
+		SYNC_PREP_WAIT: begin
+			if(tx_cfg_done)
+				NT_SYNC = SYNC_RUN;
+			else
+				NT_SYNC = SYNC_PREP_WAIT;
+		end
+		SYNC_RUN: begin
+			if(cnt_clk >= {rtc_period, 3'b010}) begin
+				// Honor stop only after B- of logical line 63.
+				if((rtc_shot == 8'd255) && !rtc_enable_sync_ff2)
+					NT_SYNC = SYNC_IDLE;
+				else
+					NT_SYNC = SYNC_DONE;
+			end else begin
+				NT_SYNC = SYNC_RUN;
+			end
+		end
+		SYNC_DONE:
+			NT_SYNC = SYNC_PREP_REQ;
+		default:
+			NT_SYNC = SYNC_IDLE;
 	endcase
 end
 
@@ -99,13 +126,21 @@ begin
 	if(reset) begin
 		cnt_clk <= 35'd2;
 		flag_rtc <= 1'b0;
+		tx_cfg_req <= 1'b0;
 	end else begin
-		if(NT_SYNC == SYNC_IDLE)		cnt_clk <= 35'd2;
-		else if(NT_SYNC == SYNC_RUN)	cnt_clk <= cnt_clk + 1'b1;
-		else if(NT_SYNC == SYNC_DONE)	cnt_clk <= 35'd3;
+		if(NT_SYNC == SYNC_RUN) begin
+			if(ST_SYNC == SYNC_RUN)
+				cnt_clk <= cnt_clk + 1'b1;
+			else
+				cnt_clk <= 35'd3;
+		end else begin
+			cnt_clk <= 35'd2;
+		end
 
-		if(NT_SYNC == SYNC_IDLE)		flag_rtc <= 1'b0;
-		else							flag_rtc <= 1'b1;
+		flag_rtc <= (NT_SYNC == SYNC_RUN);
+		// One 200 MHz clock request pulse. TX configuration acknowledges only
+		// after all nine BRAM groups plus the synthetic PAT_INV write finish.
+		tx_cfg_req <= (NT_SYNC == SYNC_PREP_REQ);
 	end
 end
 
@@ -113,23 +148,14 @@ always@(posedge clk)
 begin
 	if(reset) begin
 		beamform_active <= 1'b0;
-		stop_pending <= 1'b0;
 	end else begin
-		if((ST_SYNC == SYNC_IDLE) && (NT_SYNC == SYNC_RUN))
+		if((ST_SYNC == SYNC_IDLE) && (NT_SYNC == SYNC_PREP_REQ))
 			beamform_active <= 1'b1;
 		else if((ST_SYNC == SYNC_RUN) && (NT_SYNC == SYNC_IDLE))
 			beamform_active <= 1'b0;
-
-		if(ST_SYNC == SYNC_IDLE)
-			stop_pending <= 1'b0;
-		else if(rtc_enable_sync_ff2)
-			stop_pending <= 1'b0;
-		else
-			stop_pending <= 1'b1;
 	end
 end
-//--------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------
+
 always@(posedge clk)
 begin
 	if(reset)
@@ -141,7 +167,7 @@ begin
 	else
 		rtc_trig <= 1'b0;
 end
-//--------------------------------------------------------------------------------------------------
+
 always@(posedge clk)
 begin
 	if(reset) begin
@@ -181,42 +207,21 @@ begin
 
 		if(!flag_rtc)
 			rtc_tgc_updown <= 1'b0;
-		else if((cnt_clk > ({rx_period, 3'b010}-35'd20)) & (cnt_clk <= ({rx_period, 3'b010})))
+		else if((cnt_clk > ({rx_period, 3'b010}-35'd20)) & (cnt_clk <= {rx_period, 3'b010}))
 			rtc_tgc_updown <= 1'b1;
 		else
 			rtc_tgc_updown <= 1'b0;
 	end
 end
-//--------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------
-reg												rtc_trig_t0;
-reg												rtc_trig_t1;
-reg												rtc_trig_pos;
-reg												rtc_trig_neg;
 
 always@(posedge clk)
 begin
-	if(reset) begin
-		rtc_trig_t0 <= 1'b0;
-		rtc_trig_t1 <= 1'b0;
-		rtc_trig_pos <= 1'b0;
-		rtc_trig_neg <= 1'b0;
-	end else begin
-		rtc_trig_t0 <= rtc_trig;
-		rtc_trig_t1 <= rtc_trig_t0;
-		rtc_trig_pos <= ( rtc_trig_t0 & !rtc_trig_t1);
-		rtc_trig_neg <= (!rtc_trig_t0 &  rtc_trig_t1);
-	end
+	if(reset)
+		rtc_shot <= 8'd0;
+	else if((ST_SYNC == SYNC_IDLE) && (NT_SYNC == SYNC_PREP_REQ))
+		rtc_shot <= 8'd0;
+	else if((ST_SYNC == SYNC_RUN) && (NT_SYNC == SYNC_DONE))
+		rtc_shot <= rtc_shot + 8'd1;
 end
-//--------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------
-always@(posedge clk)
-begin
-	if(reset)												rtc_line <= 7'd127;
-	else if((ST_SYNC == SYNC_IDLE) && (NT_SYNC == SYNC_RUN))	rtc_line <= 7'd127;
-	else if(rtc_trig_pos)									rtc_line <= rtc_line + 7'd1;
-	else													rtc_line <= rtc_line;
-end
-//--------------------------------------------------------------------------------------------------
-//--------------------------------------------------------------------------------------------------
+
 endmodule

@@ -27,6 +27,8 @@
 #define BRAM_SCAN_ADDR				BRAM_BASEADDR + 0x11500
 #define BRAM_TRANS_DYNAM_ADDR		BRAM_BASEADDR + 0x100000
 #define BRAM_DELAY_ADDR				BRAM_BASEADDR + 0x110000
+#define BRAM_TX_CFG_RD_REQ_ADDR		(BRAM_BASEADDR + 0x004C0110U)
+#define BRAM_TX_CFG_RDDATA_ADDR		(BRAM_BASEADDR + 0x004C0114U)
 
 #define BRAM_IQSIN_DEPTH			8192
 #define BRAM_IQCOS_DEPTH			8192
@@ -42,6 +44,8 @@
 
 #define BRAM_DATA_BYTE				4
 #define BRAM_UART_MAX_WORDS			8U
+#define TX7332_REG_ADDR_MAX			0x3FFU
+#define TX7332_READ_SETTLE_US		10000U
 
 typedef struct {
 	const char *name;
@@ -69,6 +73,47 @@ void Beamform_SetControl(u32 beamform_enable, u32 spi_start_enable)
 	XBram_WriteReg(BRAM_SPI_START_ADDR, 0, spi_start_enable ? 1U : 0U);
 }
 
+/* Set the receive digital gain shift. Safe to call while imaging is running:
+ * para_st latches word 12 on the parameter clock and filter_iq picks it up on
+ * the next sample, so no beamforming restart is needed. Returns the value that
+ * was actually programmed after clamping. */
+u32 Rx_SetGainShift(u32 gain_shift)
+{
+	if (gain_shift > RX_GAIN_SHIFT_MAX)
+	{
+		gain_shift = RX_GAIN_SHIFT_MAX;
+	}
+	XBram_WriteReg(BRAM_RX_GAIN_SHIFT_ADDR, 0, gain_shift);
+	return gain_shift;
+}
+
+void Beamform_Resume(void)
+{
+	/*
+	 * tx_cfg_top starts its static-register configuration only on a rising
+	 * edge of spi_start. scan_enable falling returns that FSM to CFG_IDLE, so
+	 * writing spi_start=1 again after a pause is insufficient when the bit was
+	 * already high. Force a real low-to-high transition before scanning.
+	 */
+	Beamform_SetControl(0U, 0U);
+	usleep(100);
+	Beamform_SetControl(0U, 1U);
+	usleep(5000);
+	Beamform_SetControl(1U, 1U);
+}
+
+void Beamform_Pause(void)
+{
+	/* Freeze scanning while keeping TX7332 configured and HV unchanged. */
+	Beamform_SetControl(0U, 1U);
+}
+
+void Beamform_Halt(void)
+{
+	/* Full imaging stop: arm spi_start for a clean edge on next START. */
+	Beamform_SetControl(0U, 0U);
+}
+
 void Beamform_Start(void)
 {
 	/* Reconfigure TX7332 while scanning and HV output are disabled. */
@@ -82,7 +127,7 @@ void Beamform_Stop(void)
 {
 	/* Disable HV immediately, then allow PL to finish the current frame. */
 	hv_disable();
-	Beamform_SetControl(0U, 0U);
+	Beamform_Halt();
 	sleep(1);
 }
 u32 Bram_WriteSectionWords(const char *section, u32 offset, const u32 *words, u32 count)
@@ -124,6 +169,24 @@ u32 Tx7332_WriteSectionWords(const char *section, u32 offset, const u32 *words, 
 	for (u32 i = 0; i < count; i++) {
 		XBram_WriteReg(BRAM_TRANS_STATIC_ADDR, (offset + i) * BRAM_DATA_BYTE, words[i]);
 	}
+	return BRAM_CFG_STATUS_OK;
+}
+
+u32 Tx7332_ReadRegister(u32 addr, u32 *data)
+{
+	if (data == NULL || addr > TX7332_REG_ADDR_MAX) {
+		return BRAM_CFG_STATUS_ARGS;
+	}
+	if ((XBram_ReadReg(BRAM_BEAMFORM_CTRL_ADDR, 0) & BEAMFORM_CTRL_RUN_MASK) != 0U) {
+		return BRAM_CFG_STATUS_BUSY;
+	}
+
+	/* Trigger the PL TX7332 readback FSM through para_reg. For a deterministic
+	 * readback, stop beamforming before issuing TX7332 RD so tx_cfg_top is in
+	 * CFG_IDLE and can accept the read request. */
+	XBram_WriteReg(BRAM_TX_CFG_RD_REQ_ADDR, 0, addr & TX7332_REG_ADDR_MAX);
+	usleep(TX7332_READ_SETTLE_US);
+	*data = XBram_ReadReg(BRAM_TX_CFG_RDDATA_ADDR, 0);
 	return BRAM_CFG_STATUS_OK;
 }
 // ���ϵ��
@@ -225,6 +288,10 @@ void para_down(void)
 	tx7332_config_para();
 	delay_profile_para();
 	sin_beta_para();
-	/* Default local parameters are ready; start TX7332, HV, and scanning. */
-	Beamform_Start();
+	/*
+	 * The desktop application owns the imaging lifecycle. Leave PL and HV in
+	 * a deterministic stopped state after loading the default tables.
+	 */
+	hv_disable();
+	Beamform_Halt();
 }

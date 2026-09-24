@@ -20,7 +20,12 @@ New-Item -ItemType Directory -Force -Path $env:IPYTHONDIR | Out-Null
 & $Vitis -s (Join-Path $PSScriptRoot 'build_vitis_2026_1.py')
 if ($LASTEXITCODE -ne 0) { throw "Vitis exited with code $LASTEXITCODE" }
 
-$PlatformRoot = Join-Path $Root 'workspace\ubmi_p'
+$WorkspaceRoot = if ($env:ULTRASOUND_VITIS_WORKSPACE) {
+    $env:ULTRASOUND_VITIS_WORKSPACE
+} else {
+    Join-Path $Root 'workspace'
+}
+$PlatformRoot = Join-Path $WorkspaceRoot 'ubmi_p'
 if (-not (Get-ChildItem $PlatformRoot -Recurse -Filter '*.xpfm' -File -ErrorAction SilentlyContinue)) {
     throw 'Vitis platform build did not produce an XPFM.'
 }

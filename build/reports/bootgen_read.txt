@@ -78,12 +78,12 @@
 --------------------------------------------------------------------------------
    PARTITION HEADER TABLE (B_mode_focus_imaging.elf.0)
 --------------------------------------------------------------------------------
-    encrypted_length (0x00) : 0x0001034b  unencrypted_length (0x04) : 0x0001034b
-        total_length (0x08) : 0x0001034b           load_addr (0x0c) : 0x00100000
+    encrypted_length (0x00) : 0x00010523  unencrypted_length (0x04) : 0x00010523
+        total_length (0x08) : 0x00010523           load_addr (0x0c) : 0x00100000
            exec_addr (0x10) : 0x00100000    partition_offset (0x14) : 0x00175360
           attributes (0x18) : 0x00000010       section_count (0x1C) : 0x00000002
      checksum_offset (0x20) : 0x00000000          iht_offset (0x24) : 0x00000260
-           ac_offset (0x28) : 0x00000000            checksum (0x3c) : 0xffc5a04c
+           ac_offset (0x28) : 0x00000000            checksum (0x3c) : 0xffc59ac4
  attribute list -
                trustzone [non-secure]            el [el-0]         
               exec_state [aarch-32]     dest_device [none]         
@@ -93,10 +93,10 @@
 --------------------------------------------------------------------------------
     encrypted_length (0x00) : 0x000011dd  unencrypted_length (0x04) : 0x000011dd
         total_length (0x08) : 0x000011dd           load_addr (0x0c) : 0x00144000
-           exec_addr (0x10) : 0x00000000    partition_offset (0x14) : 0x001856b0
+           exec_addr (0x10) : 0x00000000    partition_offset (0x14) : 0x00185890
           attributes (0x18) : 0x00000010       section_count (0x1C) : 0x00000000
      checksum_offset (0x20) : 0x00000000          iht_offset (0x24) : 0x00000260
-           ac_offset (0x28) : 0x00000000            checksum (0x3c) : 0xffd33148
+           ac_offset (0x28) : 0x00000000            checksum (0x3c) : 0xffd32f68
  attribute list -
                trustzone [non-secure]            el [el-0]         
               exec_state [aarch-32]     dest_device [none]         

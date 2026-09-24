@@ -1,8 +1,14 @@
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Old = Join-Path (Split-Path -Parent $Root) 'ultrasound_focus_B_mode_imaging'
-$OldApp = Join-Path $Old 'vitis\B_mode_focus_imaging\src'
 $NewApp = Join-Path $Root 'build\src\ps'
+$WorkspaceRoot = if ($env:ULTRASOUND_VITIS_WORKSPACE) {
+    [System.IO.Path]::GetFullPath($env:ULTRASOUND_VITIS_WORKSPACE)
+} else {
+    Join-Path $Root 'workspace'
+}
+$SourceCommit = 'f225a21f095718dbce4ada470ad85f1f9bbc4a14'
+$SafeDirectory = "safe.directory=$($Old.Replace('\', '/'))"
 
 function Read-SourceText([string]$Path) {
     $Bytes = [System.IO.File]::ReadAllBytes($Path)
@@ -19,91 +25,122 @@ function Normalize-Source([string]$Path) {
     return (Read-SourceText $Path).Replace("`r`n", "`n").TrimEnd()
 }
 
-function Assert-TextEqual([string]$OldRelative, [string]$NewRelative) {
-    $OldText = Normalize-Source (Join-Path $OldApp $OldRelative)
-    $NewText = Normalize-Source (Join-Path $NewApp $NewRelative)
-    if ($OldText -cne $NewText) {
-        throw "Protected source content changed: $NewRelative"
+# Validate the immutable Git object set used for this migration.  This avoids
+# depending on the source repository's current branch or dirty working tree.
+$ResolvedCommit = (& git -c $SafeDirectory -C $Old rev-parse "$SourceCommit^{commit}" 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $ResolvedCommit -cne $SourceCommit) {
+    throw "Fixed source commit is unavailable: $SourceCommit"
+}
+$ExpectedParent = '6f7e0d7b36b4c3f26afa1be6e0278ace3ca06581'
+$ResolvedParent = (& git -c $SafeDirectory -C $Old rev-parse "$SourceCommit^" 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $ResolvedParent -cne $ExpectedParent) {
+    throw "Incremental source parent is not the previously migrated commit: $ExpectedParent"
+}
+$ExpectedIncrementalPaths = @(
+    'vitis/B_mode_focus_imaging/src/HV/hv.c',
+    'vitis/B_mode_focus_imaging/src/bram/bram.c',
+    'vitis/B_mode_focus_imaging/src/bram/bram.h',
+    'vitis/B_mode_focus_imaging/src/main.c',
+    'vitis/B_mode_focus_imaging/src/main.h',
+    'vitis/B_mode_focus_imaging/src/uart/uart.c'
+)
+$ActualIncrementalPaths = @(& git -c $SafeDirectory -C $Old diff --name-only $ExpectedParent $SourceCommit)
+if ($LASTEXITCODE -ne 0 -or (Compare-Object $ExpectedIncrementalPaths $ActualIncrementalPaths)) {
+    throw 'The fixed incremental source range no longer contains exactly the six reviewed PS files.'
+}
+$BlobManifest = Join-Path $Root 'build\reports\source_commit_manifest.gitblob'
+foreach ($Line in Get-Content $BlobManifest) {
+    if ($Line -notmatch '^([0-9a-f]{40})  (.+)$') { continue }
+    $ExpectedBlob = $Matches[1]
+    $GitPath = $Matches[2]
+    $ActualBlob = (& git -c $SafeDirectory -C $Old rev-parse "$SourceCommit`:$GitPath" 2>&1 | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $ActualBlob -cne $ExpectedBlob) {
+        throw "Source Git blob mismatch at $SourceCommit`: $GitPath"
     }
 }
 
-function Assert-CodeEqual([string]$OldRelative, [string]$NewRelative) {
-    $OldText = Normalize-Source (Join-Path $OldApp $OldRelative)
-    $NewText = Normalize-Source (Join-Path $NewApp $NewRelative)
-    $OldCode = (($OldText -replace '(?m)//.*$', '') -replace '\s+', '')
-    $NewCode = (($NewText -replace '(?m)//.*$', '') -replace '\s+', '')
-    if ($OldCode -cne $NewCode) {
-        throw "Protected source code changed: $NewRelative"
-    }
+# Functional and CDC invariants intentionally retained/adapted in the 2026.1
+# target. Detailed arithmetic and shot sequencing are covered by XSim tests.
+$RtlRoot = Join-Path $Root 'build\src\imports\sources'
+$RtlText = @{}
+foreach ($Entry in @{
+    Define = 'fpga_define.vh'; ProcTop = 'proc_top.sv'; Filter = 'process_top\filter_iq.sv'
+    Scan = 'scan_sync.v'; TxTop = 'tx_top\tx_top.v'; ParaReg = 'para_top\para_reg.sv'
+}.GetEnumerator()) {
+    $RtlText[$Entry.Key] = Read-SourceText (Join-Path $RtlRoot $Entry.Value)
 }
-
-# Files containing TX configuration, UART protocol definitions, B-mode tables,
-# and imaging constants were only transcoded to UTF-8; their decoded source
-# text must remain identical.
-foreach ($Relative in @(
-    'TX7332\tx7332.c',
-    'TX7332\tx7332.h',
-    'TX7332\tx7332_spi.c',
-    'TX7332\tx7332_spi.h',
-    'uart\uart.h',
-    'bram\demod_coeffs.c',
-    'bram\log_table.c',
-    'usb\xusbps_ch9_winusb.c',
-    'usb\xusbps_Ringbuffer.c',
-    'usb\xusbps_Ringbuffer.h'
+foreach ($Invariant in @(
+    @('Define', 'ADDR_RX_GAIN_SHIFT\s+20''h11530'),
+    @('ProcTop', 'beamform_active_sync_ff1'),
+    @('Filter', 'gain_shift_sync_ff1'),
+    @('Scan', 'rtc_shot'),
+    @('TxTop', 'tx_spi_rdreq_sync'),
+    @('TxTop', 'tx_spi_rdreq_pending'),
+    @('ParaReg', 'tx_spi_rxvalid_sync'),
+    @('ParaReg', 'tx_spi_req_busy')
 )) {
-    Assert-TextEqual $Relative $Relative
-}
-Assert-CodeEqual 'bram\bram_config.c' 'bram\bram_config.c'
-Assert-TextEqual 'bram\delay_profile.c' 'bram\delay_profile.c'
-
-# The AFE source has migration-only base-address/interrupt edits. Compare every
-# register-write expression instead of requiring the complete file to be equal.
-$OldAfe = Read-SourceText (Join-Path $OldApp 'AFE5832\afe5832.c')
-$NewAfe = Read-SourceText (Join-Path $NewApp 'AFE5832\afe5832.c')
-$Pattern = 'afe5832_spi_write_byte\s*\([^;]*\);'
-$OldWrites = [regex]::Matches($OldAfe, $Pattern, 'Singleline') | ForEach-Object { $_.Value -replace '\s+', '' }
-$NewWrites = [regex]::Matches($NewAfe, $Pattern, 'Singleline') | ForEach-Object { $_.Value -replace '\s+', '' }
-if (Compare-Object $OldWrites $NewWrites -SyncWindow 0) {
-    throw 'AFE5832 register-write sequence changed during migration.'
-}
-Assert-TextEqual 'AFE5832\afe5832_spi.c' 'AFE5832\afe5832_spi.c'
-
-$OldImports = Join-Path $Old 'ultrasound_focus_B_mode_imaging.srcs\sources_1\imports'
-$NewImports = Join-Path $Root 'build\src\imports'
-foreach ($OldRtl in Get-ChildItem $OldImports -Recurse -File |
-        Where-Object { $_.Extension -in '.v', '.sv', '.vh' }) {
-    $Relative = $OldRtl.FullName.Substring($OldImports.Length + 1)
-    $NewRtl = Join-Path $NewImports $Relative
-    if ($Relative -in @(
-        'vivado\Wearable_US\Wearable_US.srcs\sources_1\imports\src\afe5832_adc_14b_16lane.v',
-        'sources\proc_top.sv'
-    )) {
-        continue
-    }
-    if (-not (Test-Path $NewRtl -PathType Leaf) -or
-        (Get-FileHash $OldRtl.FullName -Algorithm SHA256).Hash -ne
-        (Get-FileHash $NewRtl -Algorithm SHA256).Hash) {
-        throw "Non-migration RTL changed during migration: $Relative"
+    if ($RtlText[$Invariant[0]] -notmatch $Invariant[1]) {
+        throw "Missing migrated RTL invariant: $($Invariant[0]) / $($Invariant[1])"
     }
 }
-$AdcRelative = 'vivado\Wearable_US\Wearable_US.srcs\sources_1\imports\src\afe5832_adc_14b_16lane.v'
-$OldAdc = Normalize-Source (Join-Path $OldImports $AdcRelative)
-$NewAdc = Normalize-Source (Join-Path $NewImports $AdcRelative)
-$AsyncAttribute = '\(\*\s*ASYNC_REG\s*=\s*"TRUE"\s*\*\)\s*'
-if (($OldAdc -replace $AsyncAttribute, '') -cne ($NewAdc -replace $AsyncAttribute, '')) {
-    throw 'ADC RTL contains changes beyond ASYNC_REG migration attributes.'
+
+$ImagingConfig = Read-SourceText (Join-Path $NewApp 'imaging_config.h')
+if ($ImagingConfig -notmatch 'PI_SHOTS_PER_LINE\s+4' -or
+    $ImagingConfig -notmatch 'PI_SHOTS_PER_FRAME\s+(?:256|\(BF_LINE_NUM\s*\*\s*PI_SHOTS_PER_LINE\))') {
+    throw 'PI-THI shot constants are missing from imaging_config.h.'
+}
+$BramConfig = Read-SourceText (Join-Path $NewApp 'bram\bram_config.c')
+if ($BramConfig -notmatch '0x0007B9BA') {
+    throw 'TX7332 startup register 0x120 value is not 0x0007B9BA.'
+}
+$UartSource = Read-SourceText (Join-Path $NewApp 'uart\uart.c')
+foreach ($CommandPattern in @(
+    'strcmp\(cmd,\s*"GAIN"\)',
+    'strcmp\(cmd,\s*"TX7332"\)',
+    'strcmp\(op,\s*"SET"\)',
+    'strcmp\(op,\s*"RD"\)',
+    'op\s*==\s*NULL\s*\|\|\s*strcmp\(op,\s*"WR"\)'
+)) {
+    if ($UartSource -notmatch $CommandPattern) {
+        throw "UART command route is missing: $CommandPattern"
+    }
+}
+$BramSource = Read-SourceText (Join-Path $NewApp 'bram\bram.c')
+$BramHeader = Read-SourceText (Join-Path $NewApp 'bram\bram.h')
+if ($UartSource -notmatch 'BEAM_ACTIVE_USE_BEAM_STOP' -or
+    $BramSource -notmatch 'BRAM_CFG_STATUS_BUSY' -or
+    $BramHeader -notmatch 'BRAM_CFG_STATUS_BUSY') {
+    throw 'TX7332 readback does not enforce BEAM STOP or expose busy status.'
 }
 
-$ProcTopRelative = 'sources\proc_top.sv'
-$OldProcTop = Normalize-Source (Join-Path $OldImports $ProcTopRelative)
-$NewProcTop = Normalize-Source (Join-Path $NewImports $ProcTopRelative)
-$SyncAttribute = '\(\*\s*ASYNC_REG\s*=\s*"TRUE"(?:\s*,\s*SHREG_EXTRACT\s*=\s*"NO"\s*,\s*DONT_TOUCH\s*=\s*"TRUE")?\s*\*\)\s*'
-$ExplicitScanEnable = '(?m)^\s*wire\s+scan_enable\s*;\s*\r?\n?'
-$OldProcTopMigrationNormalized = ((($OldProcTop -replace $SyncAttribute, '') -replace $ExplicitScanEnable, '') -replace '\s+', '')
-$NewProcTopMigrationNormalized = ((($NewProcTop -replace $SyncAttribute, '') -replace $ExplicitScanEnable, '') -replace '\s+', '')
-if ($OldProcTopMigrationNormalized -cne $NewProcTopMigrationNormalized) {
-    throw 'proc_top RTL contains changes beyond CDC preservation attributes and explicit net declaration.'
+# Imaging lifecycle added by f225a21. Keep full configuration transactions
+# separate from the BEAM pause/resume commands, which intentionally do not
+# change HV state.
+$HvSource = Read-SourceText (Join-Path $NewApp 'HV\hv.c')
+$HvHeader = Read-SourceText (Join-Path $NewApp 'HV\hv.h')
+$MainSource = Read-SourceText (Join-Path $NewApp 'main.c')
+$MainHeader = Read-SourceText (Join-Path $NewApp 'main.h')
+foreach ($LifecycleInvariant in @(
+    @($BramSource, 'void\s+Beamform_Resume\s*\([^)]*\).*?Beamform_SetControl\(0U,\s*0U\).*?usleep\(100\).*?Beamform_SetControl\(0U,\s*1U\).*?usleep\(5000\).*?Beamform_SetControl\(1U,\s*1U\)'),
+    @($BramSource, 'void\s+Beamform_Pause\s*\([^)]*\).*?Beamform_SetControl\(0U,\s*1U\)'),
+    @($BramSource, 'void\s+Beamform_Halt\s*\([^)]*\).*?Beamform_SetControl\(0U,\s*0U\)'),
+    @($BramSource, 'void\s+Beamform_Stop\s*\([^)]*\).*?hv_disable\(\).*?Beamform_Halt\(\).*?sleep\(1\)'),
+    @($BramSource, 'void\s+para_down\s*\([^)]*\).*?sin_beta_para\(\).*?hv_disable\(\).*?Beamform_Halt\(\)'),
+    @($UartSource, 'strcmp\(op,\s*"END"\).*?Beamform_Start\(\).*?"CFG_END"'),
+    @($UartSource, 'strcmp\(op,\s*"ABORT"\).*?Beamform_Stop\(\).*?"CFG_ABORT"'),
+    @($UartSource, 'static\s+void\s+uart_handle_beam.*?strcmp\(op,\s*"START"\).*?Beamform_Resume\(\).*?strcmp\(op,\s*"STOP"\).*?Beamform_Pause\(\)'),
+    @($UartSource, 'static\s+void\s+uart_handle_hv.*?strcmp\(op,\s*"ENABLE"\).*?hv_enable\(\).*?hv_is_enabled\(\).*?strcmp\(op,\s*"DISABLE"\).*?hv_disable\(\).*?Beamform_Halt\(\)'),
+    @($UartSource, 'strcmp\(cmd,\s*"HV"\).*?uart_handle_hv'),
+    @($HvSource, 'void\s+hv_enable.*?HV_EN_PIN,\s*1\).*?LED_1_EMIO_PIN,\s*1\)'),
+    @($HvSource, 'void\s+hv_disable.*?HV_EN_PIN,\s*0\).*?LED_1_EMIO_PIN,\s*0\)'),
+    @($HvHeader, 'u32\s+hv_is_enabled\s*\(void\)'),
+    @($MainSource, 'Beamform ready; STOP\.'),
+    @($MainHeader, 'LED_1_EMIO_PIN\s+55.*?LED_2_EMIO_PIN\s+54')
+)) {
+    $LifecyclePattern = '(?s)' + $LifecycleInvariant[1]
+    if ($LifecycleInvariant[0] -notmatch $LifecyclePattern) {
+        throw "Missing imaging lifecycle invariant: $($LifecycleInvariant[1])"
+    }
 }
 
 $Bd = Get-Content (Join-Path $Root 'build\src\bd\pus_ctrl_system.bd') -Raw
@@ -112,19 +149,36 @@ if ($Bd -notmatch '0x43C00000' -or $Bd -notmatch '0x40000000') {
     throw 'Expected AXI base address is missing from the block design.'
 }
 
-$XParameters = Join-Path $Root 'workspace\ubmi_p\export\ubmi_p\sw\standalone_ps7_cortexa9_0\include\xparameters.h'
-$XParametersText = Get-Content $XParameters -Raw
-foreach ($Expected in @(
-    'XPAR_XAFE5832_CTRL_PS_0_BASEADDR 0x43c00000',
-    'XPAR_XBRAM_0_BASEADDR 0x40000000',
-    'XPAR_PS7_DDR_0_BASEADDRESS 0x100000'
-)) {
-    if ($XParametersText -notmatch [regex]::Escape($Expected)) {
-        throw "Generated xparameters.h does not contain: $Expected"
+$XsaPath = Join-Path $Root 'build\output\ultrasound_B_mode_imaging.xsa'
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$XsaArchive = [System.IO.Compression.ZipFile]::OpenRead($XsaPath)
+try {
+    $HwhEntry = $XsaArchive.Entries | Where-Object { $_.FullName -eq 'pus_ctrl_system.hwh' }
+    if ($null -eq $HwhEntry) {
+        throw 'XSA does not contain pus_ctrl_system.hwh.'
+    }
+    $HwhReader = [System.IO.StreamReader]::new($HwhEntry.Open())
+    try {
+        $HardwareDefinitionText = $HwhReader.ReadToEnd()
+    }
+    finally {
+        $HwhReader.Dispose()
     }
 }
-if ($XParametersText -match 'AXIDMA|XPAR_FABRIC_') {
-    throw 'Generated xparameters.h unexpectedly contains AXI DMA or PL interrupt macros.'
+finally {
+    $XsaArchive.Dispose()
+}
+foreach ($Expected in @(
+    'NAME="C_S00_AXI_BASEADDR" VALUE="0x43C00000"',
+    'NAME="C_S_AXI_BASEADDR" VALUE="0x40000000"',
+    'NAME="PCW_DDR_RAM_BASEADDR" VALUE="0x00100000"'
+)) {
+    if ($HardwareDefinitionText -notmatch [regex]::Escape($Expected)) {
+        throw "XSA hardware definition does not contain: $Expected"
+    }
+}
+if ($HardwareDefinitionText -match 'axi_dma') {
+    throw 'XSA hardware definition unexpectedly contains AXI DMA.'
 }
 
 $IpConfigBefore = Get-Content (Join-Path $Root 'build\reports\ip_configuration_before_upgrade.txt') |
@@ -244,20 +298,6 @@ foreach ($Header in $BootOrder) {
     $BootRead,
     [System.Text.UTF8Encoding]::new($false)
 )
-
-$OldManifest = Join-Path $Root 'build\reports\old_source_manifest.sha256'
-foreach ($Line in Get-Content $OldManifest) {
-    if ($Line -notmatch '^([0-9a-fA-F]{64})  (.+)$') {
-        continue
-    }
-    $ExpectedHash = $Matches[1]
-    $OldPath = Join-Path $Old $Matches[2]
-    if (-not (Test-Path $OldPath -PathType Leaf) -or
-        (Get-FileHash $OldPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne
-        $ExpectedHash.ToLowerInvariant()) {
-        throw "Old read-only source changed after migration started: $($Matches[2])"
-    }
-}
 
 $ArtifactManifest = foreach ($Artifact in @(
     'heart_top.bit',

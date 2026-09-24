@@ -205,6 +205,10 @@ if {$mode eq "project"} {
     exit 0
 }
 
+# Keep timing closure reproducible in the 2026.1 rebuild.  This strategy adds
+# post-route physical optimization; it does not relax any timing/CDC exception.
+set_property strategy Performance_ExplorePostRoutePhysOpt [get_runs impl_1]
+
 launch_runs synth_1 -jobs 6
 wait_on_run synth_1
 if {[get_property PROGRESS [get_runs synth_1]] ne "100%"} {
@@ -221,10 +225,16 @@ open_run impl_1
 assert_pin_exists {pus_ctrl_system_wrapper_i/pus_ctrl_system_i/w_ddr_0/inst/w_ddr_v1_0_M00_AXI_inst/wr_ddr_start_ff_reg/D} W_DDR_CDC_STAGE1
 assert_pin_exists {proc_top_i/scan_sync_i/rtc_enable_sync_ff1_reg/D} SCAN_ENABLE_CDC_STAGE1
 assert_pin_exists {proc_top_i/beamform_active_sync_ff1_reg/D} BEAMFORM_ACTIVE_CDC_STAGE1
+assert_pin_exists {proc_top_i/bproc_top_i/filter_iq_i/gain_shift_sync_ff1_reg[*]/D} GAIN_SHIFT_CDC_STAGE1
+assert_pin_exists {proc_top_i/tx_top_i/tx_spi_rdreq_sync_reg[0]/D} TX_READ_REQUEST_CDC_STAGE1
+assert_pin_exists {proc_top_i/para_top_i/para_reg_i/tx_spi_rxvalid_sync_reg[0]/D} TX_READ_COMPLETION_CDC_STAGE1
 assert_pin_exists {pus_ctrl_system_wrapper_i/pus_ctrl_system_i/afe5832_adc_14b_16la_0/inst/rst_clkdiv_reg_reg[*]/PRE} ADC_RESET_SYNC_PRE
 report_timing_summary -file [file join $output_dir timing_summary.rpt]
 report_utilization -file [file join $output_dir utilization.rpt]
 report_drc -file [file join $output_dir route_drc.rpt]
+report_cdc -details -file [file join $output_dir cdc.rpt]
+report_clock_interaction -file [file join $output_dir clock_interaction.rpt]
+check_timing -verbose -file [file join $output_dir check_timing.rpt]
 
 set bit_file [file join $build_dir ${project_name}.runs impl_1 heart_top.bit]
 if {![file exists $bit_file]} {

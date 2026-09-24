@@ -86,8 +86,16 @@ begin
 	log2_coef_rdaddr <= r_log2_rdaddr;
 end
 
+// log1 + log2 overflows 16 bits. With the shipped table the maximum is
+// log1[1023] + log2[63] = 0xC0A9 + 0x7398 = 0x13441, which truncated to 16 bits
+// becomes 0x3441 and folds the brightest echoes back into the dark end of the
+// image. The wrap threshold is 16384*log10(x) = 65535, i.e. any envelope >= 10000
+// out of the 65535 the envelope word can carry. Saturate instead, so a strong
+// specular reflector clips white rather than inverting to black.
+wire [16:0] w_sum ;
 wire [15:0] w_data ;
-assign w_data = log1_coef_rddata + log2_coef_rddata;
+assign w_sum  = {1'b0, log1_coef_rddata} + {1'b0, log2_coef_rddata};
+assign w_data = w_sum[16] ? 16'hFFFF : w_sum[15:0];
 
 assign				log_headen			=	dly_headen[3];
 assign				log_head			=	dly_head[3];

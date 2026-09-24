@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include "../AFE5832/afe5832.h"
 #include "../bram/bram.h"
+#include "../HV/hv.h"
 
 #define UART_BASEADDR       XPAR_XUARTPS_0_BASEADDR
 #define UART_INT_IRQ_ID \
@@ -374,6 +375,8 @@ static const char *uart_tx7332_status_to_error(u32 status)
 		return "TX7332_SECTION";
 	case BRAM_CFG_STATUS_RANGE:
 		return "TX7332_RANGE";
+	case BRAM_CFG_STATUS_BUSY:
+		return "BEAM_ACTIVE_USE_BEAM_STOP";
 	case BRAM_CFG_STATUS_ARGS:
 	default:
 		return "TX7332_ARGS";
@@ -390,6 +393,24 @@ static void uart_handle_tx7332(char **ctx)
 	u32 count;
 	u32 words[UART_BRAM_MAX_WORDS];
 	u32 status;
+
+	if (op != NULL && strcmp(op, "RD") == 0) {
+		u32 addr;
+		u32 data;
+
+		if (section == NULL || !uart_parse_u32(section, &addr)) {
+			uart_nack(uart_cfg_seq, "TX7332_RD_ARGS");
+			return;
+		}
+
+		status = Tx7332_ReadRegister(addr, &data);
+		if (status == BRAM_CFG_STATUS_OK) {
+			uart_emitf("@RD %u TX7332 0x%03x 0x%08x", uart_cfg_seq, addr & 0x3FFU, data);
+		} else {
+			uart_nack(uart_cfg_seq, uart_tx7332_status_to_error(status));
+		}
+		return;
+	}
 
 	if (!uart_cfg_active) {
 		uart_nack(uart_cfg_seq, "NO_CFG");
@@ -418,6 +439,32 @@ static void uart_handle_tx7332(char **ctx)
 		uart_nack(uart_cfg_seq, uart_tx7332_status_to_error(status));
 	}
 }
+static void uart_handle_gain(char **ctx)
+{
+	char *op = uart_next_token(ctx);
+	char *value_text = uart_next_token(ctx);
+	u32 value;
+
+	if (op == NULL) {
+		uart_nack(uart_cfg_seq, "GAIN_ARGS");
+		return;
+	}
+	/* Deliberately NOT gated on uart_cfg_active. The point of this command is to
+	 * trim receive gain while imaging keeps running: para_st latches scan-timing
+	 * word 12 and filter_iq picks it up on the next sample, so nothing has to be
+	 * restarted and HV stays up. Digital gain amplifies quantisation noise along
+	 * with the signal, so raise the AFE LNA/PGA/DTGC first and use this for trim. */
+	if (strcmp(op, "SET") == 0) {
+		if (!uart_parse_u32(value_text, &value)) {
+			uart_nack(uart_cfg_seq, "GAIN_VALUE");
+			return;
+		}
+		value = Rx_SetGainShift(value);
+		uart_emitf("@ACK %u GAIN_SET %u", uart_cfg_seq, value);
+		return;
+	}
+	uart_nack(uart_cfg_seq, "GAIN_UNKNOWN");
+}
 
 static void uart_handle_beam(char **ctx)
 {
@@ -432,16 +479,51 @@ static void uart_handle_beam(char **ctx)
 			uart_nack(uart_cfg_seq, "CFG_ACTIVE");
 			return;
 		}
-		Beamform_Start();
+		Beamform_Resume();
 		uart_ack(uart_cfg_seq, "BEAM_START");
 		return;
 	}
 	if (strcmp(op, "STOP") == 0) {
-		Beamform_Stop();
+		Beamform_Pause();
 		uart_ack(uart_cfg_seq, "BEAM_STOP");
 		return;
 	}
 	uart_nack(uart_cfg_seq, "BEAM_UNKNOWN");
+}
+
+static void uart_handle_hv(char **ctx)
+{
+	char *op = uart_next_token(ctx);
+
+	if (op == NULL) {
+		uart_nack(uart_cfg_seq, "HV_ARGS");
+		return;
+	}
+	if (strcmp(op, "ENABLE") == 0) {
+		if (uart_cfg_active) {
+			uart_nack(uart_cfg_seq, "CFG_ACTIVE");
+			return;
+		}
+		hv_enable();
+		if (!hv_is_enabled()) {
+			uart_nack(uart_cfg_seq, "HV_ENABLE_FAILED");
+			return;
+		}
+		uart_ack(uart_cfg_seq, "HV_ENABLE");
+		return;
+	}
+	if (strcmp(op, "DISABLE") == 0) {
+		hv_disable();
+		/* Complete stop: the next BEAM START must create a spi_start edge. */
+		Beamform_Halt();
+		if (hv_is_enabled()) {
+			uart_nack(uart_cfg_seq, "HV_DISABLE_FAILED");
+			return;
+		}
+		uart_ack(uart_cfg_seq, "HV_DISABLE");
+		return;
+	}
+	uart_nack(uart_cfg_seq, "HV_UNKNOWN");
 }
 
 static void uart_handle_line(char *line)
@@ -470,6 +552,14 @@ static void uart_handle_line(char *line)
 	}
 	if (strcmp(cmd, "BEAM") == 0) {
 		uart_handle_beam(&ctx);
+		return;
+	}
+	if (strcmp(cmd, "HV") == 0) {
+		uart_handle_hv(&ctx);
+		return;
+	}
+	if (strcmp(cmd, "GAIN") == 0) {
+		uart_handle_gain(&ctx);
 		return;
 	}
 	uart_nack(uart_cfg_seq, "UNKNOWN_CMD");

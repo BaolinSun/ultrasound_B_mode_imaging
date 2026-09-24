@@ -27,7 +27,8 @@ extern XScuGic xInterruptController;
 #define AFE5832_TASK_PRIO 2
 #define USB_TASK_PRIO 7
 
-#define LED_2_EMIO_PIN 55
+#define LED_1_EMIO_PIN 55
+#define LED_2_EMIO_PIN 54
 
 #define L2Cpl310_BASE_ADDR 0xF8F02000U
 #define REG9_D_LOCKDOWN0_OFFSET 0x00000900U

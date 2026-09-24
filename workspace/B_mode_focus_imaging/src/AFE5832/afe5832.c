@@ -153,15 +153,19 @@ void AFE5832_init(void) {
 	afe5832_spi_write_byte(0x2D, (0x01 << 5) | (0x03 << 1) | (0x01 << 0));
 	afe5832_spi_write_byte(0x39, (0x00 << 5) | (0x03 << 1) | (0x01 << 0));
 
-	// 设置ADC位数
-	afe5832_spi_write_byte(0x0004, 0x0000 | (0x0001 << 4) | 0x03 | (0x0000) << 8);
+	/* Reg 4: bits[1:0] select ADC resolution and bit 4 selects MSB first.
+	 * Keep this setting synchronized with afe5832_adc_14b_16lane.v: the
+	 * serializer still transfers a 14-bit frame while the valid 12-bit sample
+	 * occupies data14[13:2]. */
+	afe5832_spi_write_byte(0x0004,
+			0x0000 | (0x0001 << 4) | (ADC_12_BITS << ADC_RES_BIT));
 
 
 	// bit 14: 15	Mhz��ͨ
 	// bit 9: 100Khz��ͨ
 	afe5832_spi_write_byte(0x00C7,
 			0x0000 | (LPF_20MHZ << 14) | (0x14<< 9) | (LPF_20MHZ << 5)
-					| (PGA_GAIN_24dB << 2) | (LNA_GAIN_18dB << 0));  // 24�� 18
+					| (PGA_GAIN_27dB << 2) | (LNA_GAIN_21dB << 0));
 
 	afe5832_spi_write_byte(0x00C6, 0x0000 | (0x00 << 2) | (0x00 << 3));
 	afe5832_spi_read_byte(0x00C7, &data);
@@ -173,8 +177,10 @@ void AFE5832_init(void) {
 	// 1. Enable DTGC Register Map Programming
 	afe5832_spi_write_byte(0x00, 0x0010);   // DTGC_WR_EN = 1
 
-	// 2. Select Memory Bank 0, SLOPE_FAC = 0, External TGC_SLOPE trigger
-	afe5832_spi_write_byte(0xA1, 0x0090);   // START_GAIN=0, STOP_GAIN=144
+	// 2. Select Memory Bank 0, SLOPE_FAC = 0, External TGC_SLOPE trigger.
+	// START_GAIN=0 preserves the full 36 dB DTGC ramp; lift the near-field
+	// floor with ADC/analog gain before applying the runtime digital trim.
+	afe5832_spi_write_byte(0xA1, 0x0090);   // START_GAIN=0 (12 dB), STOP_GAIN=144 (48 dB)
 	afe5832_spi_write_byte(0xA2, 0x0147);   // POS_STEP=1 -> 0.25 dB/step, NEG_STEP=71 -> 9 dB/step
 	afe5832_spi_write_byte(0xA3, 0x0047);   // MEM_WORD_0 ~ MEM_WORD_71
 	afe5832_spi_write_byte(0xA4, 0x0513);   // DTGC starts at 2 cm
@@ -221,6 +227,15 @@ void AFE5832_init(void) {
 
 	// 设置电源模式
 	afe5832_spi_write_byte(0x00C8, 0x0000 | (0x00 << 0));
+
+	/* Deterministic TX_TRIG pulse after the AFE register state is complete. */
+	usleep(100);
+	XGpioPs_WritePin(&gpiops, AFE5832_TX_TRIG_PIN_EMIO, 0);
+	usleep(100);
+	XGpioPs_WritePin(&gpiops, AFE5832_TX_TRIG_PIN_EMIO, 1);
+	usleep(200);
+	XGpioPs_WritePin(&gpiops, AFE5832_TX_TRIG_PIN_EMIO, 0);
+	usleep(100);
 
 }
 void AFE5832_Read_Temp(float *temp) {

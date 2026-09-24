@@ -56,6 +56,8 @@ module heart_top(
 	output							test_led
 );
 //--------------------------------------------------------------------------------------------------
+localparam	[23:0]				PARA_TX_CFG_RDDATA_ADDR = 24'h4C0114;
+//--------------------------------------------------------------------------------------------------
 wire							clk_100m;
 wire							clk_200m;
 wire							rst_n;
@@ -63,10 +65,13 @@ wire							rst_n;
 wire	[23:0]					para_addr;
 wire							para_clk;
 wire	[31:0]					para_din;
-wire	[31:0]					para_dout;
+reg		[31:0]					para_dout;
 wire							para_en;
 wire							para_rst;
 wire	[3:0]					para_we;
+wire	[31:0]					tx_cfg_rddata_debug;
+wire	[31:0]					para_rddata_unused;
+wire							para_rdvalid_unused;
 
 wire	[511:0]					data_ch;
 wire							data_clk;
@@ -148,6 +153,23 @@ pus_ctrl_system_wrapper	pus_ctrl_system_wrapper_i
 	.para_we				(para_we	)
 );
 
+// The AXI BRAM controller is configured for one cycle of read latency. The
+// generic para_top read path is multi-cycle and was never connected here, so
+// return the retained TX7332 readback through a dedicated registered address
+// decode. tx_cfg_rddata_debug is already synchronous to para_clk.
+always @(posedge para_clk)
+begin
+	if (para_rst)
+		para_dout <= 32'd0;
+	else if (para_en && (para_we == 4'b0000))
+	begin
+		if (para_addr == PARA_TX_CFG_RDDATA_ADDR)
+			para_dout <= tx_cfg_rddata_debug;
+		else
+			para_dout <= 32'd0;
+	end
+end
+
 always@(posedge data_clk)
 begin
 	proc_en <= rtc_rxen;
@@ -205,8 +227,9 @@ proc_top					proc_top_i
 	.para_rden				(1'b0			),
 	.para_addr				(para_addr		),
 	.para_wrdata			(para_din		),
-	.para_rddata			(				),
-	.para_rdvalid			(				),
+	.para_rddata			(para_rddata_unused),
+	.para_rdvalid			(para_rdvalid_unused),
+	.tx_cfg_rddata_debug	(tx_cfg_rddata_debug),
 	.tx_dsel0				(tx_dsel0		),
 	.tx_dsel1				(tx_dsel1		),
 	.tx_reset				(tx_reset		),

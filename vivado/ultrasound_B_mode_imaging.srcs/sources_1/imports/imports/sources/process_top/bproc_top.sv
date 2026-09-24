@@ -7,7 +7,7 @@ module bproc_top
 	input										reset,
 	input										rtc_trig,
 	input										rtc_rxen,
-	input		[6:0]							rtc_line,
+	input		[7:0]							rtc_shot,
 
 	output										demod_sin_rden,
 	output		[12:0]							demod_sin_rdaddr,
@@ -39,6 +39,7 @@ module bproc_top
 	input		[31:0]							bf_start,
 	input		[31:0]							bf_length,
 	input		[3:0]							rtc_down,
+	input		[3:0]							gain_shift,
 
 	input										rf_dataen,
 	input		[20:0]							rf_data,
@@ -57,7 +58,8 @@ wire	[15:0]									trans_head;
 wire											trans_start;
 wire											trans_last;
 wire											trans_dataen;
-wire	[19:0]									trans_data;
+wire	[20:0]									trans_data;
+wire	[1:0]									trans_phase;
 
 add_rf_head										add_rf_head_i
 (
@@ -66,7 +68,7 @@ add_rf_head										add_rf_head_i
 	.rtc_enable									(rtc_enable		),
 	.rtc_trig									(rtc_trig		),
 	.rtc_rfdot									(rtc_rfdot		),
-	.rtc_line									(rtc_line		),
+	.rtc_shot									(rtc_shot		),
 	.rtc_down									(rtc_down		),
 	.rf_dataen									(rf_dataen		),
 	.rf_data									(rf_data		),
@@ -75,7 +77,8 @@ add_rf_head										add_rf_head_i
 	.trans_start								(trans_start	),
 	.trans_last									(trans_last		),
 	.trans_dataen								(trans_dataen	),
-	.trans_data									(trans_data		)
+	.trans_data									(trans_data		),
+	.trans_phase								(trans_phase	)
 );
 //--------------------------------------------------------------------------------------------------
 wire											apt_headen;
@@ -90,6 +93,7 @@ apt_add											apt_add_i
 	.clk										(clk_25			),
 	.rst										(reset			),
 	.rtc_enable									(rtc_enable		),
+	.trans_phase								(trans_phase	),
 	.trans_headen								(trans_headen	),
 	.trans_head									(trans_head		),
 	.trans_start								(trans_start	),
@@ -149,7 +153,9 @@ wire	[15:0]									filter_q;
 filter_iq										filter_iq_i
 (
 	.clk										(clk_25				),
+	.reset									(reset				),
 	.rtc_rxen									(rtc_rxen			),
+	.gain_shift									(gain_shift			),
 	.filter_coef_rden							(filter_coef_rden	),
 	.filter_coef_rdaddr							(filter_coef_rdaddr),
 	.filter_coef_rddata							(filter_coef_rddata),

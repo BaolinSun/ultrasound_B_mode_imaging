@@ -10,6 +10,7 @@ module proc_top
 	input		[31:0]					para_wrdata,
 	output	reg	[31:0]					para_rddata,
 	output	reg							para_rdvalid,
+	output		[31:0]					tx_cfg_rddata_debug,
 
 	output								tx_dsel0,				//-	tx管脚，dsel0
 	output								tx_dsel1,				//-	tx管脚，dsel1
@@ -85,6 +86,7 @@ wire	[31:0]							rx_length;
 wire	[31:0]							bf_start;
 wire	[31:0]							bf_length;
 wire	[3:0]							rtc_down;
+wire	[3:0]							gain_shift;
 wire									spi_start;
 reg										i_spi_sdout;
 wire	[31:0]							tx_spi_rxdata;
@@ -98,6 +100,10 @@ wire									ctrl_spi_rdy;
 
 wire									rtc_trig;
 wire									rtc_bfen;
+wire									tx_cfg_req;
+wire									tx_cfg_ready;
+wire									tx_cfg_done;
+wire		[7:0]						rtc_shot;
 wire									beamform_active;
 (* ASYNC_REG = "TRUE", SHREG_EXTRACT = "NO", DONT_TOUCH = "TRUE" *) reg beamform_active_sync_ff1;
 (* ASYNC_REG = "TRUE", SHREG_EXTRACT = "NO", DONT_TOUCH = "TRUE" *) reg beamform_active_sync_ff2;
@@ -199,13 +205,15 @@ para_top								para_top_i
 	.bf_start							(bf_start),
 	.bf_length							(bf_length),
 	.rtc_down							(rtc_down),
+	.gain_shift							(gain_shift),
 	.rtc_enable							(rtc_enable),
 	.spi_start							(spi_start	),
 	.tx_cfg_reset						(tx_cfg_reset	),
 	.tx_spi_rdreq						(tx_spi_rdreq		),
 	.tx_spi_rdaddr						(tx_spi_rdaddr		),
 	.tx_spi_rxvalid						(tx_spi_rxvalid		),
-	.tx_spi_rxdata						(tx_spi_rxdata		)
+	.tx_spi_rxdata						(tx_spi_rxdata		),
+	.tx_cfg_rddata_debug				(tx_cfg_rddata_debug)
 );
 
 //--------------------------------------------------------------------------------------------------
@@ -215,8 +223,11 @@ tx_top									tx_top_i
 	.clk								(clk_200				),
 	.reset								(reset					),
 	.scan_enable						(beamform_active		),
-	.rtc_trig							(rtc_trig				),
+	.tx_cfg_req						(tx_cfg_req				),
 	.rtc_line							(rtc_line				),
+	.rtc_polarity						(rtc_shot[0]			),
+	.tx_cfg_ready						(tx_cfg_ready			),
+	.tx_cfg_done						(tx_cfg_done			),
 	.spi_start							(spi_start				),
 	.tx_st_reg_rden						(tx_st_reg_rden			),
 	.tx_st_reg_rdaddr					(tx_st_reg_rdaddr		),
@@ -232,6 +243,7 @@ tx_top									tx_top_i
 	.tx_spi_rdaddr						(tx_spi_rdaddr			),
 	.tx_spi_rxdata						(tx_spi_rxdata			),
 	.tx_spi_rxvalid						(tx_spi_rxvalid			),
+	.tx_cfg_rddata_debug				(tx_cfg_rddata_debug	),
 	
 	.tx_cfg_reset						(tx_cfg_reset),
 	.tx_dsel0							(tx_dsel0			),
@@ -263,6 +275,9 @@ scan_sync								scan_sync_i
 	.rx_length							(rx_length),
 	.bf_start							(bf_start),
 	.bf_length							(bf_length),
+	.tx_cfg_ready						(tx_cfg_ready),
+	.tx_cfg_done						(tx_cfg_done),
+	.tx_cfg_req						(tx_cfg_req),
 	.rtc_enable							(scan_enable),
 	.rtc_trig							(rtc_trig),
 	.rtc_txen							(rtc_txen),
@@ -271,6 +286,7 @@ scan_sync								scan_sync_i
 	.rtc_tgc_slope						(rtc_tgc_slope),
 	.rtc_tgc_updown						(rtc_tgc_updown),
 	.rtc_line							(rtc_line),
+	.rtc_shot							(rtc_shot),
 	.beamform_active					(beamform_active)
 );
 
@@ -316,7 +332,7 @@ bproc_top								bproc_top_i
 	.reset								(reset				),
 	.rtc_trig							(rtc_trig			),
 	.rtc_rxen							(rtc_rxen			),
-	.rtc_line							(rtc_line			),
+	.rtc_shot							(rtc_shot			),
 	.demod_sin_rden						(demod_sin_rden		),
 	.demod_sin_rdaddr					(demod_sin_rdaddr	),
 	.demod_sin_rddata					(demod_sin_rddata	),
@@ -344,6 +360,7 @@ bproc_top								bproc_top_i
 	.bf_start							(bf_start			),
 	.bf_length							(bf_length			),
 	.rtc_down							(rtc_down			),
+	.gain_shift							(gain_shift			),
 	.rf_dataen							(rf_dataen			),
 	.rf_data							(rf_data			),
 	.log_headen							(log_headen			),

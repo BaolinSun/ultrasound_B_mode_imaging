@@ -27,5 +27,6 @@
 u32 hv_init(void);
 void hv_enable(void);
 void hv_disable(void);
+u32 hv_is_enabled(void);
 void hv_set_volt(float volt);
 #endif
