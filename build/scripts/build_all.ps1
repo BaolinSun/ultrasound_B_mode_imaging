@@ -5,9 +5,19 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$Tools = 'C:\AMDDesignTools\2026.1'
+$Tools = if ($env:AMD_DESIGN_TOOLS_2026_1) {
+    [System.IO.Path]::GetFullPath($env:AMD_DESIGN_TOOLS_2026_1)
+} else {
+    'D:\AMDDesignTools\2026.1'
+}
 $Vivado = Join-Path $Tools 'Vivado\bin\vivado.bat'
 $Bootgen = Join-Path $Tools 'Vivado\bin\bootgen.bat'
+
+foreach ($RequiredTool in $Vivado, $Bootgen) {
+    if (-not (Test-Path -LiteralPath $RequiredTool -PathType Leaf)) {
+        throw "AMD Design Tools 2026.1 executable was not found: $RequiredTool"
+    }
+}
 
 $env:APPDATA = Join-Path $Root '.vivado-user'
 $env:LOCALAPPDATA = $env:APPDATA

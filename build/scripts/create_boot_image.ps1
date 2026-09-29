@@ -1,9 +1,17 @@
 param(
-    [string]$Bootgen = 'C:\AMDDesignTools\2026.1\Vivado\bin\bootgen.bat'
+    [string]$Bootgen
 )
 
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$Tools = if ($env:AMD_DESIGN_TOOLS_2026_1) {
+    [System.IO.Path]::GetFullPath($env:AMD_DESIGN_TOOLS_2026_1)
+} else {
+    'D:\AMDDesignTools\2026.1'
+}
+if (-not $Bootgen) {
+    $Bootgen = Join-Path $Tools 'Vivado\bin\bootgen.bat'
+}
 $Output = Join-Path $Root 'build\output'
 $Required = @(
     'zynq_fsbl.elf',

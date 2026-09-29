@@ -11,7 +11,12 @@ $env:LC_ALL = 'en_US.UTF-8'
 $env:PYTHONIOENCODING = 'utf-8'
 $env:PYTHONUTF8 = '1'
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$Vitis = 'D:\AMDDesignTools\2026.1\Vitis\bin\vitis.bat'
+$Tools = if ($env:AMD_DESIGN_TOOLS_2026_1) {
+    [System.IO.Path]::GetFullPath($env:AMD_DESIGN_TOOLS_2026_1)
+} else {
+    'D:\AMDDesignTools\2026.1'
+}
+$Vitis = Join-Path $Tools 'Vitis\bin\vitis.bat'
 if (-not (Test-Path -LiteralPath $Vitis)) {
     throw "Vitis 2026.1 was not found at $Vitis"
 }

@@ -1,0 +1,20 @@
+# Keep text files stable across Windows Git configurations. Vivado, Vitis,
+# GCC, Tcl, and PowerShell all accept LF line endings.
+* text=auto eol=lf
+
+# Native Windows command scripts require CRLF for consistent cmd.exe parsing.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.vbs text eol=crlf
+
+# Generated FPGA/software artifacts are binary.
+*.bit binary
+*.bin binary
+*.dcp binary
+*.elf binary
+*.xsa binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pdf binary

@@ -1,5 +1,10 @@
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+$Tools = if ($env:AMD_DESIGN_TOOLS_2026_1) {
+    [System.IO.Path]::GetFullPath($env:AMD_DESIGN_TOOLS_2026_1)
+} else {
+    'D:\AMDDesignTools\2026.1'
+}
 $Old = Join-Path (Split-Path -Parent $Root) 'ultrasound_focus_B_mode_imaging'
 $NewApp = Join-Path $Root 'build\src\ps'
 $WorkspaceRoot = if ($env:ULTRASOUND_VITIS_WORKSPACE) {
@@ -274,7 +279,10 @@ foreach ($Artifact in @(
     }
 }
 
-$Bootgen = 'C:\AMDDesignTools\2026.1\Vivado\bin\bootgen.bat'
+$Bootgen = Join-Path $Tools 'Vivado\bin\bootgen.bat'
+if (-not (Test-Path -LiteralPath $Bootgen -PathType Leaf)) {
+    throw "Bootgen 2026.1 was not found: $Bootgen"
+}
 $BootImage = Join-Path $Root 'build\output\BOOT.BIN'
 $BootRead = (& $Bootgen -arch zynq -read $BootImage 2>&1 | Out-String)
 if ($LASTEXITCODE -ne 0) {
