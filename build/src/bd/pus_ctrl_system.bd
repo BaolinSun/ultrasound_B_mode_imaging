@@ -1917,7 +1917,7 @@
             "value": "200.000000"
           },
           "PCW_ACT_SDIO_PERIPHERAL_FREQMHZ": {
-            "value": "100.000000"
+            "value": "10.000000"
           },
           "PCW_ACT_SMC_PERIPHERAL_FREQMHZ": {
             "value": "10.000000"
@@ -2217,7 +2217,7 @@
             "value": "0"
           },
           "PCW_EN_SDIO1": {
-            "value": "1"
+            "value": "0"
           },
           "PCW_EN_SMC": {
             "value": "0"
@@ -2247,7 +2247,7 @@
             "value": "1"
           },
           "PCW_EN_USB1": {
-            "value": "1"
+            "value": "0"
           },
           "PCW_EN_WDT": {
             "value": "0"
@@ -2850,10 +2850,10 @@
             "value": "54"
           },
           "PCW_MIO_TREE_PERIPHERALS": {
-            "value": "GPIO#Quad SPI Flash#Quad SPI Flash#Quad SPI Flash#Quad SPI Flash#Quad SPI Flash#Quad SPI Flash#GPIO#Quad SPI Flash#GPIO#SD 1#SD 1#SD 1#SD 1#SD 1#SD 1#UART 1#UART 1#I2C 0#I2C 0#I2C 1#I2C 1#SPI 1#SPI 1#SPI 1#SPI 1#GPIO#GPIO#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 1#USB 1#USB 1#USB 1#USB 1#USB 1#USB 1#USB 1#USB 1#USB 1#USB 1#USB 1#GPIO#USB Reset"
+            "value": "GPIO#Quad SPI Flash#Quad SPI Flash#Quad SPI Flash#Quad SPI Flash#Quad SPI Flash#Quad SPI Flash#GPIO#Quad SPI Flash#GPIO#GPIO#GPIO#GPIO#GPIO#GPIO#GPIO#UART 1#UART 1#I2C 0#I2C 0#I2C 1#I2C 1#SPI 1#SPI 1#SPI 1#SPI 1#GPIO#GPIO#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#USB 0#GPIO#GPIO#GPIO#GPIO#GPIO#GPIO#GPIO#GPIO#GPIO#GPIO#GPIO#GPIO#GPIO#GPIO"
           },
           "PCW_MIO_TREE_SIGNALS": {
-            "value": "gpio[0]#qspi0_ss_b#qspi0_io[0]#qspi0_io[1]#qspi0_io[2]#qspi0_io[3]/HOLD_B#qspi0_sclk#gpio[7]#qspi_fbclk#gpio[9]#data[0]#cmd#clk#data[1]#data[2]#data[3]#tx#rx#scl#sda#scl#sda#mosi#miso#sclk#ss[0]#gpio[26]#gpio[27]#data[4]#dir#stp#nxt#data[0]#data[1]#data[2]#data[3]#clk#data[5]#data[6]#data[7]#data[4]#dir#stp#nxt#data[0]#data[1]#data[2]#data[3]#clk#data[5]#data[6]#data[7]#gpio[52]#reset"
+            "value": "gpio[0]#qspi0_ss_b#qspi0_io[0]#qspi0_io[1]#qspi0_io[2]#qspi0_io[3]/HOLD_B#qspi0_sclk#gpio[7]#qspi_fbclk#gpio[9]#gpio[10]#gpio[11]#gpio[12]#gpio[13]#gpio[14]#gpio[15]#tx#rx#scl#sda#scl#sda#mosi#miso#sclk#ss[0]#gpio[26]#gpio[27]#data[4]#dir#stp#nxt#data[0]#data[1]#data[2]#data[3]#clk#data[5]#data[6]#data[7]#gpio[40]#gpio[41]#gpio[42]#gpio[43]#gpio[44]#gpio[45]#gpio[46]#gpio[47]#gpio[48]#gpio[49]#gpio[50]#gpio[51]#gpio[52]#gpio[53]"
           },
           "PCW_M_AXI_GP0_ENABLE_STATIC_REMAP": {
             "value": "0"
@@ -2987,9 +2987,6 @@
           "PCW_P2F_QSPI_INTR": {
             "value": "0"
           },
-          "PCW_P2F_SDIO1_INTR": {
-            "value": "0"
-          },
           "PCW_P2F_SPI1_INTR": {
             "value": "0"
           },
@@ -2997,9 +2994,6 @@
             "value": "0"
           },
           "PCW_P2F_USB0_INTR": {
-            "value": "0"
-          },
-          "PCW_P2F_USB1_INTR": {
             "value": "0"
           },
           "PCW_PACKAGE_DDR_BOARD_DELAY0": {
@@ -3090,34 +3084,34 @@
             "value": "0"
           },
           "PCW_SD1_GRP_CD_ENABLE": {
-            "value": "0"
+            "value": "NA"
+          },
+          "PCW_SD1_GRP_CD_IO": {
+            "value": "NA"
           },
           "PCW_SD1_GRP_POW_ENABLE": {
-            "value": "0"
+            "value": "NA"
+          },
+          "PCW_SD1_GRP_POW_IO": {
+            "value": "NA"
           },
           "PCW_SD1_GRP_WP_ENABLE": {
-            "value": "0"
+            "value": "NA"
+          },
+          "PCW_SD1_GRP_WP_IO": {
+            "value": "NA"
           },
           "PCW_SD1_PERIPHERAL_ENABLE": {
-            "value": "1"
+            "value": "NA"
           },
           "PCW_SD1_SD1_IO": {
-            "value": "MIO 10 .. 15"
-          },
-          "PCW_SDIO1_BASEADDR": {
-            "value": "0xE0101000"
-          },
-          "PCW_SDIO1_HIGHADDR": {
-            "value": "0xE0101FFF"
+            "value": "NA"
           },
           "PCW_SDIO_PERIPHERAL_CLKSRC": {
             "value": "IO PLL"
           },
-          "PCW_SDIO_PERIPHERAL_FREQMHZ": {
-            "value": "100"
-          },
           "PCW_SDIO_PERIPHERAL_VALID": {
-            "value": "1"
+            "value": "0"
           },
           "PCW_SINGLE_QSPI_DATA_MODE": {
             "value": "x4"
@@ -3473,23 +3467,11 @@
           "PCW_USB0_USB0_IO": {
             "value": "MIO 28 .. 39"
           },
-          "PCW_USB1_BASEADDR": {
-            "value": "0xE0103000"
-          },
-          "PCW_USB1_HIGHADDR": {
-            "value": "0xE0103fff"
-          },
           "PCW_USB1_PERIPHERAL_ENABLE": {
-            "value": "1"
-          },
-          "PCW_USB1_RESET_ENABLE": {
-            "value": "1"
-          },
-          "PCW_USB1_RESET_IO": {
-            "value": "MIO 53"
+            "value": "NA"
           },
           "PCW_USB1_USB1_IO": {
-            "value": "MIO 40 .. 51"
+            "value": "NA"
           },
           "PCW_USB_RESET_ENABLE": {
             "value": "1"
@@ -3498,7 +3480,7 @@
             "value": "Active Low"
           },
           "PCW_USB_RESET_SELECT": {
-            "value": "Separate reset pins"
+            "value": "Share reset pin"
           },
           "PCW_USE_AXI_FABRIC_IDLE": {
             "value": "0"
