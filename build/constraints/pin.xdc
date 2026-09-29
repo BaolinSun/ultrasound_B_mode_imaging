@@ -195,7 +195,12 @@ create_clock -period 2.500 -name dcp_0 -waveform {0.000 1.250} [get_ports dcp_0]
 #set_input_delay -clock [get_clocks dcp_0] -min -add_delay 0.500 [get_ports {dp_0[*]}]
 #set_input_delay -clock [get_clocks dcp_0] -max -add_delay 0.500 [get_ports {dp_0[*]}]
 
-#set_clock_groups -name lvds_to_sys -asynchronous -group [get_clocks dcp_0] -group [get_clocks sys_clk]
+# The AFE sample clock and board system clock come from independent oscillators.
+# Include all MMCM outputs so Vivado does not time arbitrary phase relationships
+# between the two clock trees.
+set_clock_groups -name afe_to_system_async -asynchronous \
+    -group [get_clocks -include_generated_clocks dcp_0] \
+    -group [get_clocks -include_generated_clocks sys_clk_p]
 
 #set_property LOC MMCME2_ADV_X1Y3 [get_cells pus_ctrl_system_i/data_sample/clk_wiz_0/inst/mmcm_adv_inst]
 

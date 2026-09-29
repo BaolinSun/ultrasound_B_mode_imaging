@@ -69,6 +69,11 @@ set report_dir [file join $root_dir build reports]
 set project_name ultrasound_B_mode_imaging
 set mode [expr {$argc > 0 ? [lindex $argv 0] : "build"}]
 
+# OOC synthesis workers share the per-user Tcl Store on Windows. Disable
+# background Git catalog refresh and start the initial IP runs serially to
+# avoid tclapp::load_apps races during a clean Vivado 2026.1 build.
+set_param tclapp.enableGitAccess 0
+
 if {$mode ni {project build}} {
     fail "mode must be 'project' or 'build'"
 }
@@ -209,7 +214,7 @@ if {$mode eq "project"} {
 # post-route physical optimization; it does not relax any timing/CDC exception.
 set_property strategy Performance_ExplorePostRoutePhysOpt [get_runs impl_1]
 
-launch_runs synth_1 -jobs 6
+launch_runs synth_1 -jobs 1
 wait_on_run synth_1
 if {[get_property PROGRESS [get_runs synth_1]] ne "100%"} {
     fail "synthesis did not complete: [get_property STATUS [get_runs synth_1]]"

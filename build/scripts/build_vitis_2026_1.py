@@ -4,6 +4,7 @@
 import os
 import re
 import shutil
+import socket
 import stat
 import sys
 import time
@@ -25,6 +26,18 @@ DOMAIN_NAME = "standalone_ps7_cortexa9_0"
 APP_NAME = "B_mode_focus_imaging"
 FSBL_NAME = "zynq_fsbl"
 STAGE = os.environ.get("ULTRASOUND_VITIS_STAGE", "all").lower()
+
+
+def reserve_free_tcp_port():
+    """Return a local port for the Vitis gRPC server.
+
+    Vitis 2026.1 on Windows can spin forever while discovering an implicit
+    server port if vitis-server exits before printing its port.  Supplying an
+    explicit free port avoids that broken stdout-discovery loop.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+        listener.bind(("127.0.0.1", 0))
+        return listener.getsockname()[1]
 
 
 def newest_file(root, filename):
@@ -146,7 +159,9 @@ if os.path.isdir(WORKSPACE):
 os.makedirs(WORKSPACE, exist_ok=True)
 os.makedirs(OUTPUT, exist_ok=True)
 
-client = vitis.create_client()
+server_port = reserve_free_tcp_port()
+print(f"VITIS_MIGRATION: starting Vitis server on port {server_port}", flush=True)
+client = vitis.create_client(port=server_port)
 try:
     client.set_workspace(WORKSPACE)
     print(f"VITIS_MIGRATION: creating platform from {XSA}")

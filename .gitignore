@@ -22,6 +22,7 @@
 /workspace/B_mode_focus_imaging/build/
 /workspace/B_mode_focus_imaging/compile_commands.json
 /workspace/B_mode_focus_imaging/src/compile_commands.json
+/workspace/B_mode_focus_imaging/src/.compile_commands/
 /workspace/B_mode_focus_imaging/src/.cache/
 /workspace/B_mode_focus_imaging/src/.clangd
 /workspace/B_mode_focus_imaging/_ide/bitstream/
@@ -46,6 +47,10 @@ Release/
 
 # Reproducible build state and delivery artifacts
 /build/ipython/
+/build/workspace_backups/
+/build/vitis_workspace_verify_2026_1/
+/build/reports/*.jou
+/build/reports/*.log
 /build/vivado-temp/
 /build/*.jou
 /build/*.log
