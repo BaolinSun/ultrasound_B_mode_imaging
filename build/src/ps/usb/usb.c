@@ -14,17 +14,17 @@
 #define USB_CFG_LINE_MAX 160U
 #define USB_CFG_LINE_DEPTH 4U
 #define USB_CFG_RESP_MAX 160U
-#define USB1_RST_PIN 53
+#define USB0_PHY_RST_PIN 49U
 
 /*
  * SDT encodes the interrupt specifier from the device tree.  For a GIC SPI,
- * XGet_IntrId() is the SPI number (44 for USB1), not the GIC interrupt ID
- * expected by XScuGic_Connect().  Add the SPI offset (32) to obtain 76,
- * which is also the legacy XPS_USB1_INT_ID value used by the 2020.2 BSP.
+ * XGet_IntrId() is the SPI number (21 for USB0), not the GIC interrupt ID
+ * expected by XScuGic_Connect().  Add the SPI offset (32) to obtain 53,
+ * which is also the legacy XPS_USB0_INT_ID value.
  */
-#define USB1_GIC_INTR_ID \
-	((u16)(XGet_IntrId(XPAR_XUSBPS_1_INTERRUPTS) + \
-		XGet_IntrOffset(XPAR_XUSBPS_1_INTERRUPTS)))
+#define USB0_GIC_INTR_ID \
+	((u16)(XGet_IntrId(XPAR_XUSBPS_0_INTERRUPTS) + \
+		XGet_IntrOffset(XPAR_XUSBPS_0_INTERRUPTS)))
 
 u8 usb_serial_ok = 0;
 
@@ -50,20 +50,28 @@ XUsbPs UsbInstance; /* The instance of the USB Controller */
 u8 usb_ready_data[4] = { 0xef, 0xef, 0x01, 0x90 };
 u32 usb_init(void) {
 	u32 Status;
-	// 先复位usb
-	XGpioPs_SetDirectionPin(&gpiops, USB1_RST_PIN, 1);
-	XGpioPs_SetOutputEnablePin(&gpiops, USB1_RST_PIN, 1);
-	XGpioPs_WritePin(&gpiops, USB1_RST_PIN, 0);
+	u32 Timeout = XUSBPS_TIMEOUT_COUNTER;
+
+	/* The new PCB routes the active-low USB0 PHY reset to PS GPIO MIO49. */
+	XGpioPs_SetDirectionPin(&gpiops, USB0_PHY_RST_PIN, 1);
+	XGpioPs_SetOutputEnablePin(&gpiops, USB0_PHY_RST_PIN, 1);
+	XGpioPs_WritePin(&gpiops, USB0_PHY_RST_PIN, 0);
 	usleep(2000);
-	XGpioPs_WritePin(&gpiops, USB1_RST_PIN, 1);
+	XGpioPs_WritePin(&gpiops, USB0_PHY_RST_PIN, 1);
 
-	u32 *usb1_base = (u32 *) (UINTPTR) (XPAR_XUSBPS_1_BASEADDR + 0x140U);
-	*usb1_base = 0x00080002; //reset value + reset bit to 1
-
-	while ((*usb1_base & 0x2) > 0) { //wait till reset is done
+	XUsbPs_WriteReg(XPAR_XUSBPS_0_BASEADDR, XUSBPS_CMD_OFFSET,
+			0x00080000U | XUSBPS_CMD_RST_MASK);
+	while ((XUsbPs_ReadReg(XPAR_XUSBPS_0_BASEADDR, XUSBPS_CMD_OFFSET) &
+			XUSBPS_CMD_RST_MASK) != 0U && Timeout > 0U) {
+		Timeout--;
 	}
+	if (Timeout == 0U) {
+		DEBUG_PRINT("usb controller reset timeout\r\n");
+		return XST_FAILURE;
+	}
+
 	Status = xusb_COMMS_init(&xInterruptController, &UsbInstance,
-	XPAR_XUSBPS_1_BASEADDR, USB1_GIC_INTR_ID, 0);
+			XPAR_XUSBPS_0_BASEADDR, USB0_GIC_INTR_ID, 0);
 	if (Status != XST_SUCCESS) {
 		DEBUG_PRINT("usb init fail\r\n");
 		return XST_FAILURE;
@@ -75,8 +83,6 @@ u32 usb_init(void) {
 
 void usb_printf(char *str, u32 len) {
 	u8 str_temp[30];
-	u8 *padding = ' ';
-	u8 len_temp = len;
 
 	if (usb_serial_ok) {
 		for (int i = 0; i < 30; i++) {

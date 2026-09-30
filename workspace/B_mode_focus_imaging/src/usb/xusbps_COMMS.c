@@ -496,7 +496,7 @@ static int UsbSetupIntrSystem(XScuGic *IntcInstancePtr, XUsbPs *UsbInstancePtr,
 	if (Status != XST_SUCCESS) {
 		return Status;
 	}
-	/* USB1 is an active-high, level-sensitive GIC SPI in the SDT. */
+	/* USB0 is an active-high, level-sensitive GIC SPI in the SDT. */
 	XScuGic_SetPriorityTriggerType(IntcInstancePtr, UsbIntrId, 0xA0, 0x01);
 
 	/*
