@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -18,12 +19,15 @@ class SoakTests(unittest.TestCase):
     def simulate(self, corrupt=False, length=8, delay_response=False,
                  fail_trigger=False, fail_status=False, drop_packet=False,
                  device_failed=False, bad_device_counts=False,
-                 fail_after_send=False):
+                 fail_after_send=False, strict=True, frames=1,
+                 only_first=False, reorder=False, no_data=False,
+                 late_after_reject=False, busy_reads=0):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.bind(("127.0.0.1", 0))
             udp_port = probe.getsockname()[1]
         capture_done = threading.Event()
-        events = {"posts": 0, "status_reads": 0, "rx_before_http_response": False}
+        events = {"posts": 0, "status_reads": 0, "rx_before_http_response": False,
+                  "busy_remaining": 0}
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):
                 pass
@@ -42,7 +46,10 @@ class SoakTests(unittest.TestCase):
                     if fail_status and events["status_reads"] > 1:
                         self.respond({"error":"status unavailable"}, 503)
                         return
-                    self.respond({"selftest_bytes":length, "upload_ready":True, "busy":False,
+                    busy = events["busy_remaining"] > 0
+                    if busy:
+                        events["busy_remaining"] -= 1
+                    self.respond({"selftest_bytes":length, "upload_ready":True, "busy":busy,
                         "result":"send_error" if device_failed else "sent_local",
                         "sent_bytes":length, "packets":0 if bad_device_counts else (length + 1439) // 1440,
                         "retries":3, "socket_errno":12,
@@ -50,17 +57,25 @@ class SoakTests(unittest.TestCase):
                         "internal_min_free":90000})
             def do_POST(self):
                 events["posts"] += 1
+                events["busy_remaining"] = busy_reads
+                faulty = not only_first or events["posts"] == 1
                 if fail_trigger:
                     self.respond({"error":"upload unavailable"}, 503)
                     return
                 if not delay_response:
                     self.respond({"message":"accepted"}, 202)
                 raw = bytearray(pattern_bytes(length))
-                if corrupt:
+                if corrupt and faulty:
                     raw[0] ^= 1
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
-                    for i in range(0, len(raw), 1440):
-                        if drop_packet and i == 1440:
+                    offsets = list(range(0, len(raw), 1440))
+                    if reorder and faulty:
+                        offsets[0], offsets[1] = offsets[1], offsets[0]
+                    if late_after_reject and faulty:
+                        sender.sendto(b"bad", ("127.0.0.1", udp_port))
+                        time.sleep(0.08)
+                    for i in offsets:
+                        if (drop_packet and faulty and i == 1440) or (no_data and faulty):
                             continue
                         sender.sendto(raw[i:i + 1440], ("127.0.0.1", udp_port))
                 if delay_response:
@@ -84,11 +99,13 @@ class SoakTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as directory:
                 log_path = Path(directory) / "soak.jsonl"
+                argv = ["soak_test", "--device-ip", "127.0.0.1", "--hours", "1",
+                        "--frames", str(frames), "--interval", "0", "--log", str(log_path)]
+                if strict:
+                    argv.append("--stop-on-frame-error")
                 with patch.object(soak_test, "request", local_request), \
                      patch.object(soak_test, "receive_upload", short_receive), \
-                     patch.object(sys, "argv", [
-                    "soak_test", "--device-ip", "127.0.0.1", "--hours", "0.00002",
-                    "--interval", "0", "--log", str(log_path)]):
+                     patch.object(sys, "argv", argv):
                     code = soak_test.main()
                 entries = [json.loads(line) for line in log_path.read_text().splitlines()]
                 return code, entries, events
@@ -195,3 +212,73 @@ class SoakTests(unittest.TestCase):
             with self.assertRaises(SystemExit) as exit_info:
                 soak_test.main()
         self.assertEqual(exit_info.exception.code, 2)
+
+    def test_default_discards_lost_frame_then_accepts_next(self):
+        code, entries, events = self.simulate(length=4324, drop_packet=True,
+                                             only_first=True, strict=False, frames=2)
+        self.assertEqual(code, 0)
+        self.assertEqual(events["posts"], 2)  # New upload, not a retry of a bad frame.
+        self.assertEqual([e["frame_status"] for e in entries], ["discarded", "valid"])
+        self.assertEqual(entries[-1]["valid_frames"], 1)
+        self.assertEqual(entries[-1]["discarded_frames"], 1)
+        self.assertEqual(entries[-1]["frame_drop_rate"], 0.5)
+        self.assertIn("bad datagram length", entries[0]["discard_reason"])
+        self.assertTrue(all("payload" not in e for e in entries))
+
+    def test_corrupt_frame_discard_does_not_stop_default_run(self):
+        code, entries, _ = self.simulate(corrupt=True, only_first=True, strict=False, frames=2)
+        self.assertEqual(code, 0)
+        self.assertFalse(entries[0]["passed"])
+        self.assertEqual(entries[0]["discard_reason"], "self-test pattern mismatch")
+        self.assertTrue(entries[1]["passed"])
+
+    def test_reordered_frame_is_discarded_without_reassembly(self):
+        code, entries, _ = self.simulate(length=3000, reorder=True,
+                                        only_first=True, strict=False, frames=2)
+        self.assertEqual(code, 0)
+        self.assertEqual(entries[0]["received_bytes"], 3000)
+        self.assertGreater(entries[0]["mismatch_bytes"], 0)
+        self.assertEqual(entries[0]["frame_status"], "discarded")
+        self.assertTrue(entries[1]["passed"])
+
+    def test_completely_lost_frame_does_not_stop_default_run(self):
+        code, entries, _ = self.simulate(no_data=True, only_first=True, strict=False, frames=2)
+        self.assertEqual(code, 0)
+        self.assertEqual(entries[0]["received_bytes"], 0)
+        self.assertFalse(entries[0]["pattern_checked"])
+        self.assertTrue(entries[1]["passed"])
+
+    def test_busy_device_and_late_remainder_are_settled_before_next_upload(self):
+        code, entries, events = self.simulate(length=3000, late_after_reject=True,
+                                             busy_reads=2, only_first=True, strict=False, frames=2)
+        self.assertEqual(code, 0)
+        self.assertGreater(events["status_reads"], 3)
+        self.assertEqual(entries[0]["drained_datagrams"], 3)
+        self.assertFalse(entries[0]["device_busy"])
+        self.assertTrue(entries[1]["passed"])
+
+    def test_all_frames_discarded_is_not_reported_as_success(self):
+        code, entries, events = self.simulate(corrupt=True, strict=False, frames=2)
+        self.assertEqual(code, 1)
+        self.assertEqual(events["posts"], 2)
+        self.assertEqual(entries[-1]["valid_frames"], 0)
+        self.assertEqual(entries[-1]["discarded_frames"], 2)
+
+    def test_control_errors_still_stop_loss_tolerant_run(self):
+        code, entries, events = self.simulate(fail_trigger=True, strict=False, frames=2)
+        self.assertEqual(code, 1)
+        self.assertEqual(events["posts"], 1)
+        self.assertIn("503", entries[0]["control_error"])
+
+    def test_wait_for_idle_has_a_deadline(self):
+        with patch.object(soak_test, "request", return_value={"busy": True}), \
+             patch.object(soak_test.time, "monotonic", side_effect=[0, 36]):
+            with self.assertRaisesRegex(OSError, "remained busy"):
+                soak_test.wait_for_idle("127.0.0.1")
+
+    def test_drain_has_a_deadline_under_continuous_traffic(self):
+        sock = unittest.mock.Mock()
+        sock.recvfrom.return_value = (b"late", ("127.0.0.1", 1234))
+        with patch.object(soak_test.time, "monotonic", side_effect=[0, 0, 0, 1.9, 2.01]):
+            with self.assertRaisesRegex(OSError, "did not become quiet"):
+                soak_test.drain_until_quiet(sock)

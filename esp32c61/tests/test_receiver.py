@@ -162,6 +162,23 @@ class ReceiverTests(unittest.TestCase):
         self.assertFalse(r["passed"])
         self.assertIn("extra datagram", r["error"])
 
+    def test_recent_frame_source_is_ignored_before_pinning_new_source(self):
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver, \
+             socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as old_sender, \
+             socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as new_sender:
+            receiver.bind(("127.0.0.1", 0))
+            old_sender.bind(("127.0.0.1", 0))
+            new_sender.bind(("127.0.0.1", 0))
+            def send_both():
+                # Even a perfectly matching old test frame must not be delivered.
+                old_sender.sendto(pattern_bytes(4), receiver.getsockname())
+                new_sender.sendto(pattern_bytes(4), receiver.getsockname())
+            r = receive_upload(receiver, 4, wait_timeout=0.2, grace_period=0,
+                               on_ready=send_both, excluded_sources=(old_sender.getsockname(),))
+            self.assertTrue(r["passed"])
+            self.assertEqual(r["ignored_datagrams"], 1)
+            self.assertEqual(r["source"], new_sender.getsockname())
+
     def run_cli(self, blocks, length):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.bind(("127.0.0.1", 0))

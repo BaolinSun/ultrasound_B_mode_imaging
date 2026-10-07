@@ -78,7 +78,8 @@ def receive_upload(sock: socket.socket, expected_bytes: int = DEFAULT_BYTES,
                    check_pattern: bool = True, wait_timeout: float = 60,
                    idle_timeout: float = 5, transfer_timeout: float = 30,
                    source_ip: str | None = None, grace_period: float = 0.25,
-                   on_ready: Callable[[], None] | None = None) -> dict:
+                   on_ready: Callable[[], None] | None = None,
+                   excluded_sources: tuple[tuple[str, int], ...] = ()) -> dict:
     capture = Capture(expected_bytes, check_pattern)
     wait_started = time.monotonic()
     started = last = finished = None
@@ -110,7 +111,8 @@ def receive_upload(sock: socket.socket, expected_bytes: int = DEFAULT_BYTES,
             data, address = sock.recvfrom(65535)
         except socket.timeout:
             continue
-        if (source_ip and address[0] != source_ip) or (source and address != source):
+        if ((source_ip and address[0] != source_ip) or (source and address != source)
+                or address in excluded_sources):
             ignored += 1
             continue
         if capture.complete:
