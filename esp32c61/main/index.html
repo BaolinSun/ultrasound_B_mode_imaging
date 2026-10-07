@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>超声 PSRAM · UDP 上传</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eef2f6;color:#172b42;font:16px/1.6 system-ui,sans-serif}
+main{max-width:840px;margin:36px auto;padding:0 18px}h1{font-size:28px;margin-bottom:8px}h2{font-size:20px;margin:0 0 16px}
+.muted{color:#53657a}.card{background:white;border:1px solid #d6dee7;border-radius:14px;padding:24px;margin:20px 0}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}label{display:block;font-weight:600}input:not([type=checkbox]){width:100%;font:inherit;border:1px solid #aab7c6;border-radius:7px;padding:9px;margin:6px 0}
+small{display:block;font-weight:400;color:#53657a}button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:10px 18px;background:#126f78;color:white;cursor:pointer;margin:16px 10px 0 0}
+button.secondary{background:#e4eaf1;color:#263e56}button:disabled{opacity:.5;cursor:not-allowed}input:focus,button:focus{outline:3px solid #77c3cd}
+dl{display:grid;grid-template-columns:130px 1fr;gap:8px;margin:0}dt{color:#53657a}dd{margin:0;overflow-wrap:anywhere}
+progress{width:100%;height:18px;margin-top:18px}.notice{padding:12px 16px;border-left:4px solid #126f78;background:#e0f2f1;white-space:pre-wrap}.error{border-color:#bc3939;background:#ffeceb}
+a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template-columns:1fr}.card{padding:18px}dl{grid-template-columns:100px 1fr}}
+</style></head><body><main>
+<p class="muted">ESP32-C61 / B-mode imaging</p><h1>PSRAM 数据上传</h1>
+<p class="muted">配置 Wi-Fi 与上位机地址，从外部 PSRAM 读取数据并以原始 UDP 数据报发送。</p>
+<div id="message" class="notice" role="status" aria-live="polite">正在读取设备配置…</div>
+<section class="card"><h2>连接与目标地址</h2><form id="config-form">
+<div class="grid"><label>路由器 SSID<input id="ssid" maxlength="32" autocomplete="off"><small>为空时保留配置热点；长度按 UTF-8 字节计算。</small></label>
+<label>Wi-Fi 密码<input id="password" type="password" maxlength="64" autocomplete="new-password"><small>留空保留已有密码；开放网络请勾选下方选项。</small></label>
+<label>上位机 IPv4<input id="target-ip" placeholder="192.168.1.100" inputmode="decimal"><small>填写运行 UDP 接收程序的电脑地址。</small></label>
+<label>UDP 端口<input id="target-port" type="number" min="1" max="65535" value="50001" required></label></div>
+<label><input id="open-network" type="checkbox"> 使用开放 Wi-Fi（清空已保存密码）</label>
+<button id="save" type="submit">保存并应用</button><small>目标地址下一次上传生效。修改 Wi-Fi 后会重新连接；连接成功 15 秒后关闭配置热点。</small>
+</form></section>
+<section class="card"><h2>设备与传输状态</h2><dl>
+<dt>网络状态</dt><dd id="network">—</dd><dt>局域网页面</dt><dd><a id="sta-link">—</a></dd>
+<dt>配置热点</dt><dd id="ap">—</dd><dt>PSRAM</dt><dd id="memory">—</dd>
+<dt>测试缓冲区</dt><dd id="test-size">—</dd><dt>本次目标</dt><dd id="destination">—</dd>
+<dt>上传结果</dt><dd id="result">—</dd><dt>数据包 / 重试</dt><dd id="packets">—</dd>
+</dl><progress id="progress" max="1" value="0"></progress><p id="bytes" class="muted">尚未上传</p>
+<button id="upload" disabled>上传一次 PSRAM 自测数据</button><button id="stop" class="secondary" disabled>停止上传</button>
+<p class="muted">先启动上位机接收程序，再点击上传。数据包不包含帧头或序号；“本地发送完成”不代表上位机已完整收到，请查看接收端校验结果。</p>
+</section></main><script>
+'use strict';
+const el=id=>document.getElementById(id);
+let configLoaded=false, targetConfigured=false, refreshing=false, saving=false, offline=false;
+function notify(text,error=false){el('message').textContent=text;el('message').classList.toggle('error',error)}
+async function api(path,options={}){const r=await fetch(path,{cache:'no-store',...options});const j=await r.json();if(!r.ok)throw Error(j.message||`HTTP ${r.status}`);return j}
+async function loadConfig(){const c=await api('/api/config');el('ssid').value=c.ssid;el('target-ip').value=c.target_ip;el('target-port').value=c.target_port;targetConfigured=!!c.target_ip;configLoaded=true}
+const results={sent_local:'本地发送完成（请核对接收端）',invalid:'参数无效',busy:'正在发送',not_ready:'等待配置 / 尚未上传',cancelled:'已停止',link_down:'网络中断',timeout:'上传超时',send_error:'发送失败'};
+function render(s){
+ el('network').textContent=s.reconfiguring?'正在重新配网':s.connected?'已连接路由器':'未连接路由器';
+ el('sta-link').textContent=s.sta_ip?`http://${s.sta_ip}/`:'等待分配 IP';if(s.sta_ip)el('sta-link').href=`http://${s.sta_ip}/`;else el('sta-link').removeAttribute('href');
+ el('ap').textContent=s.ap_active?`${s.ap_ssid} · 192.168.4.1`:'已关闭';
+ el('memory').textContent=`总计 ${s.psram_total} B / 空闲 ${s.psram_free} B / 最大空闲块 ${s.psram_largest} B`;
+ el('test-size').textContent=s.selftest_bytes?`${s.selftest_bytes} B`:'不可用（检查 PSRAM 与串口日志）';
+ el('destination').textContent=s.active_ip?`${s.active_ip}:${s.active_port}`:'尚未上传';
+ el('result').textContent=(results[s.result]||s.result)+(s.socket_errno?` · errno ${s.socket_errno}`:'');
+ el('packets').textContent=`${s.packets} / ${s.retries}`;
+ el('progress').max=s.total_bytes||1;el('progress').value=s.sent_bytes;
+ el('bytes').textContent=`本地发送 ${s.sent_bytes} / ${s.total_bytes} B`;
+ el('upload').disabled=saving||!configLoaded||!targetConfigured||!s.upload_ready||!s.selftest_bytes||s.busy;el('stop').disabled=!s.busy;
+}
+async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;el('upload').disabled=true;el('stop').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false}}
+el('config-form').addEventListener('submit',async event=>{event.preventDefault();saving=true;el('save').disabled=true;el('upload').disabled=true;const c={ssid:el('ssid').value,target_ip:el('target-ip').value.trim(),target_port:Number(el('target-port').value)};
+ if(el('open-network').checked)c.password='';else if(el('password').value)c.password=el('password').value;
+ try{const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});targetConfigured=!!c.target_ip;configLoaded=true;el('password').value='';el('open-network').checked=false;notify(r.message)}catch(e){notify(e.message,true)}finally{saving=false;el('save').disabled=false;await refresh()}});
+el('upload').addEventListener('click',async()=>{el('upload').disabled=true;try{notify((await api('/api/upload',{method:'POST'})).message)}catch(e){notify(e.message,true)}await refresh()});
+el('stop').addEventListener('click',async()=>{try{notify((await api('/api/stop',{method:'POST'})).message)}catch(e){notify(e.message,true)}await refresh()});
+refresh();setInterval(refresh,1000);
+</script></body></html>

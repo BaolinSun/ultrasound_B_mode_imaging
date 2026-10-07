@@ -1,0 +1,130 @@
+# ESP32-C61 PSRAM 原始 UDP 上传
+
+本目录是独立 ESP-IDF 6.1 工程，读取 ESP32-C61 外部 PSRAM 缓冲区，经 Wi-Fi STA 向上位机发送原始 UDP 数据报。网页完成首次配网、目标 IP/端口在线配置、单次自测上传及停止操作。
+
+本次数据源为 PSRAM 自测缓冲区和业务提交接口；没有接入 SDIO，也没有修改 Zynq PS 或 RTL。现有 `zynq_esp32_sdio_system` 的带帧头接收程序不能直接用于本工程。
+
+## 构建与烧录
+
+本机 IDF 源码：`D:\Program Files\esp\v6.1\esp-idf`。安装器实际工具环境：`C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1`。直接运行 IDF 的 `export.ps1` 可能错误地寻找用户目录下的 Python 环境，`build.ps1` 已使用安装器配置。
+
+```powershell
+Set-Location 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61'
+.\build.ps1
+.\build.ps1 -Action size
+.\build.ps1 -Action flash -Port COM7
+.\build.ps1 -Action monitor -Port COM7
+```
+
+`COM7` 是示例，替换为实际 USB Serial/JTAG 端口。脚本默认仅构建，不自动烧录或擦除 NVS。其他电脑可传入 `-ActivationScript`、`-IdfPath`，或在已激活的 IDF 6.1 shell 中运行。
+
+默认：Flash 4 MiB，IDF 内置 1500 KiB 单应用分区，Quad PSRAM 40 MHz，USB Serial/JTAG 控制台，FreeRTOS 1000 Hz。PSRAM 容量由启动检测确定。PSRAM 缺失或自测分配失败时仍可访问配置页，但禁止自测上传，不使用 SRAM 替代测试数据。
+
+```powershell
+.\build.ps1 -Action menuconfig
+```
+
+`Ultrasound PSRAM raw UDP` 菜单支持最大提交长度（默认 1048576）、自测长度（默认 787456）、总超时（默认 30000 ms）。自测长度应不大于最大提交长度和可分配 PSRAM。IDF 6.x 的 JSON 已迁移到 `espressif/cjson`，本工程锁定 `1.7.19~2`，本机安装器缓存可用于构建。
+
+## 第一次使用
+
+1. 烧录并打开 USB 控制台，读取 `Ultrasound-C61-xxxxxx` 配置热点及随机密码。密码保存到 NVS，重启保持。
+2. 手机或电脑连接该热点，访问 `http://192.168.4.1/`。
+3. 填写路由器 SSID/密码、上位机 IPv4 和 UDP 端口。端口默认 50001，目标 IP 默认未配置。上位机填写运行接收程序的电脑局域网地址，不能填写 ESP32 自己的地址。
+4. 保存后等待 STA 获得 IP，网页和控制台显示 `http://设备局域网IP/`。连接成功 15 秒后关闭配置热点，电脑连接同一路由器后使用该地址访问配置页。路由器须允许客户端互访，Windows 防火墙需允许接收程序使用指定 UDP 端口。
+5. 先运行接收程序，再在网页点击“上传一次 PSRAM 自测数据”。每次接收使用一个新输出文件，避免覆盖既有结果。
+
+```powershell
+python 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\pc_tools\raw_udp_receiver.py' --port 50001 --bytes 787456 --output capture_001.bin
+```
+
+工具默认等待首次数据 60 秒、数据中断超时 5 秒、单次接收总超时 30 秒。正常且内容校验通过退出 0；缺失、异常长度、顺序/内容异常或额外包退出 1，已有数据保存为 `.partial`。使用 `--source-ip 设备局域网IP` 可过滤其他发送者。
+
+业务数据可使用 `--pattern none` 仅按长度接收保存；此时通过只表示长度满足要求，不能证明业务内容正确。若修改固件自测长度，需要同步修改 `--bytes`。
+
+## 数据格式与内存所有权
+
+发送内容严格为 PSRAM 字节：每包最多 1440 字节，末包为剩余长度，无应用层包头、包序号、帧号或结束标记。默认 787456 字节产生 547 包：546 个 1440 字节包和 1 个 1216 字节尾包。自测第 `i` 个 32 位小端字为 `i XOR 0xA5C30000`；奇数字节长度也按该模式截断。
+
+原始 UDP 不支持可靠帧重组、端到端确认或丢包重传；上位机必须预先知道本次长度，每次仅触发一个上传。自测可通过已知内容检测异常，但不能据此恢复丢失数据。一般业务流在丢失或乱序后无法保证对齐。`sent_local` 仅代表本地 `sendto()` 成功。
+
+数据路径为：登记的 PSRAM 缓冲区 → 1440 字节内部 SRAM staging → UDP socket → 上位机。发送任务优先级 5，每 32 包让出 CPU 至少 1 ms；`ENOMEM/ENOBUFS/EAGAIN/EWOULDBLOCK` 最多重试 100 次。socket 发送超时 100 ms，总期限从接受提交起计时。断网、IP 丢失、重新配网、停止或超时终止当前上传，不自动重放。
+
+公共接口位于 `main/psram_udp.h`。为了检查完整缓冲区范围，提交仅接受已登记的 PSRAM 内存，可提交登记缓冲区的子范围；最多登记 4 个缓冲区。
+
+```c
+#include "psram_udp.h"
+
+static void uploaded(raw_result_t result, size_t sent, void *context)
+{
+    // result/sent 供业务记录；回调在 UDP 任务中，必须短且不阻塞。
+    (void)result;
+    (void)sent;
+    psram_udp_free(context);
+}
+
+// psram_udp_init() 已由 app_main 调用。
+uint8_t *buffer = psram_udp_alloc(length);
+if (buffer != NULL) {
+    // 在此填充业务数据，上传期间不得修改。
+    esp_err_t err = psram_udp_submit(buffer, length, uploaded, buffer);
+    if (err != ESP_OK) psram_udp_free(buffer); // 拒绝提交不会触发回调
+}
+```
+
+业务若自行用 `heap_caps_malloc(..., MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)` 分配，需要先调用 `psram_udp_register_buffer(base, capacity)`。调用方保证登记的是仍有效的真实分配范围，完成后先 unregister 再释放。模块自行分配的缓冲区使用 `psram_udp_free()`。正在发送的范围不能释放或注销。
+
+提交返回：`ESP_OK` 已接受；`ESP_ERR_INVALID_ARG` 越界/无效长度/未登记/空回调；`ESP_ERR_TIMEOUT` 已忙；`ESP_ERR_INVALID_STATE` 未连接或目标未配置。完成回调不可为空，只有成功接受的提交会产生一次完成回调，成功、失败、取消都覆盖。接受后直到回调前不得释放或修改内容。
+
+FreeRTOS mutex 保护配置快照、登记范围、上传状态及任务间访问；任务通知唤醒单一发送任务。同次上传固定目标 IP/端口，在线修改只影响下一次提交。回调在锁外执行。此处是软件任务同步；本次没有新增 FPGA CDC crossing 或约束。
+
+## 网页 API 与配置行为
+
+| API | 行为 |
+| --- | --- |
+| `GET /` | 固件内嵌配置页面 |
+| `GET /api/config` | SSID、是否有密码、目标 IPv4/端口，不返回密码 |
+| `PUT /api/config` | JSON 配置校验后保存到 NVS，再更新当前快照 |
+| `GET /api/status` | 网络、PSRAM/内部堆、上传字节、包数、重试、结果与 errno |
+| `POST /api/upload` | 单次上传 PSRAM 自测缓冲区，202；忙时 409；不可用时 503 |
+| `POST /api/stop` | 请求终止当前上传，202；本地已排队的数据报不能撤回 |
+
+配置 JSON 必需 `ssid`、`target_ip`、`target_port`；`password` 可省略以保留原密码，显式空字符串表示开放 Wi-Fi。空 SSID 启用配网热点，空目标 IP 暂停后续上传。SSID 最多 32 UTF-8 字节；密码为空、8..63 字节或 64 个十六进制字符；目标需规范点分十进制单播 IPv4，不接受前导零、未指定、环回、组播地址；端口为 1..65535 整数。请求体最多 768 字节。
+
+示例（HTTP 运行于 TCP，数据运行于 UDP）：
+
+```json
+{"ssid":"your-router","password":"your-password","target_ip":"192.168.1.100","target_port":50001}
+```
+
+配置仅在验证与 NVS 保存成功后更新。写入失败返回 500，当前运行配置保持原值；重启恢复整个已保存配置 blob。初始化 NVS 失败不会自动擦除其他数据，控制台会显示错误。
+
+Wi-Fi 凭据变化会阻止新提交、结束当前上传，并在 HTTP 响应之后延迟约 500 ms 应用。断线自动重连（重试间隔逐步增加至 16 秒）；持续 30 秒无连接或 SSID 未配置时恢复热点。正常连接后网页始终可从 STA 局域网 IP 访问。
+
+## 测试与板级验收
+
+```powershell
+Set-Location 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61'
+.\tests\run_tests.ps1
+```
+
+本机主机 C 编译器来自 AMDDesignTools 的 MinGW，可用 `-Compiler` 指定其他 GCC，`-Python`、`-Node` 指定解释器。测试输出/覆盖率在 `tests/output/时间戳`，每次运行隔离。
+
+软件测试包括：C 可移植发送/配置核心，Python 原始接收与真实回环 UDP/CLI 文件保存，48 小时测试工具的本地 HTTP+UDP 模拟，实际内嵌网页脚本的 DOM/API 模拟。覆盖率仅代表 `raw_transfer.c`、`config_model.c`，不代表 Wi-Fi 驱动、FreeRTOS、真实 flash 或完整固件覆盖。
+
+板级步骤：
+
+1. 核对模块确有 PSRAM、Flash 容量，启动日志没有 PSRAM 测试错误；核对默认自测长度与 B-mode 配置。
+2. 完成首次配网，关闭/恢复路由器，验证 30 秒恢复热点、重连后 15 秒关闭热点。
+3. 在两台 PC 运行接收程序，在线修改目标 IP/端口；正在传输的数据固定旧目标，下一次传输进入新目标。修改 Wi-Fi 时当前上传结束。
+4. 验证重复点击仅接受一次、停止后可再次上传、断网产生失败回调、重启恢复配置。每次接收校验字节与文件长度一致。
+5. 固件可通过 menuconfig 缩短总超时，在控制条件下验证 timeout 路径；PSRAM 不可用时上传按钮禁用，不从 SRAM 发送测试内容。
+6. 做 48 小时重复自测：先配置目标为当前测试 PC 路由接口地址、确认设备 idle，关闭其他同端口接收程序。运行下列工具，每轮先监听再触发上传，逐字节校验、记录时间/吞吐/内部堆，首个失败退出 1。成功运行完整时长才退出 0。
+
+```powershell
+python 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\pc_tools\soak_test.py' --device-ip 192.168.1.61 --hours 48 --interval 1 --log soak_48h.jsonl
+```
+
+`192.168.1.61` 替换为 ESP32 STA IP，日志文件不可已存在。工具不更改设备配置、不累计保存大体积 binary 文件，每轮记录结果和内部堆低水位。验收要求 48 小时无字节错误、超时或挂死，并检查内部堆是否持续下降。实际无线性能、复位掉电/NVS 恢复、浏览器显示及 48 小时稳定性需要板上实测；本机模拟测试不能替代。
+
+构建与当前验证记录见 `VERIFICATION.md`。

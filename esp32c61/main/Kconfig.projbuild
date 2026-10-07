@@ -1,0 +1,17 @@
+menu "Ultrasound PSRAM raw UDP"
+config PSRAM_UDP_MAX_BYTES
+    int "Maximum accepted PSRAM buffer length"
+    range 4 16777216
+    default 1048576
+config PSRAM_UDP_TEST_BYTES
+    int "PSRAM self-test buffer length"
+    range 4 16777216
+    default 787456
+    help
+        Default matches 64 * (8 + 6144) * 2 from the B-mode imaging config.
+        Must be no larger than PSRAM_UDP_MAX_BYTES.
+config PSRAM_UDP_TIMEOUT_MS
+    int "Total upload deadline (milliseconds)"
+    range 100 300000
+    default 30000
+endmenu
