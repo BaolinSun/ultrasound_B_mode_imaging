@@ -9,6 +9,7 @@ import socket
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 DEFAULT_BYTES = 787456
 DATAGRAM_BYTES = 1440
@@ -76,12 +77,17 @@ class Capture:
 def receive_upload(sock: socket.socket, expected_bytes: int = DEFAULT_BYTES,
                    check_pattern: bool = True, wait_timeout: float = 60,
                    idle_timeout: float = 5, transfer_timeout: float = 30,
-                   source_ip: str | None = None, grace_period: float = 0.25) -> dict:
+                   source_ip: str | None = None, grace_period: float = 0.25,
+                   on_ready: Callable[[], None] | None = None) -> dict:
     capture = Capture(expected_bytes, check_pattern)
     wait_started = time.monotonic()
     started = last = finished = None
     source = None
     ignored = 0
+    sock.settimeout(0.05)
+    # Automated callers may release their HTTP trigger only after RX setup.
+    if on_ready is not None:
+        on_ready()
     while True:
         now = time.monotonic()
         if capture.complete:

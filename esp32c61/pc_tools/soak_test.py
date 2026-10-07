@@ -7,15 +7,62 @@ import json
 import math
 from pathlib import Path
 import socket
+import threading
 import time
 from urllib.request import Request, urlopen
 
-from raw_udp_receiver import receive_upload
+from raw_udp_receiver import DATAGRAM_BYTES, receive_upload
 
 
 def request(device, path, method="GET"):
     with urlopen(Request(f"http://{device}{path}", method=method), timeout=5) as response:
         return json.load(response)
+
+
+def trigger_and_receive(device, sock, length):
+    """Drain UDP while HTTP is in flight; never replay a failed upload."""
+    ready = threading.Event()
+    cancelled = threading.Event()
+    trigger = {"trigger_error": "", "http_trigger_elapsed_s": None}
+
+    def send_request():
+        ready.wait()
+        if cancelled.is_set():
+            return
+        started = time.perf_counter()
+        try:
+            request(device, "/api/upload", "POST")
+        except Exception as error:
+            # Marshal HTTP/JSON errors back to the owning thread and JSON log.
+            trigger["trigger_error"] = str(error) or type(error).__name__
+        finally:
+            trigger["http_trigger_elapsed_s"] = time.perf_counter() - started
+
+    rcvbuf = sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
+    worker = threading.Thread(target=send_request, name="soak-http-trigger")
+    worker.start()
+    try:
+        result = receive_upload(sock, length, source_ip=device,
+                                wait_timeout=5, idle_timeout=5, transfer_timeout=30,
+                                on_ready=ready.set)
+    finally:
+        # Release/join even if receive setup or Ctrl+C interrupts this cycle.
+        # No next cycle or socket close may race an outstanding HTTP trigger.
+        cancelled.set()
+        ready.set()
+        worker.join()
+    result.update(trigger, udp_rcvbuf_bytes=rcvbuf,
+                  receive_mode="concurrent_http_udp")
+    if trigger["trigger_error"]:
+        mark_failed(result, trigger["trigger_error"])
+    return result
+
+
+def mark_failed(result, error):
+    result["passed"] = False
+    # Keep the original UDP failure, while logging trigger/status errors apart.
+    if not result.get("error"):
+        result["error"] = error
 
 
 def main():
@@ -50,21 +97,29 @@ def main():
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
                     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
                     sock.bind(("0.0.0.0", config["target_port"]))
-                    # Socket is listening before the upload is triggered.
-                    request(device, "/api/upload", "POST")
-                    result = receive_upload(sock, length, source_ip=device,
-                                            wait_timeout=5, idle_timeout=5, transfer_timeout=30)
+                    result = trigger_and_receive(device, sock, length)
                 result.pop("payload", None)
-                status = request(device, "/api/status")
-                result.update(psram_free=status["psram_free"],
-                              internal_free=status["internal_free"],
-                              internal_min_free=status["internal_min_free"],
-                              device_result=status["result"])
-                if status["busy"] or status["result"] != "sent_local":
-                    result.update(passed=False, error="Device did not report a completed local upload")
+                try:
+                    status = request(device, "/api/status")
+                    result.update(psram_free=status["psram_free"],
+                                  internal_free=status["internal_free"],
+                                  internal_min_free=status["internal_min_free"],
+                                  device_result=status["result"],
+                                  device_busy=status["busy"],
+                                  device_sent_bytes=status["sent_bytes"],
+                                  device_packets=status["packets"],
+                                  device_retries=status["retries"],
+                                  device_socket_errno=status["socket_errno"])
+                    if (status["busy"] or status["result"] != "sent_local"
+                            or status["sent_bytes"] != length
+                            or status["packets"] != (length + DATAGRAM_BYTES - 1) // DATAGRAM_BYTES):
+                        mark_failed(result, "Device did not report a completed local upload")
+                except (OSError, ValueError, KeyError) as error:
+                    result["status_error"] = str(error)
+                    mark_failed(result, str(error))
             except (OSError, ValueError, KeyError) as error:
                 result.pop("payload", None)
-                result.update(passed=False, error=str(error))
+                mark_failed(result, str(error))
             result.update(cycle=cycles, utc=datetime.now(timezone.utc).isoformat())
             line = json.dumps(result, ensure_ascii=False)
             log.write(line + "\n")

@@ -131,4 +131,10 @@ python 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\pc_tools\soak_
 
 `192.168.1.61` 替换为 ESP32 STA IP，日志文件不可已存在。工具不更改设备配置、不累计保存大体积 binary 文件，每轮记录结果和内部堆低水位。验收要求 48 小时无字节错误、超时或挂死，并检查内部堆是否持续下降。实际无线性能、复位掉电/NVS 恢复、浏览器显示及 48 小时稳定性需要板上实测；本机模拟测试不能替代。
 
+自动测试在 UDP 接收初始化完成后才释放独立 HTTP 触发线程；主线程持续收包，不等待 HTTP 响应。HTTP 请求结束并检查设备状态后才能进入下一轮。旧版先等待 HTTP 响应再读 UDP，可能把积压队列的快速出队误算成高吞吐，旧日志速率不宜直接比较。
+
+每轮新增诊断字段：`receive_mode=concurrent_http_udp`、`http_trigger_elapsed_s`、`trigger_error`、`udp_rcvbuf_bytes`（系统实际 socket 接收缓冲大小），以及 `device_busy`、`device_sent_bytes`、`device_packets`、`device_retries`、`device_socket_errno`。状态查询异常另记 `status_error`，不覆盖先前的 UDP 错误。发送重试是本地发送接口重试，不是接收丢包统计；`device_socket_errno` 可能是已恢复的历史错误。
+
+并行收包只是修正主机触发/接收时序，不保证消除真实 UDP 丢包；缺包、乱序、内容损坏仍立即判失败并停止，不自动重放整帧。`--interval` 只控制轮间休息，不能给单帧发送限速。
+
 构建与当前验证记录见 `VERIFICATION.md`。
