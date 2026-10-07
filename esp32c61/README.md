@@ -40,6 +40,10 @@ python 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\pc_tools\raw_u
 
 工具默认等待首次数据 60 秒、数据中断超时 5 秒、单次接收总超时 30 秒。正常且内容校验通过退出 0；缺失、异常长度、顺序/内容异常或额外包退出 1，已有数据保存为 `.partial`。使用 `--source-ip 设备局域网IP` 可过滤其他发送者。
 
+接收期间仅检查来源、数据报长度和超时并保留原始顺序；收包结束后再校验测试内容，避免 Python 逐字节校验拖慢收包。`passed: true` 仍要求长度、数据报检查和已启用的内容校验全部通过；部分接收的数据也会校验。没有收到数据时 `pattern_checked` 为 `false`。
+
+测速字段：`elapsed_s` 为首个到最后一个接受的数据报在用户态 `recvfrom()` 返回后的时间差；`mbit_s` 按该时间计算有效负载速率。末尾额外包观察窗口（默认 0.25 秒）、内容校验和文件写入不计入其中。`validation_elapsed_s` 单独记录内容校验耗时；`timing_basis` 为 `first_to_last_datagram_dequeue`。只有一个包时没有有效时间跨度，`mbit_s` 为 `null`。这些时间戳不是网卡/内核到包时间，不能当作 PHY 速率或完整上传流程耗时，也不能直接等同于官方持续 iperf 测试。
+
 业务数据可使用 `--pattern none` 仅按长度接收保存；此时通过只表示长度满足要求，不能证明业务内容正确。若修改固件自测长度，需要同步修改 `--bytes`。
 
 ## 数据格式与内存所有权

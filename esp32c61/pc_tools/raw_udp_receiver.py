@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Receive ONE known-length PSRAM upload. No headers, ACKs or reordering."""
+"""Receive ONE raw upload, then validate its pattern outside receive timing."""
 from __future__ import annotations
 
 import argparse
@@ -28,6 +28,7 @@ class Capture:
     mismatch_bytes: int = 0
     first_mismatch: tuple[int, int, int] | None = None
     error: str = ""
+    _pattern_verified: bool = field(default=False, init=False, repr=False)
 
     def add(self, data: bytes) -> bool:
         if self.error:
@@ -37,17 +38,30 @@ class Capture:
         if not data or len(data) != expected_datagram:
             self.error = f"bad datagram length: got={len(data)} expected={expected_datagram}"
             return False
-        offset = len(self.payload)
-        if self.check_pattern:
-            expected = pattern_bytes(len(data), offset)
-            for i, (actual, wanted) in enumerate(zip(data, expected)):
-                if actual != wanted:
-                    self.mismatch_bytes += 1
-                    if self.first_mismatch is None:
-                        self.first_mismatch = (offset + i, wanted, actual)
+        # Keep Python byte-by-byte pattern work out of the recvfrom hot path.
         self.payload.extend(data)
         self.packets += 1
+        self._pattern_verified = False
         return True
+
+    def verify_pattern(self) -> None:
+        """Check retained bytes, including partial captures, after receiving stops."""
+        if not self.check_pattern or self._pattern_verified:
+            return
+        self.mismatch_bytes = 0
+        self.first_mismatch = None
+        # Bound temporary expected-pattern memory even for large captures.
+        for offset in range(0, len(self.payload), 65536):
+            actual = self.payload[offset:offset + 65536]
+            expected = pattern_bytes(len(actual), offset)
+            if actual == expected:
+                continue
+            for i, (value, wanted) in enumerate(zip(actual, expected)):
+                if value != wanted:
+                    self.mismatch_bytes += 1
+                    if self.first_mismatch is None:
+                        self.first_mismatch = (offset + i, wanted, value)
+        self._pattern_verified = True
 
     @property
     def complete(self) -> bool:
@@ -55,7 +69,8 @@ class Capture:
 
     @property
     def passed(self) -> bool:
-        return self.complete and not self.error and self.mismatch_bytes == 0
+        return (self.complete and not self.error and self.mismatch_bytes == 0
+                and (not self.check_pattern or self._pattern_verified))
 
 
 def receive_upload(sock: socket.socket, expected_bytes: int = DEFAULT_BYTES,
@@ -103,13 +118,23 @@ def receive_upload(sock: socket.socket, expected_bytes: int = DEFAULT_BYTES,
         if not capture.add(data):
             break
     elapsed = last - started if last is not None and started is not None else 0.0
+    # These are userspace dequeue timestamps, not NIC/kernel arrival timestamps.
+    # Final grace checking, pattern validation and file writes are not included.
+    validation_elapsed = 0.0
+    if check_pattern and capture.payload:
+        validation_started = time.perf_counter()
+        capture.verify_pattern()
+        validation_elapsed = time.perf_counter() - validation_started
     return {
         "passed": capture.passed, "expected_bytes": expected_bytes,
         "received_bytes": len(capture.payload), "packets": capture.packets,
-        "pattern_checked": check_pattern, "mismatch_bytes": capture.mismatch_bytes,
+        "pattern_checked": check_pattern and bool(capture.payload),
+        "mismatch_bytes": capture.mismatch_bytes,
         "first_mismatch": capture.first_mismatch, "error": capture.error,
         "source": source, "ignored_datagrams": ignored,
         "elapsed_s": elapsed,
+        "validation_elapsed_s": validation_elapsed,
+        "timing_basis": "first_to_last_datagram_dequeue",
         "mbit_s": len(capture.payload) * 8 / elapsed / 1_000_000 if elapsed > 0 and capture.packets > 1 else None,
         "payload": capture.payload,
     }
