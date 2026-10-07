@@ -2,6 +2,8 @@ param(
     [ValidateSet('build', 'size', 'flash', 'monitor', 'menuconfig')]
     [string]$Action = 'build',
     [string]$Port = '',
+    [ValidateSet('default', 'throughput')]
+    [string]$Profile = 'default',
     [string]$IdfPath = 'D:\Program Files\esp\v6.1\esp-idf',
     [string]$ActivationScript = 'C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1'
 )
@@ -25,19 +27,31 @@ if ($LASTEXITCODE -ne 0 -or "$version" -notmatch 'ESP-IDF v6\.1(?:\D|$)') {
 if ($Action -in @('flash', 'monitor') -and -not $Port) { throw '-Port COMx is required.' }
 Push-Location $PSScriptRoot
 try {
-    if (-not (Test-Path 'sdkconfig')) {
-        if (Test-Path 'build') {
+    $configFile = Join-Path $PSScriptRoot 'sdkconfig'
+    $buildDir = Join-Path $PSScriptRoot 'build'
+    $profileArgs = @()
+    if ($Profile -eq 'throughput') {
+        # Isolate all generated configuration/output; never reset user's sdkconfig.
+        $buildDir = Join-Path $PSScriptRoot 'build-throughput'
+        $configFile = Join-Path $buildDir 'sdkconfig'
+        New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
+        $defaults = (Join-Path $PSScriptRoot 'sdkconfig.defaults') + ';' +
+                    (Join-Path $PSScriptRoot 'sdkconfig.throughput.defaults')
+        $profileArgs = @('-B', $buildDir, "-DSDKCONFIG=$configFile", "-DSDKCONFIG_DEFAULTS=$defaults")
+    }
+    if (-not (Test-Path -LiteralPath $configFile)) {
+        if (Test-Path -LiteralPath $buildDir) {
             # A failed first configure may leave a directory that fullclean
             # refuses to remove. Reconfigure it explicitly without deletion.
-            & $idfPython $idfTool '-DIDF_TARGET=esp32c61' reconfigure
+            & $idfPython $idfTool @profileArgs '-DIDF_TARGET=esp32c61' reconfigure
         } else {
-            & $idfPython $idfTool set-target esp32c61
+            & $idfPython $idfTool @profileArgs set-target esp32c61
         }
         if ($LASTEXITCODE -ne 0) { throw 'target configuration failed' }
-    } elseif (-not (Select-String -Path sdkconfig -Pattern '^CONFIG_IDF_TARGET="esp32c61"$' -Quiet)) {
+    } elseif (-not (Select-String -LiteralPath $configFile -Pattern '^CONFIG_IDF_TARGET="esp32c61"$' -Quiet)) {
         throw 'Existing sdkconfig has a different target; select esp32c61 explicitly in an IDF shell.'
     }
-    $idfArgs = @()
+    $idfArgs = @($profileArgs)
     if ($Port) { $idfArgs += @('-p', $Port) }
     $idfArgs += $Action
     & $idfPython $idfTool @idfArgs

@@ -12,7 +12,7 @@ import threading
 import time
 from urllib.request import Request, urlopen
 
-from raw_udp_receiver import DATAGRAM_BYTES, receive_upload
+from raw_udp_receiver import DATAGRAM_BYTES, prepare_pattern, receive_upload
 
 
 def request(device, path, method="GET"):
@@ -45,7 +45,8 @@ def trigger_and_receive(device, sock, length, excluded_sources=()):
     try:
         result = receive_upload(sock, length, source_ip=device,
                                 wait_timeout=5, idle_timeout=5, transfer_timeout=30,
-                                on_ready=ready.set, excluded_sources=excluded_sources)
+                                on_ready=ready.set, excluded_sources=excluded_sources,
+                                grace_period=0)
     finally:
         # Release/join even if receive setup or Ctrl+C interrupts this cycle.
         # No next cycle or socket close may race an outstanding HTTP trigger.
@@ -67,16 +68,17 @@ def mark_failed(result, error):
         result["error"] = error
 
 
-def drain_until_quiet(sock, quiet=0.25, timeout=2):
+def drain_until_quiet(sock, quiet=0.25, timeout=2, frame_source=None):
     """Discard queued/late bytes BEFORE the next HTTP trigger, with a deadline."""
     deadline = time.monotonic() + timeout
     quiet_deadline = time.monotonic() + quiet
     packets = 0
+    frame_packets = 0
     sources = set()
     while True:
         now = time.monotonic()
         if now >= quiet_deadline:
-            return packets, sources
+            return packets, sources, frame_packets
         if now >= deadline:
             raise OSError("UDP did not become quiet between uploads")
         sock.settimeout(min(0.05, quiet_deadline - now, deadline - now))
@@ -85,6 +87,8 @@ def drain_until_quiet(sock, quiet=0.25, timeout=2):
         except socket.timeout:
             continue
         packets += 1
+        if address == frame_source:
+            frame_packets += 1
         sources.add(address)
         quiet_deadline = time.monotonic() + quiet
 
@@ -109,6 +113,8 @@ def main():
     parser.add_argument("--frames", type=int, help="Optional maximum number of frames")
     parser.add_argument("--stop-on-frame-error", action="store_true",
                         help="Strict mode: stop at the first discarded frame")
+    parser.add_argument("--frame-quiet", type=float, default=0.25,
+                        help="Single post-idle quiet window in seconds (0.01..1, default 0.25)")
     parser.add_argument("--log", type=Path,
                         default=Path(datetime.now().strftime("soak-%Y%m%d-%H%M%S.jsonl")))
     args = parser.parse_args()
@@ -116,6 +122,8 @@ def main():
         parser.error("hours must be positive and interval must be nonnegative")
     if args.frames is not None and args.frames <= 0:
         parser.error("frames must be positive")
+    if not math.isfinite(args.frame_quiet) or not 0.01 <= args.frame_quiet <= 1:
+        parser.error("frame-quiet must be 0.01..1 seconds")
     device = str(args.device_ip)
     config = request(device, "/api/config")
     status = request(device, "/api/status")
@@ -127,12 +135,14 @@ def main():
     length = status["selftest_bytes"]
     if not status["upload_ready"] or status["busy"] or not 1 <= length <= 16 * 1024 * 1024:
         parser.error("Device must be connected, idle, and have a PSRAM self-test buffer")
+    prepare_pattern(length)  # One-time setup, before the listening/trigger loop.
     cycles = 0
     valid_frames = discarded_frames = 0
     # Each firmware job opens a new UDP socket. A bounded history rejects late
     # datagrams from recent jobs, without blacklisting eventual port reuse forever.
     recent_sources = deque(maxlen=16)
-    deadline = time.monotonic() + args.hours * 3600
+    run_started = time.monotonic()
+    deadline = run_started + args.hours * 3600
     # Exclusive creation protects earlier soak results. No binary capture files accumulate.
     with args.log.open("x", encoding="utf-8") as log, \
          socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -140,6 +150,7 @@ def main():
         sock.bind(("0.0.0.0", config["target_port"]))
         while time.monotonic() < deadline and (args.frames is None or cycles < args.frames):
             cycles += 1
+            cycle_started = time.monotonic()
             result = {"passed": False}
             try:
                 result = trigger_and_receive(device, sock, length, tuple(recent_sources))
@@ -167,8 +178,12 @@ def main():
                     result["control_error"] = str(error)
                     mark_failed(result, str(error))
                 if not result.get("control_error"):
-                    drained, sources = drain_until_quiet(sock)
+                    drained, sources, extra = drain_until_quiet(
+                        sock, quiet=args.frame_quiet, frame_source=result.get("source"))
                     result["drained_datagrams"] = drained
+                    result["post_receive_frame_datagrams"] = extra
+                    if result["passed"] and extra:
+                        mark_failed(result, "extra datagram after expected length (duplicate or overlapping upload)")
                     # Never let unrelated traffic evict device ports from history.
                     recent_sources.extend(sorted(s for s in sources if s[0] == device))
             except (OSError, ValueError, KeyError) as error:
@@ -179,12 +194,18 @@ def main():
                 valid_frames += 1
             else:
                 discarded_frames += 1
+            elapsed = time.monotonic() - run_started
             result.update(cycle=cycles, utc=datetime.now(timezone.utc).isoformat(),
                           frame_status="valid" if result["passed"] else "discarded",
                           discard_reason="" if result["passed"] else (
                               result.get("error") or "self-test pattern mismatch"),
                           valid_frames=valid_frames, discarded_frames=discarded_frames,
-                          frame_drop_rate=discarded_frames / cycles)
+                          frame_drop_rate=discarded_frames / cycles,
+                          frame_quiet_s=args.frame_quiet,
+                          cycle_elapsed_s=time.monotonic() - cycle_started,
+                          run_elapsed_s=elapsed,
+                          valid_fps=valid_frames / elapsed if elapsed > 0 else None,
+                          valid_payload_mbit_s=valid_frames * length * 8 / elapsed / 1_000_000 if elapsed > 0 else None)
             line = json.dumps(result, ensure_ascii=False)
             log.write(line + "\n")
             log.flush()
@@ -192,7 +213,8 @@ def main():
             if result.get("control_error") or (args.stop_on_frame_error and not result["passed"]):
                 print("Soak FAILED; control/device error or strict frame check failed.")
                 return 1
-            time.sleep(args.interval)
+            if args.frames is None or cycles < args.frames:
+                time.sleep(min(args.interval, max(0, deadline - time.monotonic())))
     print(f"Soak COMPLETED: frames={cycles}, valid={valid_frames}, discarded={discarded_frames}, "
           f"frame_drop_rate={discarded_frames / cycles if cycles else 0:.2%}")
     # Permitting occasional loss does not make a zero-valid-frame run useful.

@@ -21,7 +21,7 @@ class SoakTests(unittest.TestCase):
                  device_failed=False, bad_device_counts=False,
                  fail_after_send=False, strict=True, frames=1,
                  only_first=False, reorder=False, no_data=False,
-                 late_after_reject=False, busy_reads=0):
+                 late_after_reject=False, busy_reads=0, late_extra=False):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
             probe.bind(("127.0.0.1", 0))
             udp_port = probe.getsockname()[1]
@@ -78,6 +78,9 @@ class SoakTests(unittest.TestCase):
                         if (drop_packet and faulty and i == 1440) or (no_data and faulty):
                             continue
                         sender.sendto(raw[i:i + 1440], ("127.0.0.1", udp_port))
+                    if late_extra and faulty:
+                        time.sleep(0.05)
+                        sender.sendto(b"late duplicate", ("127.0.0.1", udp_port))
                 if delay_response:
                     # Old synchronous HTTP-then-RX code cannot satisfy this.
                     events["rx_before_http_response"] = capture_done.wait(2)
@@ -90,8 +93,7 @@ class SoakTests(unittest.TestCase):
         def local_request(device, path, method="GET"):
             return real_request(f"127.0.0.1:{server.server_port}", path, method)
         def short_receive(*args, **kwargs):
-            kwargs.update(wait_timeout=0.2, idle_timeout=0.1, transfer_timeout=1,
-                          grace_period=0.1)
+            kwargs.update(wait_timeout=0.2, idle_timeout=0.1, transfer_timeout=1)
             try:
                 return real_receive(*args, **kwargs)
             finally:
@@ -130,6 +132,10 @@ class SoakTests(unittest.TestCase):
         self.assertFalse(entries[0]["device_busy"])
         self.assertEqual(entries[0]["trigger_error"], "")
         self.assertGreater(entries[0]["http_trigger_elapsed_s"], 0)
+        self.assertEqual(entries[0]["frame_quiet_s"], 0.25)
+        self.assertGreater(entries[0]["valid_fps"], 0)
+        self.assertGreater(entries[0]["valid_payload_mbit_s"], 0)
+        self.assertGreaterEqual(entries[0]["cycle_elapsed_s"], 0.25)
         self.assertEqual(events["posts"], 1)
 
     def test_corruption_stops_soak(self):
@@ -282,3 +288,23 @@ class SoakTests(unittest.TestCase):
         with patch.object(soak_test.time, "monotonic", side_effect=[0, 0, 0, 1.9, 2.01]):
             with self.assertRaisesRegex(OSError, "did not become quiet"):
                 soak_test.drain_until_quiet(sock)
+
+    def test_late_extra_packet_invalidates_complete_frame_in_merged_window(self):
+        code, entries, events = self.simulate(length=3000, late_extra=True,
+                                             only_first=True, strict=False, frames=2)
+        self.assertEqual(code, 0)
+        self.assertEqual(events["posts"], 2)
+        self.assertEqual(entries[0]["received_bytes"], 3000)
+        self.assertEqual(entries[0]["mismatch_bytes"], 0)
+        self.assertEqual(entries[0]["post_receive_frame_datagrams"], 1)
+        self.assertEqual(entries[0]["frame_status"], "discarded")
+        self.assertIn("extra datagram", entries[0]["discard_reason"])
+        self.assertTrue(entries[1]["passed"])
+
+    def test_reject_invalid_quiet_window(self):
+        for value in ("nan", "0", "-1", "1.1"):
+            with self.subTest(value=value), patch.object(sys, "argv", [
+                    "soak_test", "--device-ip", "127.0.0.1", "--frame-quiet", value]):
+                with self.assertRaises(SystemExit) as error:
+                    soak_test.main()
+                self.assertEqual(error.exception.code, 2)

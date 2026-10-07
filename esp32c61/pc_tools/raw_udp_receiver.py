@@ -8,6 +8,7 @@ import math
 import socket
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable
 
@@ -18,6 +19,12 @@ DATAGRAM_BYTES = 1440
 def pattern_bytes(length: int, offset: int = 0) -> bytes:
     return bytes((((i // 4) ^ 0xA5C30000) >> ((i % 4) * 8)) & 255
                  for i in range(offset, offset + length))
+
+
+@lru_cache(maxsize=1)
+def prepare_pattern(length: int) -> bytes:
+    """Keep at most ONE immutable reference frame; prepare before receiving."""
+    return pattern_bytes(length)
 
 
 @dataclass
@@ -51,10 +58,15 @@ class Capture:
             return
         self.mismatch_bytes = 0
         self.first_mismatch = None
-        # Bound temporary expected-pattern memory even for large captures.
+        expected_frame = prepare_pattern(self.expected_bytes)
+        if self.payload == expected_frame:
+            self._pattern_verified = True
+            return
+        # Full fast comparison is in C. Only failed/partial frames take the
+        # chunked diagnostic path; exact mismatch counts/offsets are preserved.
         for offset in range(0, len(self.payload), 65536):
             actual = self.payload[offset:offset + 65536]
-            expected = pattern_bytes(len(actual), offset)
+            expected = expected_frame[offset:offset + len(actual)]
             if actual == expected:
                 continue
             for i, (value, wanted) in enumerate(zip(actual, expected)):
@@ -80,6 +92,8 @@ def receive_upload(sock: socket.socket, expected_bytes: int = DEFAULT_BYTES,
                    source_ip: str | None = None, grace_period: float = 0.25,
                    on_ready: Callable[[], None] | None = None,
                    excluded_sources: tuple[tuple[str, int], ...] = ()) -> dict:
+    if check_pattern:
+        prepare_pattern(expected_bytes)  # Never generate the reference in RX.
     capture = Capture(expected_bytes, check_pattern)
     wait_started = time.monotonic()
     started = last = finished = None
@@ -142,6 +156,7 @@ def receive_upload(sock: socket.socket, expected_bytes: int = DEFAULT_BYTES,
         "source": source, "ignored_datagrams": ignored,
         "elapsed_s": elapsed,
         "validation_elapsed_s": validation_elapsed,
+        "validation_mode": "cached_selftest" if check_pattern else "none",
         "timing_basis": "first_to_last_datagram_dequeue",
         "mbit_s": len(capture.payload) * 8 / elapsed / 1_000_000 if elapsed > 0 and capture.packets > 1 else None,
         "payload": capture.payload,

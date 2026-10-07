@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "pc_tools"))
-from raw_udp_receiver import Capture, pattern_bytes, receive_upload
+from raw_udp_receiver import Capture, pattern_bytes, prepare_pattern, receive_upload
 
 
 class ReceiverTests(unittest.TestCase):
@@ -79,19 +79,50 @@ class ReceiverTests(unittest.TestCase):
                 self.now += 0.01
                 return block, ("127.0.0.1", 50000)
         sock = FakeSocket()
-        def slow_pattern(length, offset=0):
+        real_verify = Capture.verify_pattern
+        def slow_verify(capture):
             self.assertEqual(sock.calls, 2)  # All recvfrom calls happened first.
             sock.now += 10
-            return pattern_bytes(length, offset)
+            real_verify(capture)
         with patch("raw_udp_receiver.time.monotonic", side_effect=lambda: sock.now), \
              patch("raw_udp_receiver.time.perf_counter", side_effect=lambda: sock.now), \
-             patch("raw_udp_receiver.pattern_bytes", side_effect=slow_pattern):
+             patch.object(Capture, "verify_pattern", slow_verify):
             r = receive_upload(sock, len(raw), grace_period=0)
         self.assertTrue(r["passed"])
         self.assertAlmostEqual(r["elapsed_s"], 0.01)
         self.assertAlmostEqual(r["validation_elapsed_s"], 10)
         self.assertAlmostEqual(r["mbit_s"], len(raw) * 8 / 0.01 / 1_000_000)
         self.assertEqual(r["timing_basis"], "first_to_last_datagram_dequeue")
+
+    def test_pattern_cache_reused_and_bounded_to_one_length(self):
+        prepare_pattern.cache_clear()
+        try:
+            with patch("raw_udp_receiver.pattern_bytes", wraps=pattern_bytes) as generate:
+                a = prepare_pattern(8)
+                self.assertIs(a, prepare_pattern(8))
+                for _ in range(3):
+                    c = Capture(8, payload=bytearray(a))
+                    c.verify_pattern()
+                    self.assertTrue(c.passed)
+                self.assertEqual(generate.call_count, 1)
+                prepare_pattern(12)
+                self.assertEqual(prepare_pattern.cache_info().currsize, 1)
+                prepare_pattern(8)
+                self.assertEqual(generate.call_count, 3)
+        finally:
+            prepare_pattern.cache_clear()
+
+    def test_reference_is_prepared_before_receiver_releases_http_trigger(self):
+        prepare_pattern.cache_clear()
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver, \
+             socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+            receiver.bind(("127.0.0.1", 0))
+            def ready():
+                self.assertEqual(prepare_pattern.cache_info().currsize, 1)
+                sender.sendto(pattern_bytes(8), receiver.getsockname())
+            r = receive_upload(receiver, 8, on_ready=ready, grace_period=0)
+            self.assertTrue(r["passed"])
+            self.assertEqual(r["validation_mode"], "cached_selftest")
 
     def test_datagram_lengths_and_no_pattern(self):
         for data in (b"", bytes(1441), bytes(1439)):

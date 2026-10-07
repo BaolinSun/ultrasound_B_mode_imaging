@@ -1,4 +1,5 @@
 /build/
+/build-throughput/
 /sdkconfig
 /sdkconfig.old
 /managed_components/

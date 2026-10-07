@@ -1,0 +1,4 @@
+# Opt-in C61 TX profile; preserve PSRAM, packet format and CPU yield policy.
+# Compare against the installed IDF 6.1 examples/wifi/iperf C61 configuration.
+CONFIG_ESP_WIFI_TX_BA_WIN=32
+CONFIG_LWIP_IRAM_OPTIMIZATION=y

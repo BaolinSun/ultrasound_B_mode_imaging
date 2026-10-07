@@ -18,6 +18,16 @@ Set-Location 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61'
 
 `COM7` 是示例，替换为实际 USB Serial/JTAG 端口。脚本默认仅构建，不自动烧录或擦除 NVS。其他电脑可传入 `-ActivationScript`、`-IdfPath`，或在已激活的 IDF 6.1 shell 中运行。
 
+可选 Wi-Fi 发送性能配置（需要烧录后才影响板上速率）：
+
+```powershell
+.\build.ps1 -Profile throughput
+.\build.ps1 -Profile throughput -Action size
+.\build.ps1 -Profile throughput -Action flash -Port COM7
+```
+
+`throughput` 使用独立 `build-throughput/` 目录及其中的 sdkconfig，合并 `sdkconfig.defaults` 与 `sdkconfig.throughput.defaults`，不会覆盖原有 `sdkconfig` 或默认 `build/`。采用 C61 iperf 示例中的 TX BA 窗口 32 和 lwIP IRAM 优化，其余保持项目默认值；没有复制示例中关闭看门狗或 PHY 实验设置。首次生成后，配置保留，可用同一 `-Profile throughput -Action menuconfig` 调整；自定义默认配置不会自动迁移进去，需按需同步。`-Profile default` 保留现有构建，可烧录回默认固件作对照。不保证性能配置一定更快，需同时比较有效帧率、丢帧率和内部堆余量。
+
 默认：Flash 4 MiB，IDF 内置 1500 KiB 单应用分区，Quad PSRAM 40 MHz，USB Serial/JTAG 控制台，FreeRTOS 1000 Hz。PSRAM 容量由启动检测确定。PSRAM 缺失或自测分配失败时仍可访问配置页，但禁止自测上传，不使用 SRAM 替代测试数据。
 
 ```powershell
@@ -41,6 +51,8 @@ python 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\pc_tools\raw_u
 工具默认等待首次数据 60 秒、数据中断超时 5 秒、单次接收总超时 30 秒。正常且内容校验通过退出 0；缺失、异常长度、顺序/内容异常或额外包退出 1，已有数据保存为 `.partial`。使用 `--source-ip 设备局域网IP` 可过滤其他发送者。
 
 接收期间仅检查来源、数据报长度和超时并保留原始顺序；收包结束后再校验测试内容，避免 Python 逐字节校验拖慢收包。`passed: true` 仍要求长度、数据报检查和已启用的内容校验全部通过；部分接收的数据也会校验。没有收到数据时 `pattern_checked` 为 `false`。
+
+期望自测帧在接收前生成并缓存，最多缓存一种长度（CLI 最大 16 MiB）；完整帧用原生字节比较快速校验，仅在不匹配或部分接收时按块统计错误数及首错位置。自动测试在开始循环前预热缓存，不在收包过程中生成期望字节。`validation_mode=cached_selftest` 标识该路径，一次性期望数据生成不计入 `validation_elapsed_s`；该优化不改变模式、顺序或错误判定。
 
 测速字段：`elapsed_s` 为首个到最后一个接受的数据报在用户态 `recvfrom()` 返回后的时间差；`mbit_s` 按该时间计算有效负载速率。末尾额外包观察窗口（默认 0.25 秒）、内容校验和文件写入不计入其中。`validation_elapsed_s` 单独记录内容校验耗时；`timing_basis` 为 `first_to_last_datagram_dequeue`。只有一个包时没有有效时间跨度，`mbit_s` 为 `null`。这些时间戳不是网卡/内核到包时间，不能当作 PHY 速率或完整上传流程耗时，也不能直接等同于官方持续 iperf 测试。
 
@@ -136,14 +148,18 @@ python 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\pc_tools\soak_
 当前设备的 3 分钟命令（日志不能已存在）：
 
 ```powershell
-python .\pc_tools\soak_test.py --device-ip 192.168.3.27 --hours 0.05 --interval 0 --log soak_3min_drop_frames.jsonl
+python .\pc_tools\soak_test.py --device-ip 192.168.3.27 --hours 0.05 --interval 0 --log soak_3min_optimized.jsonl
 ```
 
-自动测试在 UDP 接收初始化完成后才释放独立 HTTP 触发线程；主线程持续收包，不等待 HTTP 响应。HTTP 请求结束后，最多等待 35 秒确认设备空闲，再丢弃残留包直到连续 0.25 秒安静（清理阶段最多 2 秒），才能进入下一轮。整个测试保留同一个监听 socket，并过滤最近 16 个已观察到的设备发送端口，降低迟到的旧帧数据污染新帧的风险。旧版先等待 HTTP 响应再读 UDP，可能把积压队列的快速出队误算成高吞吐，旧日志速率不宜直接比较。
+自动测试在 UDP 接收初始化完成后才释放独立 HTTP 触发线程；主线程持续收包，不等待 HTTP 响应。HTTP 请求结束后，最多等待 35 秒确认设备空闲，再观察/清理残留包直到连续 0.25 秒安静（清理阶段最多 2 秒），才能进入下一轮。自动模式将接收函数内的额外包等待与帧间清理合并成这一个窗口；如果窗口中出现当前帧同一来源的额外包，即使长度和内容已满足预期，也将该帧丢弃，不能只清理不报错。整个测试保留同一个监听 socket，并过滤最近 16 个已观察到的设备发送端口，降低迟到的旧帧数据污染新帧的风险。旧版先等待 HTTP 响应再读 UDP，可能把积压队列的快速出队误算成高吞吐，旧日志速率不宜直接比较。
+
+`--frame-quiet` 可调整唯一的安静窗口（0.01..1 秒，默认 0.25）。默认只合并重复等待，没有缩短保留下来的窗口；先使用默认值建立基线，再对照较短窗口是否增加坏帧/跨帧污染，不能靠缩短窗口宣称链路可靠。单次接收 CLI 仍保留原来的 0.25 秒额外包观察。
 
 每轮新增诊断字段：`receive_mode=concurrent_http_udp`、`http_trigger_elapsed_s`、`trigger_error`、`udp_rcvbuf_bytes`（系统实际 socket 接收缓冲大小），以及 `device_busy`、`device_sent_bytes`、`device_packets`、`device_retries`、`device_socket_errno`。状态查询异常另记 `status_error`，不覆盖先前的 UDP 错误。发送重试是本地发送接口重试，不是接收丢包统计；`device_socket_errno` 可能是已恢复的历史错误。
 
 `passed` 仍表示本帧完整且自测内容正确；`frame_status` 为 `valid` 或 `discarded`，`discard_reason` 保留原因。`valid_frames`、`discarded_frames`、`frame_drop_rate` 是累计统计，后者为丢弃帧数/触发帧数，不是 UDP 包丢失率。`drained_datagrams` 表示轮间丢弃的残留包。坏帧的内存数据直接释放，不合并到下一帧，也不写出业务文件。
+
+优化版额外记录 `post_receive_frame_datagrams`（合并窗口中属于当前帧的额外包）、`frame_quiet_s`、`cycle_elapsed_s`、`run_elapsed_s`、`valid_fps`、`valid_payload_mbit_s`。累计有效帧率/有效负载吞吐从预热完成、开始运行循环时计时，包含收包、校验、控制请求、观察窗口及先前轮间休息，不含当前轮结束后尚未发生的休息；一次性缓存准备不计入。`mbit_s` 仍仅表示单帧首末包出队跨度内的速率，不能用它代替全过程吞吐。
 
 并行收包不保证消除真实 UDP 丢包；缺包、乱序、重复、内容异常仍使该帧无效，但默认继续测试。单次 `raw_udp_receiver.py` 仍保留严格退出码和 `.partial` 诊断文件；这些文件不是完整业务帧。`--interval` 只控制轮间休息，不能给单帧发送限速。
 
