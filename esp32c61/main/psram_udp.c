@@ -24,6 +24,8 @@ static bool cancel_requested;
 static uint32_t link_generation, accepted_generation;
 static uint64_t accepted_deadline;
 static struct sockaddr_in accepted_dest;
+static bool accepted_framed;
+static bridge_frame_t accepted_frame;
 
 typedef struct { int socket; uint32_t generation; struct sockaddr_in dest; } send_ctx_t;
 static uint64_t now_ms(void *ctx) { (void)ctx; return esp_timer_get_time() / 1000ULL; }
@@ -76,6 +78,8 @@ static void upload_worker(void *arg)
         xSemaphoreTake(lock, portMAX_DELAY);
         raw_session_t job = session;
         uint64_t deadline = accepted_deadline;
+        bool framed = accepted_framed;
+        bridge_frame_t frame = accepted_frame;
         send_ctx_t ctx = {.socket = -1, .generation = accepted_generation,
                           .dest = accepted_dest};
         xSemaphoreGive(lock);
@@ -97,7 +101,8 @@ static void upload_worker(void *arg)
                 xSemaphoreGive(lock);
             } else {
                 raw_io_t io = {&ctx, now_ms, abort_reason, send_datagram, delay_ms, progress};
-                result = psram_raw_send(job.data, job.length, staging, deadline, &io, &sent);
+                result = framed ? psram_framed_send(job.data, job.length, &frame, staging, deadline, &io, &sent) :
+                    psram_raw_send(job.data, job.length, staging, deadline, &io, &sent);
             }
         }
         if (ctx.socket >= 0) close(ctx.socket);
@@ -116,7 +121,7 @@ static void upload_worker(void *arg)
 esp_err_t psram_udp_init(void)
 {
     lock = xSemaphoreCreateMutex();
-    staging = heap_caps_malloc(RAW_UDP_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    staging = heap_caps_malloc(RAW_UDP_BYTES + BR_UDP_HEADER, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!lock || !staging) return ESP_ERR_NO_MEM;
     status.result = RAW_NOT_READY;
     if (xTaskCreate(upload_worker, "psram_udp", 4096, NULL, 5, &worker) != pdPASS)
@@ -180,10 +185,12 @@ static esp_err_t remove_buffer(void *base, bool free_memory)
 esp_err_t psram_udp_free(void *base) { return remove_buffer(base, true); }
 esp_err_t psram_udp_unregister_buffer(void *base) { return remove_buffer(base, false); }
 
-esp_err_t psram_udp_submit(const void *data, size_t length,
-                           psram_udp_completion_cb_t done, void *user_ctx)
+static esp_err_t submit(const void *data, size_t length, const bridge_frame_t *frame,
+                       psram_udp_completion_cb_t done, void *user_ctx)
 {
     if (!lock || !worker) return ESP_ERR_INVALID_STATE;
+    if (frame && (!br_meta_valid(frame, frame->session_id, 1048576) || frame->frame_bytes != length))
+        return ESP_ERR_INVALID_ARG;
     app_config_t config;
     config_store_get(&config);
     xSemaphoreTake(lock, portMAX_DELAY);
@@ -195,6 +202,8 @@ esp_err_t psram_udp_submit(const void *data, size_t length,
                                        valid, status.connected, config.target_ip[0] != 0,
                                        done, user_ctx);
     if (result == RAW_OK) {
+        accepted_framed = frame != NULL;
+        if (frame) accepted_frame = *frame;
         accepted_dest = (struct sockaddr_in){.sin_family = AF_INET,
                                              .sin_port = htons(config.target_port)};
         inet_pton(AF_INET, config.target_ip, &accepted_dest.sin_addr);
@@ -210,6 +219,15 @@ esp_err_t psram_udp_submit(const void *data, size_t length,
     xSemaphoreGive(lock);
     return result == RAW_OK ? ESP_OK : result == RAW_INVALID ? ESP_ERR_INVALID_ARG :
            result == RAW_BUSY ? ESP_ERR_TIMEOUT : ESP_ERR_INVALID_STATE;
+}
+esp_err_t psram_udp_submit(const void *data, size_t length,
+                          psram_udp_completion_cb_t done, void *ctx) {
+    return submit(data,length,NULL,done,ctx);
+}
+esp_err_t psram_udp_submit_frame(const void *data,size_t length,const bridge_frame_t *frame,
+                               psram_udp_completion_cb_t done,void *ctx) {
+    if (!frame) return ESP_ERR_INVALID_ARG;
+    return submit(data,length,frame,done,ctx);
 }
 void psram_udp_stop(void)
 {

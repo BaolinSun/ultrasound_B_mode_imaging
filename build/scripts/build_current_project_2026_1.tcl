@@ -15,6 +15,10 @@ set root_dir [file dirname [file dirname $script_dir]]
 set project_path [file join $root_dir vivado ultrasound_B_mode_imaging.xpr]
 
 open_project $project_path
+set bridge_bd [lindex [get_files -quiet -all pus_ctrl_system.bd] 0]
+open_bd_design $bridge_bd
+source [file join $script_dir configure_sdio.tcl]
+generate_target all [get_files $bridge_bd]
 if {[llength [get_files -quiet -all pus_ctrl_system_wrapper.v]] != 1} {
     build_fail "pus_ctrl_system_wrapper.v is not registered in sources_1"
 }

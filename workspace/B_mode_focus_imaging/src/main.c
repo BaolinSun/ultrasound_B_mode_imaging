@@ -34,6 +34,7 @@
 #include "tmp/tmp.h"
 #include "pus_operation/pus_oper.h"
 #include "bram/bram.h"
+#include "data_transfer/sdio_bridge.h"
 
 XScuGic xInterruptController;
 void led_init(void);
@@ -73,6 +74,7 @@ int main() {
 	para_down();
 
 	usb_init();
+	sdio_bridge_init();
 	xil_printf("@READY CONFIG\r\n");
 	xil_printf("Beamform ready; STOP.\r\n");
 	XGpioPs_WritePin(&gpiops, LED_2_EMIO_PIN, 1);
@@ -82,7 +84,8 @@ int main() {
 		uart_process_commands();
 		usb_process_commands();
 //		data_recv(MEM_BASE_ADDR,SAMPLE_LENGTH, 1,PLANE_WAVE_ANGLE_NUMS);
-		usb_send_adc_data(rx_buffer_ptr[0], PLANE_WAVE_ANGLE_NUMS*2, 0);
+		if (sdio_bridge_output_is_sdio()) sdio_bridge_poll();
+		else usb_send_adc_data(rx_buffer_ptr[0], PLANE_WAVE_ANGLE_NUMS*2, 0);
 		cnt ++;
 		XGpioPs_WritePin(&gpiops, LED_2_EMIO_PIN, cnt&0x01);
 //		usleep(250000);

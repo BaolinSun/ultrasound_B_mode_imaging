@@ -19,7 +19,7 @@ if {[llength [get_projects -quiet]] == 0} {
 }
 
 if {![info exists ps7_peripherals_to_disable]} {
-    set ps7_peripherals_to_disable {USB1 SD1}
+    set ps7_peripherals_to_disable {USB1}
 }
 
 set ps7_bd_file [lindex [get_files -quiet -all pus_ctrl_system.bd] 0]

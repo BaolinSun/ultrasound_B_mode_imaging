@@ -24,7 +24,47 @@ $gcov = Join-Path (Split-Path $Compiler -Parent) 'gcov.exe'
 & $gcov -b -c 'raw_transfer.gcno' 'config_model.gcno'
 if ($LASTEXITCODE -ne 0) { throw 'C coverage report failed' }
 } finally { Pop-Location }
+foreach ($suite in @('framed','sdio_bridge')) {
+    $extra = if ($suite -eq 'framed') { 'framed_transfer.c' } else { 'sdio_bridge.c' }
+    $suiteOutput = Join-Path $testOutput $suite
+    New-Item -ItemType Directory -Force -Path $suiteOutput | Out-Null
+    $binary = Join-Path $suiteOutput "test_$suite.exe"
+    Push-Location $suiteOutput
+    try {
+    & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g `
+        '-I' (Join-Path $projectRoot 'main') '-I' (Join-Path $PSScriptRoot 'stubs') `
+        (Join-Path $PSScriptRoot "test_$suite.c") (Join-Path $projectRoot "main\$extra") `
+        (Join-Path $projectRoot 'main\raw_transfer.c') -o $binary
+    if ($LASTEXITCODE -ne 0) { throw "$suite compilation failed" }
+    & $binary
+    if ($LASTEXITCODE -ne 0) { throw "$suite tests failed" }
+    if ($suite -eq 'sdio_bridge') {
+        foreach ($fault in @('mutex','task','task-init','dma','pool','partial-pool','init','start','register','load','write',
+                             'runtime-init','runtime-start','runtime-register','runtime-load')) {
+            & $binary $fault
+            if ($LASTEXITCODE -ne 0) { throw "SDIO $fault injection failed" }
+        }
+    }
+    & $gcov -b -c ([System.IO.Path]::GetFileNameWithoutExtension($extra)+'.gcno')
+    if ($LASTEXITCODE -ne 0) { throw "$suite coverage report failed" }
+    } finally { Pop-Location }
+}
 Write-Host "C test output and coverage: $testOutput"
+$hostOutput = Join-Path $testOutput 'host'
+New-Item -ItemType Directory -Force -Path $hostOutput | Out-Null
+Push-Location $hostOutput
+try {
+    $hostSources = Join-Path (Split-Path $projectRoot -Parent) 'build/src/ps/data_transfer'
+    & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g `
+        '-I' $hostSources '-I' (Join-Path $PSScriptRoot 'stubs/host') `
+        (Join-Path $PSScriptRoot 'test_sdio_host_bridge.c') (Join-Path $hostSources 'sdio_bridge.c') `
+        -o test_host.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Zynq host bridge compilation failed' }
+    & ./test_host.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Zynq host bridge tests failed' }
+    & $gcov -b -c sdio_bridge.gcno
+    if ($LASTEXITCODE -ne 0) { throw 'Zynq host bridge coverage report failed' }
+} finally { Pop-Location }
 & $Python -m unittest discover -s $PSScriptRoot -p 'test_*.py' -v
 if ($LASTEXITCODE -ne 0) { throw 'Python tests failed' }
 & $Node --test (Join-Path $PSScriptRoot 'test_web.mjs')

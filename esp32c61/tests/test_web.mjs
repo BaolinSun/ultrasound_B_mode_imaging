@@ -52,7 +52,11 @@ function setup() {
       backend.status.busy=true;backend.status.result='busy';backend.status.total_bytes=787456;
       backend.status.active_ip=backend.config.target_ip;backend.status.active_port=backend.config.target_port;
       result={message:'已接受单次 PSRAM 自测上传'};
-    } else if(path === '/api/stop') {
+    } else if(path === '/api/sdio/start') {
+      if(!backend.status.sdio?.host_sdio){ok=false;result={message:'先选择 OUTPUT SDIO'}}
+      else {backend.status.sdio.running=true;result={message:'SDIO 测试已启动'}}
+    } else if(path === '/api/stop' || path === '/api/sdio/stop') {
+      if(backend.status.sdio)backend.status.sdio.running=false;
       backend.status.busy=false;backend.status.result='cancelled';result={message:'停止请求已提交'};
     } else throw Error(`unexpected endpoint ${path}`);
     return {ok,json:async()=>result};
@@ -61,6 +65,25 @@ function setup() {
   return {elements,backend,context,settle:()=>new Promise(resolve=>setImmediate(resolve))};
 }
 const submit = env => env.elements['config-form'].listeners.submit({preventDefault(){}});
+
+test('SDIO starts only after explicit host selection and shares stop control',async()=>{
+  const e=setup();await e.settle();
+  Object.assign(e.backend.status,{connected:true,upload_ready:true,
+    sdio:{ready:true,host_sdio:false,running:false,raw_busy:false,free_slots:2}});
+  e.elements['target-ip'].value='192.168.3.31';await submit(e);
+  assert.equal(e.elements['sdio-once'].disabled,true);
+  e.backend.status.sdio.host_sdio=true;await vm.runInContext('refresh()',e.context);
+  assert.equal(e.elements['sdio-once'].disabled,false);
+  await e.elements['sdio-once'].listeners.click();
+  assert.equal(e.backend.status.sdio.running,true);
+  assert.equal(e.elements.upload.disabled,true);
+  assert.equal(e.elements['sdio-stream'].disabled,true);
+  await e.elements['sdio-stop'].listeners.click();
+  assert.equal(e.backend.status.sdio.running,false);
+  await e.elements['sdio-stream'].listeners.click();
+  const call=e.backend.calls.filter(c=>c.path==='/api/sdio/start').at(-1);
+  assert.equal(JSON.parse(call.options.body).frames,0);
+});
 
 test('first provisioning: no target/no network disables upload and displays PSRAM', async()=>{
   const e=setup();await e.settle();

@@ -2,7 +2,7 @@
 
 本目录是独立 ESP-IDF 6.1 工程，读取 ESP32-C61 外部 PSRAM 缓冲区，经 Wi-Fi STA 向上位机发送原始 UDP 数据报。网页完成首次配网、目标 IP/端口在线配置、单次自测上传及停止操作。
 
-本次数据源为 PSRAM 自测缓冲区和业务提交接口；没有接入 SDIO，也没有修改 Zynq PS 或 RTL。现有 `zynq_esp32_sdio_system` 的带帧头接收程序不能直接用于本工程。
+保留原始 PSRAM UDP 自测，并新增 Zynq 固定 DDR → SDIO → PSRAM → 带包头 UDP 链路；未接入真实连续采集，也未修改成像 RTL。接线、输出切换、网页启动和独立接收工具见 [SDIO 链路说明](SDIO_BRIDGE.md)。两种 UDP 格式不同，不能混用接收工具，也不能直接使用参考工程的旧接收程序。
 
 ## 构建与烧录
 
@@ -34,7 +34,7 @@ Set-Location 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61'
 .\build.ps1 -Action menuconfig
 ```
 
-`Ultrasound PSRAM raw UDP` 菜单支持最大提交长度（默认 1048576）、自测长度（默认 787456）、总超时（默认 30000 ms）。自测长度应不大于最大提交长度和可分配 PSRAM。IDF 6.x 的 JSON 已迁移到 `espressif/cjson`，本工程锁定 `1.7.19~2`，本机安装器缓存可用于构建。
+`Ultrasound PSRAM raw UDP` 菜单支持最大提交长度（默认 1048576）、自测长度（默认 787456）、总超时（默认 30000 ms）。接入 SDIO 后自测借用固定帧池，自测长度不得超过 787456，最大提交长度不得小于 787456；否则帧池初始化明确报错。IDF 6.x 的 JSON 已迁移到 `espressif/cjson`，本工程锁定 `1.7.19~2`，本机安装器缓存可用于构建。
 
 ## 第一次使用
 

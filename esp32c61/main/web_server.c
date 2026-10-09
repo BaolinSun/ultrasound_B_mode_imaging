@@ -2,6 +2,7 @@
 #include "config_store.h"
 #include "psram_udp.h"
 #include "selftest.h"
+#include "sdio_bridge.h"
 #include "wifi_manager.h"
 #include <stdlib.h>
 #include <string.h>
@@ -97,7 +98,7 @@ static esp_err_t put_config(httpd_req_t *req)
     if (err != ESP_OK) return message(req, "500 Internal Server Error", "NVS 保存失败，当前配置未改变");
     bool wifi_changed = strcmp(candidate.ssid, previous.ssid) != 0 ||
                         strcmp(candidate.password, previous.password) != 0;
-    if (wifi_changed) psram_udp_set_link(false);
+    if (wifi_changed) { sdio_bridge_stop(); psram_udp_set_link(false); }
     esp_err_t response = message(req, "200 OK", wifi_changed ?
         "配置已保存，正在连接新 Wi-Fi；断开热点后请使用设备局域网 IP 访问" :
         "配置已保存，目标地址将在下一次上传生效");
@@ -137,6 +138,24 @@ static esp_err_t get_status(httpd_req_t *req)
         cJSON_AddNumberToObject(json, "socket_errno", udp.socket_errno);
         cJSON_AddStringToObject(json, "active_ip", udp.active_ip);
         cJSON_AddNumberToObject(json, "active_port", udp.active_port);
+        sdio_bridge_status_t s;
+        sdio_bridge_get_status(&s);
+        cJSON *sdio = cJSON_AddObjectToObject(json, "sdio");
+        if (sdio) {
+            cJSON_AddBoolToObject(sdio,"ready",s.ready);
+            cJSON_AddBoolToObject(sdio,"running",s.running);
+            cJSON_AddBoolToObject(sdio,"host_sdio",s.host_sdio);
+            cJSON_AddBoolToObject(sdio,"raw_busy",s.raw_busy);
+            cJSON_AddNumberToObject(sdio,"session",s.session);
+            cJSON_AddNumberToObject(sdio,"received_frames",s.received_frames);
+            cJSON_AddNumberToObject(sdio,"crc_errors",s.crc_errors);
+            cJSON_AddNumberToObject(sdio,"errors",s.errors);
+            cJSON_AddNumberToObject(sdio,"backpressure",s.backpressure);
+            cJSON_AddNumberToObject(sdio,"sent_frames",s.sent_frames);
+            cJSON_AddNumberToObject(sdio,"sent_bytes",s.sent_bytes);
+            cJSON_AddNumberToObject(sdio,"dropped_frames",s.dropped_frames);
+            cJSON_AddNumberToObject(sdio,"free_slots",s.free_slots);
+        }
     }
     return reply(req, "200 OK", json);
 }
@@ -150,14 +169,36 @@ static esp_err_t upload(httpd_req_t *req)
 }
 static esp_err_t stop(httpd_req_t *req)
 {
-    psram_udp_stop();
+    sdio_bridge_stop();
     return message(req, "202 Accepted", "停止请求已提交；正在发送的数据报可能已进入本地协议栈");
+}
+static esp_err_t sdio_start(httpd_req_t *req)
+{
+    if (req->content_len < 1 || req->content_len > 64)
+        return message(req,"400 Bad Request","需要 JSON: {\"frames\":1} 或 {\"frames\":0}");
+    char body[65]; size_t n=0;
+    while (n<req->content_len) {
+        int r=httpd_req_recv(req,body+n,req->content_len-n);
+        if (r<=0) return message(req,"408 Request Timeout","请求不完整");
+        n+=(size_t)r;
+    }
+    body[n]=0;
+    cJSON *j=cJSON_ParseWithLengthOpts(body,n+1,NULL,true);
+    cJSON *f=cJSON_GetObjectItemCaseSensitive(j,"frames");
+    bool valid=cJSON_IsObject(j) && cJSON_IsNumber(f) && (f->valuedouble==0 || f->valuedouble==1);
+    unsigned count=valid?(unsigned)f->valueint:0;
+    cJSON_Delete(j);
+    if (!valid) return message(req,"400 Bad Request","frames 必须为 0（连续）或 1（单帧）");
+    esp_err_t r=sdio_bridge_start(count);
+    if (r==ESP_OK) return message(req,"202 Accepted","SDIO 测试已启动，请核对 PC 接收校验结果");
+    return message(req,r==ESP_ERR_TIMEOUT?"409 Conflict":"503 Service Unavailable",
+        r==ESP_ERR_TIMEOUT?"请先在 Zynq 选择 OUTPUT SDIO，并等待当前任务结束":"SDIO 不可用，或 Wi-Fi/目标地址尚未就绪");
 }
 esp_err_t web_server_start(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 6144;
-    config.max_uri_handlers = 6;
+    config.max_uri_handlers = 8;
     config.lru_purge_enable = true;
     config.recv_wait_timeout = 5;
     config.send_wait_timeout = 5;
@@ -171,6 +212,8 @@ esp_err_t web_server_start(void)
         {.uri = "/api/status", .method = HTTP_GET, .handler = get_status},
         {.uri = "/api/upload", .method = HTTP_POST, .handler = upload},
         {.uri = "/api/stop", .method = HTTP_POST, .handler = stop},
+        {.uri = "/api/sdio/start", .method = HTTP_POST, .handler = sdio_start},
+        {.uri = "/api/sdio/stop", .method = HTTP_POST, .handler = stop},
     };
     for (size_t i = 0; i < sizeof(routes) / sizeof(routes[0]); ++i) {
         err = httpd_register_uri_handler(server, &routes[i]);

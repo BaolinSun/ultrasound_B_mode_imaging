@@ -25,6 +25,7 @@ if {$bd_file eq ""} {
 # keeping that stale reference makes write_bitstream try to initialize a cell
 # that no longer exists in the implemented netlist.
 open_bd_design $bd_file
+source [file join $script_dir configure_sdio.tcl]
 set_property HDL_ATTRIBUTE.BMM_INFO_ADDRESS_SPACE {} [get_bd_cells axi_bram_ctrl_0]
 set_property HDL_ATTRIBUTE.BMM_INFO_PROCESSOR {} [get_bd_cells processing_system7_0]
 save_bd_design

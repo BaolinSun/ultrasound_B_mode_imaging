@@ -8,6 +8,7 @@
 #include "../imaging_config.h"
 #include "../uart/uart.h"
 #include <string.h>
+#include "../data_transfer/sdio_bridge.h"
 #define USB_PACK_HEADER 0xef
 #define USB_CFG_REQ_TYPE 0xC0
 #define USB_CFG_RESP_TYPE 0xC1
@@ -103,6 +104,7 @@ void usb_send_adc_data(u8* buffer_ptr, u32 nums, u32 package_of) {
 	while (recv_new_data != 1) {
 		uart_process_commands();
 		usb_process_commands();
+		if (sdio_bridge_output_is_sdio()) return;
 	}
 	recv_new_data = 0;
 	// 判断主机状态

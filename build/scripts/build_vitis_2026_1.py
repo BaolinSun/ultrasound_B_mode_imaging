@@ -26,6 +26,9 @@ DOMAIN_NAME = "standalone_ps7_cortexa9_0"
 APP_NAME = "B_mode_focus_imaging"
 FSBL_NAME = "zynq_fsbl"
 STAGE = os.environ.get("ULTRASOUND_VITIS_STAGE", "all").lower()
+SDIO_CLOCK_MHZ = int(os.environ.get("ULTRASOUND_SDIO_CLOCK_MHZ", "25"))
+if SDIO_CLOCK_MHZ not in (25, 50):
+    raise ValueError("ULTRASOUND_SDIO_CLOCK_MHZ must be 25 or 50")
 
 
 def reserve_free_tcp_port():
@@ -109,6 +112,8 @@ def configure_application_sources(component_source):
         config = handle.read()
     config = set_cmake_list(config, "USER_COMPILE_SOURCES", sorted(sources))
     config = set_cmake_list(config, "USER_INCLUDE_DIRECTORIES", sorted(include_dirs))
+    config = set_cmake_list(config, "USER_COMPILE_DEFINITIONS",
+                            [f"SDIO_RUN_CLOCK_HZ={SDIO_CLOCK_MHZ * 1000000}u"])
     with open(config_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(config)
 

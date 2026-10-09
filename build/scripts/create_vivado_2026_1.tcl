@@ -145,6 +145,7 @@ if {$bd_file eq "" || $xdc_file eq ""} {
 set_property target_constrs_file $xdc_file [current_fileset -constrset]
 
 open_bd_design $bd_file
+source [file join $script_dir configure_sdio.tcl]
 report_ip_status -file [file join $report_dir ip_status_before_upgrade.rpt]
 write_ip_configuration [file join $report_dir ip_configuration_before_upgrade.txt]
 
