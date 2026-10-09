@@ -151,3 +151,7 @@ IDF 首次 CMake 配置会输出上游 Wi-Fi/WPA private include 依赖警告和
 - 对照日志：`tests/output/opt-ab-20261007-203138-{old1,new1,old2,new2}.jsonl`；性能固件日志 `tests/output/opt-fw32-20261007-203810-{1,2}.jsonl`。这些生成日志未加入源码提交。
 
 这是实验室当前无线环境下的短时对照，固件部分是烧录前后比较，而非多次随机换回固件；不能量化 TX BA 和 IRAM 的各自独立贡献，也不能认定丢帧率差异有统计显著性。没有完成 48 小时稳定性验收或保证持续达到 30 Mbit/s。最终 COM3 板卡保留性能固件，测试退出后连接正常、busy=false，最后一帧本地发送完整。
+
+## 2026-10-09 固定 DDR SDIO/UDP 链路
+
+新增 Zynq 固定 DDR → SDIO → ESP32 双 PSRAM 缓冲 → 带包头 UDP；原始 UDP 自测保留。ESP 两种配置、Vivado/Vitis/FSBL/BOOT 构建和软件自检查通过，本次未烧录、未执行板测。时序通过但原 PL CDC 与 I/O 约束风险未关闭。完整构建数据、覆盖率、镜像校验值及待板测项目见 [SDIO 验证记录](SDIO_VERIFICATION.md)，不能将上面的历史 COM3 测试结果视为新 SDIO 固件的实测。

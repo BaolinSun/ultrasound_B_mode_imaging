@@ -1,0 +1,24 @@
+Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
+---------------------------------------------------------------------------------------------------------------------------------------------
+| Tool Version : Vivado v.2026.1 (win64) Build 6511674 Tue Jun 16 11:02:23 MDT 2026
+| Date         : Fri Oct  9 11:53:23 2026
+| Host         : DESKTOP-NBV63DE running 64-bit major release  (build 9200)
+| Command      : report_cdc -file D:/MyProjects/zynq_prj/ultrasound_B_mode_imaging/build/reports/sdio_cdc.rpt
+| Design       : heart_top
+| Device       : 7z030-sbg485
+| Speed File   : -2  PRODUCTION 1.12 2019-11-22
+| Design State : Physopt postRoute
+---------------------------------------------------------------------------------------------------------------------------------------------
+
+CDC Report
+
+Severity  Source Clock      Destination Clock  CDC Type                 Exceptions               Endpoints  Safe  Unsafe  Unknown  No ASYNC_REG  
+--------  ----------------  -----------------  -----------------------  -----------------------  ---------  ----  ------  -------  ------------  
+Critical  clk_out1_clk_gen  clkdiv2_mmcm       No Common Primary Clock  Asynch Clock Groups             34     1       6       27             6  
+Critical  clk_out2_clk_gen  clkdiv2_mmcm       No Common Primary Clock  Asynch Clock Groups             28     1       2       25             0  
+Warning   clk_out2_clk_gen  clk_out1_clk_gen   Safely Timed             Max Delay Datapath Only         33    33       0        0             0  
+Info      clkdiv2_mmcm      clk_out1_clk_gen   No Common Primary Clock  Asynch Clock Groups              2     2       0        0             0  
+Info      clk_out1_clk_gen  clk_out2_clk_gen   Safely Timed             None                           713   713       0        0             0  
+Info      clkdiv_mmcm       clkdiv2_mmcm       Safely Timed             None                           416   416       0        0             0  
+Info      clk_out1_clk_gen  clkdiv_mmcm        No Common Primary Clock  Asynch Clock Groups              1     1       0        0             0  
+
