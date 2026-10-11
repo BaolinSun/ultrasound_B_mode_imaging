@@ -246,7 +246,7 @@ set bit_file [file join $build_dir ${project_name}.runs impl_1 heart_top.bit]
 if {![file exists $bit_file]} {
     fail "expected bitstream does not exist: $bit_file"
 }
-file copy -force $bit_file [file join $output_dir heart_top.bit]
+file copy -force $bit_file [file join $output_dir ultrasound_B_mode_imaging.bit]
 write_hw_platform -fixed -include_bit -force -file [file join $output_dir ultrasound_B_mode_imaging.xsa]
 
 puts "MIGRATION_COMPLETE: bitstream and XSA exported to $output_dir"

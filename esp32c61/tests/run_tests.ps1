@@ -50,20 +50,40 @@ foreach ($suite in @('framed','sdio_bridge')) {
     } finally { Pop-Location }
 }
 Write-Host "C test output and coverage: $testOutput"
-$hostOutput = Join-Path $testOutput 'host'
+foreach ($outputMode in @('SDIO','USB')) {
+$hostOutput = Join-Path $testOutput "host-$outputMode"
 New-Item -ItemType Directory -Force -Path $hostOutput | Out-Null
 Push-Location $hostOutput
 try {
     $hostSources = Join-Path (Split-Path $projectRoot -Parent) 'build/src/ps/data_transfer'
-    & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g `
+    & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g "-DDATA_OUTPUT_MODE=DATA_OUTPUT_$outputMode" `
         '-I' $hostSources '-I' (Join-Path $PSScriptRoot 'stubs/host') `
         (Join-Path $PSScriptRoot 'test_sdio_host_bridge.c') (Join-Path $hostSources 'sdio_bridge.c') `
         -o test_host.exe
     if ($LASTEXITCODE -ne 0) { throw 'Zynq host bridge compilation failed' }
     & ./test_host.exe
     if ($LASTEXITCODE -ne 0) { throw 'Zynq host bridge tests failed' }
+    $hostNm=Join-Path (Split-Path $Compiler -Parent) 'nm.exe'
+    $frameSymbol=& $hostNm -S test_host.exe | Select-String '\btest_frame$'
+    if ($LASTEXITCODE -ne 0) { throw 'Host symbol read failed' }
+    if (($outputMode -eq 'USB' -and $frameSymbol) -or ($outputMode -eq 'SDIO' -and -not $frameSymbol)) {
+        throw "DDR allocation does not match compiled $outputMode mode"
+    }
     & $gcov -b -c sdio_bridge.gcno
     if ($LASTEXITCODE -ne 0) { throw 'Zynq host bridge coverage report failed' }
+} finally { Pop-Location }
+}
+# Invalid mode must fail at compile time, not silently select a data path.
+Push-Location $testOutput
+try {
+    & $Compiler -std=c11 -DDATA_OUTPUT_MODE=99 '-I' $hostSources `
+        '-I' (Join-Path $PSScriptRoot 'stubs/host') -c (Join-Path $hostSources 'sdio_bridge.c') `
+        -o invalid_mode.o 2> invalid_mode.log
+    if ($LASTEXITCODE -eq 0) { throw 'Invalid output mode was accepted' }
+    if (-not (Select-String -LiteralPath invalid_mode.log -SimpleMatch 'DATA_OUTPUT_MODE must be' -Quiet)) {
+        throw 'Invalid-mode compilation failed for an unexpected reason'
+    }
+    Write-Host 'PASS: invalid output macro rejected'
 } finally { Pop-Location }
 & $Python -m unittest discover -s $PSScriptRoot -p 'test_*.py' -v
 if ($LASTEXITCODE -ne 0) { throw 'Python tests failed' }

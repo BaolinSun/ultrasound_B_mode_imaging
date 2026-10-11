@@ -9,7 +9,6 @@
 #include "../AFE5832/afe5832.h"
 #include "../bram/bram.h"
 #include "../HV/hv.h"
-#include "../data_transfer/sdio_bridge.h"
 
 #define UART_BASEADDR       XPAR_XUARTPS_0_BASEADDR
 #define UART_INT_IRQ_ID \
@@ -533,15 +532,6 @@ static void uart_handle_line(char *line)
 	char *cmd = uart_next_token(&ctx);
 
 	if (cmd == NULL) {
-		return;
-	}
-	if (strcmp(cmd, "OUTPUT") == 0) {
-		char *mode = uart_next_token(&ctx);
-		if (mode && strcmp(mode,"STATUS")==0) { sdio_bridge_print_status(); uart_ack(0,"OUTPUT_STATUS"); }
-		else if (mode && (strcmp(mode,"USB")==0 || strcmp(mode,"SDIO")==0)) {
-			sdio_bridge_set_output(strcmp(mode,"SDIO")==0);
-			uart_ack(0,strcmp(mode,"SDIO")==0?"OUTPUT_SDIO":"OUTPUT_USB");
-		} else uart_nack(0,"OUTPUT_ARGS");
 		return;
 	}
 	if (strcmp(cmd, "CFG") == 0) {

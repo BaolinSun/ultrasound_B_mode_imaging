@@ -7,7 +7,7 @@
 #include <string.h>
 static u8 regs[52];
 static u64 tick;
-static unsigned inits,aborts,blocks,windows,complete,commits;
+static unsigned inits,aborts,blocks,windows,complete,commits,flushes;
 static u32 received,crc;
 static int io_failure,dma_failure,hold_ack,ack_failure;
 static int fail_operation=-1,operation;
@@ -19,7 +19,7 @@ static void grant(void) {
     regs[BR_GRANT]=br_next_seq(regs[BR_GRANT]);
 }
 void XTime_GetTime(XTime *n) { *n=tick; }
-void Xil_DCacheFlushRange(UINTPTR p,u32 n) { assert(!(p%64) && n==BR_FRAME_BYTES); }
+void Xil_DCacheFlushRange(UINTPTR p,u32 n) { assert(!(p%64) && n==BR_FRAME_BYTES);flushes++; }
 int xil_printf(const char *fmt,...) { (void)fmt;return 0; }
 int sdio_host_init(sdio_host_t *host) {
     inits++;memset(host,0,sizeof(*host));return io_failure?-1:0;
@@ -62,13 +62,20 @@ int sdio_host_write_window_ack(sdio_host_t *host,u8 seq) {
     return 0;
 }
 static void connect(void) {
-    sdio_bridge_set_output(1);sdio_bridge_poll();tick+=501;sdio_bridge_poll();
+    sdio_bridge_init();sdio_bridge_poll();tick+=501;sdio_bridge_poll();
     assert(regs[BR_HOST_MODE]==1);
 }
 static void stream(void) { regs[BR_STATUS]=BR_READY|BR_STREAM; }
 int main(void) {
+#if DATA_OUTPUT_MODE == DATA_OUTPUT_USB
+    /* Even repeated polls must not enumerate or allocate an SDIO test frame. */
+    (void)connect;(void)stream;
     sdio_bridge_init();assert(!sdio_bridge_output_is_sdio());
-    sdio_bridge_poll();assert(inits==0);
+    for(unsigned i=0;i<100;i++) { tick+=501;sdio_bridge_poll(); }
+    assert(inits==0 && blocks==0 && commits==0 && aborts==0 && flushes==0);
+    puts("PASS: compile-time USB / no SD1 access / no SDIO transfer");
+#else
+    sdio_bridge_init();assert(sdio_bridge_output_is_sdio());assert(inits==0 && flushes==1);
     connect();unsigned old=commits;
     for(unsigned i=0;i<10;i++)sdio_bridge_poll();assert(commits==old);
     /* Four frames cross the 255 -> 1 window-sequence boundary. */
@@ -77,7 +84,8 @@ int main(void) {
     assert(complete==4 && blocks==4*(BR_FRAME_BYTES/512) && windows==4*97);
     sdio_bridge_poll();regs[BR_STATUS]=BR_READY|BR_STREAM|BR_BACKPRESSURE;
     old=commits;for(unsigned i=0;i<10;i++)sdio_bridge_poll();assert(commits==old);
-    sdio_bridge_set_output(0);assert(!sdio_bridge_output_is_sdio() && regs[BR_HOST_MODE]==0);
+    regs[BR_HOST_MODE]=0;sdio_bridge_poll(); /* Slave withdraws a stale link. */
+    assert(sdio_bridge_output_is_sdio()); /* Cannot change the compiled mode. */
     connect();stream();hold_ack=1;sdio_bridge_poll();
     old=blocks;tick+=30001;sdio_bridge_poll();assert(blocks==old);hold_ack=0;
     connect();stream();sdio_bridge_poll();dma_failure=1;sdio_bridge_poll();
@@ -104,23 +112,23 @@ int main(void) {
         regs[BR_RESULT]=(u8)err;sdio_bridge_poll();
     }
     connect();regs[BR_HOST_MODE]=0;sdio_bridge_poll();
-    sdio_bridge_set_output(1);io_failure=1;sdio_bridge_poll();io_failure=0;
-    sdio_bridge_set_output(1);sdio_bridge_poll();tick+=501;regs[BR_PROTOCOL]=0;sdio_bridge_poll();
+    sdio_bridge_init();io_failure=1;sdio_bridge_poll();io_failure=0;
+    sdio_bridge_init();sdio_bridge_poll();tick+=501;regs[BR_PROTOCOL]=0;sdio_bridge_poll();
     connect();stream();sdio_bridge_poll();unsigned finished=complete;
     while(complete==finished) { tick++;sdio_bridge_poll(); }
     fail_operation=operation;sdio_bridge_poll();fail_operation=-1;
-    sdio_bridge_print_status();sdio_bridge_set_output(0);
     /* Inject a failure at each of the first 160 register-access positions.
-     * Each new selection must abort any abandoned frame before more DMA. */
+     * Each host reinitialization aborts abandoned frames before more DMA. */
     for(int n=0;n<160;n++) {
-        sdio_bridge_set_output(1);operation=0;fail_operation=n;
+        sdio_bridge_init();operation=0;fail_operation=n;
         for(unsigned i=0;i<300;i++) {
             tick+=10;
             if(regs[BR_HOST_MODE]==1)stream(); /* Simulated explicit user restart. */
             sdio_bridge_poll();
         }
-        assert(operation>n);fail_operation=-1;sdio_bridge_set_output(0);
+        assert(operation>n);fail_operation=-1;
     }
-    puts("PASS: Zynq fixed DDR / metadata commit / 4 frames / sequence wrap / backpressure / timeout / no DMA replay / reset / output switch");
+    puts("PASS: compiled SDIO / fixed DDR / metadata commit / 4 frames / sequence wrap / backpressure / timeout / no DMA replay / reset");
+#endif
     return 0;
 }

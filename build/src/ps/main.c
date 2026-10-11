@@ -84,8 +84,11 @@ int main() {
 		uart_process_commands();
 		usb_process_commands();
 //		data_recv(MEM_BASE_ADDR,SAMPLE_LENGTH, 1,PLANE_WAVE_ANGLE_NUMS);
-		if (sdio_bridge_output_is_sdio()) sdio_bridge_poll();
-		else usb_send_adc_data(rx_buffer_ptr[0], PLANE_WAVE_ANGLE_NUMS*2, 0);
+#if DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO
+		sdio_bridge_poll();
+#else
+		usb_send_adc_data(rx_buffer_ptr[0], PLANE_WAVE_ANGLE_NUMS*2, 0);
+#endif
 		cnt ++;
 		XGpioPs_WritePin(&gpiops, LED_2_EMIO_PIN, cnt&0x01);
 //		usleep(250000);

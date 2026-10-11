@@ -191,7 +191,7 @@ def main(argv=None):
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
             sock.bind((args.bind, args.port))
             sock.settimeout(min(0.1, args.frame_timeout))
-            print(f"Listening UBSD on {args.bind}:{args.port}; select OUTPUT SDIO on Zynq, then start on ESP32 page.", flush=True)
+            print(f"Listening UBSD on {args.bind}:{args.port}; boot Zynq compiled for SDIO, then start on ESP32 page.", flush=True)
             while not args.frames or receiver.valid_frames < args.frames:
                 now = time.monotonic()
                 if args.seconds and now - started >= args.seconds:

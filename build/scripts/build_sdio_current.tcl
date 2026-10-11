@@ -21,6 +21,6 @@ report_drc -file [file join $root build reports sdio_drc.rpt]
 write_hw_platform -fixed -include_bit -force -file [file join $root build output ultrasound_B_mode_imaging.xsa]
 set bits [glob -directory [get_property DIRECTORY [get_runs impl_1]] *.bit]
 if {[llength $bits]!=1} { error "Expected one bitstream" }
-file copy -force [lindex $bits 0] [file join $root build output heart_top.bit]
+file copy -force [lindex $bits 0] [file join $root build output ultrasound_B_mode_imaging.bit]
 puts "SDIO_BUILD_COMPLETE"
 close_project

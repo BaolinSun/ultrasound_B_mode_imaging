@@ -267,7 +267,7 @@ foreach ($InterruptSource in @(
 }
 
 foreach ($Artifact in @(
-    'heart_top.bit',
+    'ultrasound_B_mode_imaging.bit',
     'ultrasound_B_mode_imaging.xsa',
     'B_mode_focus_imaging.elf',
     'zynq_fsbl.elf',
@@ -290,7 +290,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 $BootOrder = @(
     'IMAGE HEADER (zynq_fsbl.elf)',
-    'IMAGE HEADER (heart_top.bit)',
+    'IMAGE HEADER (ultrasound_B_mode_imaging.bit)',
     'IMAGE HEADER (B_mode_focus_imaging.elf)'
 )
 $PreviousIndex = -1
@@ -308,7 +308,7 @@ foreach ($Header in $BootOrder) {
 )
 
 $ArtifactManifest = foreach ($Artifact in @(
-    'heart_top.bit',
+    'ultrasound_B_mode_imaging.bit',
     'ultrasound_B_mode_imaging.xsa',
     'B_mode_focus_imaging.elf',
     'zynq_fsbl.elf',

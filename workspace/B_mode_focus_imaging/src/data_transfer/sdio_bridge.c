@@ -1,8 +1,12 @@
 #include "sdio_bridge.h"
+#include "xil_printf.h"
+
+int sdio_bridge_output_is_sdio(void) { return DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO; }
+
+#if DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO
 #include "sdio_host.h"
 #include "../imaging_config.h"
 #include "xil_cache.h"
-#include "xil_printf.h"
 #include "xiltimer.h"
 #include <string.h>
 
@@ -10,7 +14,7 @@ _Static_assert(BF_FRAME_BYTES==BR_FRAME_BYTES,"Update both protocol and imaging 
 /* Linker-owned DDR storage, deliberately NOT the PL's 0x20000000 window. */
 static unsigned char test_frame[BR_FRAME_BYTES] __attribute__((aligned(64)));
 static sdio_host_t host;
-static int selected, online, phase;
+static int online, phase;
 static int reset_on_connect=1;
 static u8 command_seq;
 static u32 session_id, frame_id, frame_crc, offset, failures, frames;
@@ -33,33 +37,19 @@ static void fail_link(void) {
     xil_printf("@SDIO ERROR failures=%lu; re-enumerate, no payload replay\r\n",(unsigned long)failures);
 }
 void sdio_bridge_init(void) {
+    /* Boot/reinitialization starts a fresh handshake; never replay payload. */
+    online=0; phase=IDLE; offset=0; reset_on_connect=1; retry_at=milliseconds();
     for(u32 i=0;i<BR_FRAME_BYTES;i++) {
         u32 word=(i/4U)^0xA5C30000U;
         test_frame[i]=(u8)(word>>(8U*(i%4U)));
     }
     frame_crc=br_crc32(0,test_frame,sizeof(test_frame));
     Xil_DCacheFlushRange((UINTPTR)test_frame,sizeof(test_frame));
-    xil_printf("@SDIO DDR_TEST addr=%08lx bytes=%lu crc32=%08lx default=USB\r\n",
+    xil_printf("@SDIO DDR_TEST addr=%08lx bytes=%lu crc32=%08lx compiled=SDIO\r\n",
         (unsigned long)(UINTPTR)test_frame,(unsigned long)sizeof(test_frame),(unsigned long)frame_crc);
-}
-void sdio_bridge_set_output(int sdio) {
-    selected=sdio!=0;
-    if(!selected && online) {
-        /* Withdraw mode first: ESP cancels queued UDP and partial reception. */
-        (void)write8(BR_HOST_MODE,0);
-        (void)write8(BR_CMD,BR_ABORT);
-        (void)write8(BR_CMD_SEQ,br_next_seq(command_seq));
-    }
-    online=0; phase=IDLE; offset=0; reset_on_connect=1; retry_at=milliseconds();
-}
-int sdio_bridge_output_is_sdio(void) { return selected; }
-void sdio_bridge_print_status(void) {
-    xil_printf("@OUTPUT %s online=%d frames=%lu errors=%lu\r\n",selected?"SDIO":"USB",online,
-        (unsigned long)frames,(unsigned long)failures);
 }
 void sdio_bridge_poll(void) {
     u64 now=milliseconds(); u8 state,mode,version,ack,result;
-    if(!selected) return;
     if(!online) {
         if(now<retry_at) return;
         if(sdio_host_init(&host)!=SDIO_HOST_OK) { fail_link(); return; }
@@ -124,3 +114,8 @@ void sdio_bridge_poll(void) {
         } else if(result==BR_BAD_CRC || result==BR_FAULT) fail_link();
     }
 }
+#else
+/* USB build: no SDIO DDR frame allocation or SD1 register/DMA access. */
+void sdio_bridge_init(void) { xil_printf("@OUTPUT compiled=USB\r\n"); }
+void sdio_bridge_poll(void) { }
+#endif

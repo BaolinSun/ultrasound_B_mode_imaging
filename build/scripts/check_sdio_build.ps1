@@ -13,7 +13,7 @@ function Assert-EqualFiles($a,$b) {
 }
 Assert-EqualFiles 'build/src/bd/pus_ctrl_system.bd' 'vivado/ultrasound_B_mode_imaging.srcs/sources_1/bd/bd/pus_ctrl_system.bd'
 foreach ($file in @('main.c','uart/uart.c','usb/usb.c','data_transfer/sdio_bridge.c',
-                     'data_transfer/sdio_bridge.h','data_transfer/sdio_host.c',
+                     'data_transfer/sdio_bridge.h','data_transfer/output_config.h','data_transfer/sdio_host.c',
                      'data_transfer/sdio_host.h','data_transfer/bridge_protocol.h')) {
     Assert-EqualFiles "build/src/ps/$file" "workspace/B_mode_focus_imaging/src/$file"
     $canonical=[IO.File]::ReadAllText((Join-Path $root "build/src/ps/$file")).Replace("`r`n","`n").TrimEnd()
@@ -44,19 +44,34 @@ foreach ($expected in @('XPAR_XSDPS_NUM_INSTANCES 2','XPAR_XSDPS_0_BASEADDR 0xe0
 }
 $tools=if ($env:AMD_DESIGN_TOOLS_2026_1) { $env:AMD_DESIGN_TOOLS_2026_1 } else { 'D:/AMDDesignTools/2026.1' }
 $nm=Join-Path $tools 'Vitis/gnu/aarch32/nt/gcc-arm-none-eabi/bin/arm-none-eabi-nm.exe'
+$config=Get-Content (Join-Path $root 'build/src/ps/data_transfer/output_config.h') -Raw
+$selection=[regex]::Match($config,'(?m)^#define DATA_OUTPUT_MODE DATA_OUTPUT_(USB|SDIO)\s*$')
+if (-not $selection.Success) { throw 'Output macro must explicitly select DATA_OUTPUT_USB or DATA_OUTPUT_SDIO.' }
 $symbol=& $nm -S (Join-Path $root 'build/output/B_mode_focus_imaging.elf') | Select-String '^([0-9a-f]+) ([0-9a-f]+) b test_frame$'
-if ($LASTEXITCODE -ne 0 -or -not $symbol) { throw 'DDR test frame symbol not found.' }
-$start=[Convert]::ToUInt64($symbol.Matches[0].Groups[1].Value,16)
-$bytes=[Convert]::ToUInt64($symbol.Matches[0].Groups[2].Value,16)
-if ($start%64 -ne 0 -or $bytes -ne 787456 -or $start -lt 0x100000 -or $start+$bytes -gt 0x1c000000) {
-    throw 'DDR test frame is misaligned, wrong-sized, or overlaps reserved USB/PL regions.'
+if ($LASTEXITCODE -ne 0) { throw 'ELF symbol read failed.' }
+if ($selection.Groups[1].Value -eq 'SDIO') {
+    if (-not $symbol) { throw 'SDIO build DDR test frame symbol not found.' }
+    $start=[Convert]::ToUInt64($symbol.Matches[0].Groups[1].Value,16)
+    $bytes=[Convert]::ToUInt64($symbol.Matches[0].Groups[2].Value,16)
+    if ($start%64 -ne 0 -or $bytes -ne 787456 -or $start -lt 0x100000 -or $start+$bytes -gt 0x1c000000) {
+        throw 'DDR test frame is misaligned, wrong-sized, or overlaps reserved USB/PL regions.'
+    }
+    $memorySummary='DDR test frame 0x{0:x}..0x{1:x}' -f $start,($start+$bytes)
+} else {
+    if ($symbol) { throw 'USB build unexpectedly contains an SDIO DDR test frame.' }
+    $memorySummary='USB build: no SDIO DDR test frame'
 }
 $boot=& (Join-Path $tools 'Vivado/bin/bootgen.bat') -arch zynq -read (Join-Path $root 'build/output/BOOT.BIN') 2>&1 | Out-String
 if ($LASTEXITCODE -ne 0) { throw 'BOOT.BIN read failed.' }
 $previous=-1
-foreach ($name in @('zynq_fsbl.elf','heart_top.bit','B_mode_focus_imaging.elf')) {
+foreach ($name in @('zynq_fsbl.elf','ultrasound_B_mode_imaging.bit','B_mode_focus_imaging.elf')) {
     $index=$boot.IndexOf("IMAGE HEADER ($name)")
     if ($index -le $previous) { throw "BOOT partition missing/out of order: $name" }
     $previous=$index
 }
-Write-Host ('PASS: source copies, XSA SD0/SD1/SPI1, two-controller BSP, DDR test frame 0x{0:x}..0x{1:x}, BOOT order' -f $start,($start+$bytes))
+$bit=Join-Path $root 'build/output/ultrasound_B_mode_imaging.bit'
+$implemented=Join-Path $root 'vivado/ultrasound_B_mode_imaging.runs/impl_1/heart_top.bit'
+if ((Get-FileHash -LiteralPath $bit).Hash -ne (Get-FileHash -LiteralPath $implemented).Hash) {
+    throw 'Canonical bitstream differs from current implemented bitstream.'
+}
+Write-Host "PASS: source copies, XSA SD0/SD1/SPI1, two-controller BSP, $memorySummary, BOOT order, canonical bit hash"

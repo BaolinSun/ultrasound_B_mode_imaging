@@ -32,7 +32,7 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <button id="upload" disabled>上传一次 PSRAM 自测数据</button><button id="stop" class="secondary" disabled>停止上传</button>
 <p class="muted">先启动上位机接收程序，再点击上传。数据包不包含帧头或序号；“本地发送完成”不代表上位机已完整收到，请查看接收端校验结果。</p>
 </section><section class="card"><h2>Zynq SDIO → Wi-Fi UDP 测试</h2>
-<p class="muted">先在 Zynq 发送 OUTPUT SDIO，再启动 PC 帧接收工具。本模式含包头与 CRC32，不能使用原始 UDP 接收工具。</p>
+<p class="muted">Zynq 需使用 DATA_OUTPUT_MODE=DATA_OUTPUT_SDIO 编译并启动，再运行 PC 帧接收工具。本模式含包头与 CRC32，不能使用原始 UDP 接收工具。</p>
 <p id="sdio-status">正在读取 SDIO 状态…</p>
 <button id="sdio-once" disabled>SDIO 单帧</button><button id="sdio-stream" disabled>SDIO 连续测试</button>
 <button id="sdio-stop" class="secondary">停止全部传输</button>

@@ -15,7 +15,7 @@ if (-not $Bootgen) {
 $Output = Join-Path $Root 'build\output'
 $Required = @(
     'zynq_fsbl.elf',
-    'heart_top.bit',
+    'ultrasound_B_mode_imaging.bit',
     'B_mode_focus_imaging.elf'
 )
 
@@ -36,13 +36,14 @@ foreach ($Name in $Required) {
     if ((Get-Item -LiteralPath $Resolved).Length -eq 0) {
         throw "BOOT.BIN input is empty: $Resolved"
     }
+    Write-Host "BOOT.BIN input: $Resolved"
 }
 
 $Bif = @'
 the_ROM_image:
 {
     [bootloader] zynq_fsbl.elf
-    heart_top.bit
+    ultrasound_B_mode_imaging.bit
     B_mode_focus_imaging.elf
 }
 '@
@@ -72,3 +73,9 @@ if (-not (Test-Path -LiteralPath $BootImage -PathType Leaf) -or
 }
 
 Write-Host "BOOT image created: $BootImage"
+# Persist exact absolute inputs and hashes with the generated artifacts.
+$InputManifest = foreach ($Name in $Required) {
+    $InputPath = [System.IO.Path]::GetFullPath((Join-Path $Output $Name))
+    '{0}  {1}' -f (Get-FileHash -LiteralPath $InputPath -Algorithm SHA256).Hash, $InputPath
+}
+$InputManifest | Set-Content -LiteralPath (Join-Path $Output 'boot_inputs.sha256') -Encoding utf8

@@ -192,7 +192,7 @@ static esp_err_t sdio_start(httpd_req_t *req)
     esp_err_t r=sdio_bridge_start(count);
     if (r==ESP_OK) return message(req,"202 Accepted","SDIO 测试已启动，请核对 PC 接收校验结果");
     return message(req,r==ESP_ERR_TIMEOUT?"409 Conflict":"503 Service Unavailable",
-        r==ESP_ERR_TIMEOUT?"请先在 Zynq 选择 OUTPUT SDIO，并等待当前任务结束":"SDIO 不可用，或 Wi-Fi/目标地址尚未就绪");
+        r==ESP_ERR_TIMEOUT?"请确认 Zynq 已编译为 SDIO 模式并启动，且当前任务已结束":"SDIO 不可用，或 Wi-Fi/目标地址尚未就绪");
 }
 esp_err_t web_server_start(void)
 {
