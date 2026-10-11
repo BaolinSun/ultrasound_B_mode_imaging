@@ -1,7 +1,7 @@
 Copyright 1986-2022 Xilinx, Inc. All Rights Reserved. Copyright 2022-2026 Advanced Micro Devices, Inc. All Rights Reserved.
 ---------------------------------------------------------------------------------------------------------------------------------------------
 | Tool Version : Vivado v.2026.1 (win64) Build 6511674 Tue Jun 16 11:02:23 MDT 2026
-| Date         : Fri Oct  9 11:44:43 2026
+| Date         : Sun Oct 11 19:14:07 2026
 | Host         : DESKTOP-NBV63DE running 64-bit major release  (build 9200)
 | Command      : report_timing_summary -file D:/MyProjects/zynq_prj/ultrasound_B_mode_imaging/build/reports/sdio_timing.rpt
 | Design       : heart_top
