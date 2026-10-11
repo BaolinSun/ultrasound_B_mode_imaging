@@ -12,7 +12,7 @@ function Assert-EqualFiles($a,$b) {
     if ($left -cne $right) { throw "Source copies differ: $a / $b" }
 }
 Assert-EqualFiles 'build/src/bd/pus_ctrl_system.bd' 'vivado/ultrasound_B_mode_imaging.srcs/sources_1/bd/bd/pus_ctrl_system.bd'
-foreach ($file in @('main.c','uart/uart.c','usb/usb.c','data_transfer/sdio_bridge.c',
+foreach ($file in @('main.c','outbyte.c','uart/uart.c','uart/uart_log.c','uart/uart_log.h','usb/usb.c','data_transfer/sdio_bridge.c',
                      'data_transfer/sdio_bridge.h','data_transfer/output_config.h','data_transfer/sdio_host.c',
                      'data_transfer/sdio_host.h','data_transfer/bridge_protocol.h')) {
     Assert-EqualFiles "build/src/ps/$file" "workspace/B_mode_focus_imaging/src/$file"
@@ -33,15 +33,23 @@ try {
         @('PCW_SD0_PERIPHERAL_ENABLE','1'),@('PCW_SD1_PERIPHERAL_ENABLE','1'),
         @('PCW_SD0_SD0_IO','MIO 40 .. 45'),@('PCW_SD1_SD1_IO','MIO 10 .. 15'),
         @('PCW_SD1_GRP_CD_ENABLE','0'),@('PCW_SD1_GRP_WP_ENABLE','0'),
-        @('PCW_SD1_GRP_POW_ENABLE','0'),@('PCW_SPI1_PERIPHERAL_ENABLE','1'))) {
+        @('PCW_SD1_GRP_POW_ENABLE','0'),@('PCW_SPI1_PERIPHERAL_ENABLE','1'),
+        @('PCW_SPI1_GRP_SS1_ENABLE','0'),@('PCW_SPI1_GRP_SS2_ENABLE','0'),
+        @('PCW_UART0_PERIPHERAL_ENABLE','1'),@('PCW_UART0_UART0_IO','MIO 26 .. 27'),
+        @('PCW_UART1_PERIPHERAL_ENABLE','1'),@('PCW_UART1_UART1_IO','MIO 16 .. 17'))) {
         $actual=$ps.SelectSingleNode("PARAMETERS/PARAMETER[@NAME='$($pair[0])']").VALUE
         if ($actual -ne $pair[1]) { throw "XSA mismatch: $($pair[0])=$actual" }
     }
 } finally { $zip.Dispose() }
 $parameters=Get-Content (Join-Path $Workspace 'ubmi_p/export/ubmi_p/sw/standalone_ps7_cortexa9_0/include/xparameters.h') -Raw
-foreach ($expected in @('XPAR_XSDPS_NUM_INSTANCES 2','XPAR_XSDPS_0_BASEADDR 0xe0100000','XPAR_XSDPS_1_BASEADDR 0xe0101000')) {
+foreach ($expected in @('XPAR_XSDPS_NUM_INSTANCES 2','XPAR_XSDPS_0_BASEADDR 0xe0100000','XPAR_XSDPS_1_BASEADDR 0xe0101000',
+                       'XPAR_XUARTPS_NUM_INSTANCES 2','XPAR_XUARTPS_0_BASEADDR 0xe0000000','XPAR_XUARTPS_1_BASEADDR 0xe0001000',
+                       'XPAR_XUARTPS_1_INTERRUPTS 0x4032')) {
     if (-not $parameters.Contains($expected)) { throw "BSP mismatch: $expected" }
 }
+$bspConfig=Get-Content (Join-Path $Workspace 'ubmi_p/export/ubmi_p/sw/standalone_ps7_cortexa9_0/include/bspconfig.h') -Raw
+if ($bspConfig -notmatch '#define STDOUT_BASEADDRESS 0xe0000000' -or
+    $bspConfig -notmatch '#define STDIN_BASEADDRESS 0xe0001000') { throw 'BSP console must use UART0 stdout and UART1 stdin.' }
 $tools=if ($env:AMD_DESIGN_TOOLS_2026_1) { $env:AMD_DESIGN_TOOLS_2026_1 } else { 'D:/AMDDesignTools/2026.1' }
 $nm=Join-Path $tools 'Vitis/gnu/aarch32/nt/gcc-arm-none-eabi/bin/arm-none-eabi-nm.exe'
 $config=Get-Content (Join-Path $root 'build/src/ps/data_transfer/output_config.h') -Raw
@@ -74,4 +82,4 @@ $implemented=Join-Path $root 'vivado/ultrasound_B_mode_imaging.runs/impl_1/heart
 if ((Get-FileHash -LiteralPath $bit).Hash -ne (Get-FileHash -LiteralPath $implemented).Hash) {
     throw 'Canonical bitstream differs from current implemented bitstream.'
 }
-Write-Host "PASS: source copies, XSA SD0/SD1/SPI1, two-controller BSP, $memorySummary, BOOT order, canonical bit hash"
+Write-Host "PASS: source copies, XSA SD0/SD1/SPI1/UART0/UART1, BSP UART0 stdout/UART1 stdin, $memorySummary, BOOT order, canonical bit hash"

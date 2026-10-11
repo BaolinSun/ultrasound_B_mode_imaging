@@ -33,8 +33,13 @@ $env:IPYTHONDIR = Join-Path $Root 'build\ipython'
 $env:ULTRASOUND_VITIS_STAGE = $Stage
 New-Item -ItemType Directory -Force -Path $env:IPYTHONDIR | Out-Null
 
-& $Vitis -s (Join-Path $PSScriptRoot 'build_vitis_2026_1.py')
+& $Vitis -s (Join-Path $PSScriptRoot 'build_vitis_2026_1.py') 2>&1 | Tee-Object -Variable vitisOutput
 if ($LASTEXITCODE -ne 0) { throw "Vitis exited with code $LASTEXITCODE" }
+# The Vitis launcher can exit 0 after a Python exception. Existing output ELFs
+# are not evidence of this run succeeding; require explicit completion markers.
+$completed=@($vitisOutput | Where-Object { "$_" -match '^VITIS_MIGRATION_COMPLETE:' })
+$expectedMarkers=if ($Stage -eq 'all') { 2 } else { 1 }
+if ($completed.Count -ne $expectedMarkers) { throw 'Vitis did not complete this build; refusing stale artifacts.' }
 
 $WorkspaceRoot = if ($env:ULTRASOUND_VITIS_WORKSPACE) {
     $env:ULTRASOUND_VITIS_WORKSPACE

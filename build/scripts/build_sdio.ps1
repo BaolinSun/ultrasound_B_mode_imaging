@@ -24,6 +24,7 @@ if ($Stage -in @('software','all')) {
         $env:ULTRASOUND_VITIS_WORKSPACE=$temporaryWorkspace
         $env:ULTRASOUND_SDIO_CLOCK_MHZ="$SdioClockMHz"
         & (Join-Path $PSScriptRoot 'run_vitis_2026_1.ps1') -Stage all
+        if (-not $?) { throw 'Software build failed; refusing BOOT.BIN packing.' }
         & (Join-Path $PSScriptRoot 'create_boot_image.ps1')
     } finally {
         $env:ULTRASOUND_VITIS_WORKSPACE=$previousWorkspace

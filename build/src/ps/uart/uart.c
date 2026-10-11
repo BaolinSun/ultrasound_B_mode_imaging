@@ -10,10 +10,10 @@
 #include "../bram/bram.h"
 #include "../HV/hv.h"
 
-#define UART_BASEADDR       XPAR_XUARTPS_0_BASEADDR
+#define UART_BASEADDR       0xE0001000U /* Preserve UART1 after enabling UART0. */
 #define UART_INT_IRQ_ID \
-	((u32)(XGet_IntrId(XPAR_XUARTPS_0_INTERRUPTS) + \
-		XGet_IntrOffset(XPAR_XUARTPS_0_INTERRUPTS)))
+	((u32)(XGet_IntrId(uartps.Config.IntrId) + \
+		XGet_IntrOffset(uartps.Config.IntrId)))
 
 #define UART_LINE_MAX       160U
 #define UART_LINE_DEPTH     4U
@@ -594,7 +594,7 @@ u32 uart_init(void) {
 	u32 res;
 	XUartPs_Config *cfg;
 	cfg = XUartPs_LookupConfig(UART_BASEADDR);
-	if (cfg == NULL) {
+	if (cfg == NULL || cfg->BaseAddress != UART_BASEADDR) {
 		return XST_FAILURE;
 	}
 	res = XUartPs_CfgInitialize(&uartps, cfg, cfg->BaseAddress);

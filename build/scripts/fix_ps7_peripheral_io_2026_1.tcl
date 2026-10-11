@@ -3,7 +3,7 @@
 # A migrated PS7 customizer can write 0 to an inactive peripheral parameter
 # even though processing_system7 v5.5 accepts only the sentinel value NA.
 # Override the default list before sourcing this file when necessary:
-#   set ps7_peripherals_to_disable {USB1 SD1 UART0}
+#   set ps7_peripherals_to_disable {USB1}
 #   source build/scripts/fix_ps7_peripheral_io_2026_1.tcl
 
 proc ps7_io_fix_fail {message} {
@@ -40,6 +40,9 @@ set ps7_properties [list_property $ps7_cell]
 set ps7_all_updates {}
 foreach peripheral $ps7_peripherals_to_disable {
     set peripheral [string toupper $peripheral]
+    if {$peripheral in {UART0 SD0 SD1 SPI1 UART1}} {
+        ps7_io_fix_fail "Cannot disable an active ultrasound peripheral: $peripheral"
+    }
     set updates {}
 
     set master_enable "CONFIG.PCW_EN_${peripheral}"

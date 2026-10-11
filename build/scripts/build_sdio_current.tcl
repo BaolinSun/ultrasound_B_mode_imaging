@@ -18,6 +18,9 @@ open_run impl_1
 report_timing_summary -file [file join $root build reports sdio_timing.rpt]
 report_utilization -file [file join $root build reports sdio_utilization.rpt]
 report_drc -file [file join $root build reports sdio_drc.rpt]
+report_cdc -details -file [file join $root build reports sdio_cdc.rpt]
+report_bus_skew -file [file join $root build reports sdio_bus_skew.rpt]
+report_methodology -file [file join $root build reports sdio_methodology.rpt]
 write_hw_platform -fixed -include_bit -force -file [file join $root build output ultrasound_B_mode_imaging.xsa]
 set bits [glob -directory [get_property DIRECTORY [get_runs impl_1]] *.bit]
 if {[llength $bits]!=1} { error "Expected one bitstream" }

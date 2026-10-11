@@ -85,6 +85,53 @@ try {
     }
     Write-Host 'PASS: invalid output macro rejected'
 } finally { Pop-Location }
+foreach ($suite in @('uart_framer','uart_bridge')) {
+    $suiteOutput=Join-Path $testOutput $suite
+    New-Item -ItemType Directory -Force -Path $suiteOutput | Out-Null
+    Push-Location $suiteOutput
+    try {
+        $sources=@((Join-Path $PSScriptRoot "test_$suite.c"),(Join-Path $projectRoot 'main/uart_log_framer.c'))
+        if ($suite -eq 'uart_bridge') { $sources+=(Join-Path $projectRoot 'main/zynq_uart_bridge.c') }
+        & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g `
+            '-I' (Join-Path $PSScriptRoot 'stubs/uart') '-I' (Join-Path $projectRoot 'main') @sources -o test_uart.exe
+        if ($LASTEXITCODE -ne 0) { throw "$suite compile failed" }
+        $uartOutput=& ./test_uart.exe
+        if ($LASTEXITCODE -ne 0) { throw "$suite failed" }
+        $uartOutput | Write-Host
+        if ($suite -eq 'uart_bridge') {
+            if (($uartOutput -join "`n") -match 'lost partial|hidden') { throw 'Lost/disconnected bytes were incorrectly forwarded' }
+            if (($uartOutput -join "`n") -notmatch '\[ZYNQ\] next') { throw 'UART did not recover after overflow' }
+            foreach ($fault in 1..6) {
+                & ./test_uart.exe $fault
+                if ($LASTEXITCODE -ne 0) { throw "UART init failure $fault failed" }
+            }
+            & $gcov -b -c zynq_uart_bridge.gcno
+            if ($LASTEXITCODE -ne 0) { throw 'UART bridge coverage failed' }
+            & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic -DCONFIG_ZYNQ_UART_BRIDGE_ENABLE=0 `
+                '-I' (Join-Path $PSScriptRoot 'stubs/uart') '-I' (Join-Path $projectRoot 'main') @sources -o test_disabled.exe
+            if ($LASTEXITCODE -ne 0) { throw 'Disabled UART bridge compilation failed' }
+            & ./test_disabled.exe
+            if ($LASTEXITCODE -ne 0) { throw 'Disabled UART bridge failed' }
+        }
+        & $gcov -b -c uart_log_framer.gcno
+        if ($LASTEXITCODE -ne 0) { throw 'UART framing coverage failed' }
+    } finally { Pop-Location }
+}
+$zynqOutput=Join-Path $testOutput 'zynq-uart'
+New-Item -ItemType Directory -Force -Path $zynqOutput | Out-Null
+Push-Location $zynqOutput
+try {
+    $psSources=Join-Path (Split-Path $projectRoot -Parent) 'build/src/ps'
+    & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g `
+        '-I' (Join-Path $PSScriptRoot 'stubs/zynq_uart') '-I' (Join-Path $psSources 'uart') `
+        (Join-Path $PSScriptRoot 'test_zynq_uart.c') (Join-Path $psSources 'uart/uart_log.c') `
+        (Join-Path $psSources 'outbyte.c') -o test_zynq_uart.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Zynq UART log tests compilation failed' }
+    & ./test_zynq_uart.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Zynq UART log tests failed' }
+    & $gcov -b -c uart_log.gcno outbyte.gcno
+    if ($LASTEXITCODE -ne 0) { throw 'Zynq UART log coverage failed' }
+} finally { Pop-Location }
 & $Python -m unittest discover -s $PSScriptRoot -p 'test_*.py' -v
 if ($LASTEXITCODE -ne 0) { throw 'Python tests failed' }
 & $Node --test (Join-Path $PSScriptRoot 'test_web.mjs')

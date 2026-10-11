@@ -1,9 +1,8 @@
 /*
  * helloworld.c: simple test application
  *
- * This application configures UART 16550 to baud rate 9600.
- * PS7 UART (Zynq) is not initialized by this application, since
- * bootrom/bsp configures it to baud rate 115200
+ * Application logs use PS UART0 MIO27 at 115200 (receive-only ESP bridge).
+ * Legacy parameter commands retain PS UART1 MIO16/17 at 460800.
  *
  * ------------------------------------------------
  * | UART TYPE   BAUD RATE                        |
@@ -35,6 +34,7 @@
 #include "pus_operation/pus_oper.h"
 #include "bram/bram.h"
 #include "data_transfer/sdio_bridge.h"
+#include "uart/uart_log.h"
 
 XScuGic xInterruptController;
 void led_init(void);
@@ -49,6 +49,8 @@ int main() {
 	XTime begin;
 	XTime end;
 
+	if (zynq_uart_log_init() != XST_SUCCESS) return XST_FAILURE;
+	xil_printf("@UART_LOG UART0 MIO27/TX -> ESP32 GPIO10/RX 115200 8N1\r\n");
 	Xil_DCacheDisable();
 	// �жϳ�ʼ��
 	intr_init();

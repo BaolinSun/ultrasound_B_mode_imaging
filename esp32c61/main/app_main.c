@@ -4,11 +4,14 @@
 #include "web_server.h"
 #include "selftest.h"
 #include "sdio_bridge.h"
+#include "zynq_uart_bridge.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 
 void app_main(void)
 {
+    esp_err_t uart_err=zynq_uart_bridge_start();
+    if(uart_err!=ESP_OK) ESP_LOGE("app","Zynq UART log unavailable: %s; data services continue",esp_err_to_name(uart_err));
     ESP_ERROR_CHECK(config_store_init());
     ESP_ERROR_CHECK(psram_udp_init());
     esp_err_t sdio_err = sdio_bridge_init();

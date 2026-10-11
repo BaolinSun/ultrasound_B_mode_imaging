@@ -2,6 +2,8 @@
 
 ## 当前范围与启动
 
+Zynq 日志现可经 ESP32 的 USB `idf.py monitor` 查看，单向接线和操作见 [Zynq 串口日志](ZYNQ_UART_MONITOR.md)。需同时更新含 UART0 的新 BOOT.BIN 和 ESP 固件，不需要独立 Zynq USB 串口。
+
 本版本只发送 **Zynq 独立 DDR 测试缓冲区**，不是实时成像数据。不会调用 BEAM START、CFG END 或 HV ENABLE。USB 数据与 SDIO 数据互斥，USB 参数配置始终保留。ESP32 默认不自动发送。
 
 1. 使用本次生成的新 Zynq 启动镜像和 ESP32 固件（烧录前确认板卡及端口）。

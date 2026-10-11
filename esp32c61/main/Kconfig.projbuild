@@ -15,3 +15,11 @@ config PSRAM_UDP_TIMEOUT_MS
     range 100 300000
     default 30000
 endmenu
+menu "Zynq receive-only UART log"
+config ZYNQ_UART_BRIDGE_ENABLE
+    bool "Forward Zynq UART0 logs to USB Serial/JTAG console"
+    default y
+    help
+        Receives GPIO10 at 115200 8N1. GPIO11 stays input; no reverse traffic.
+        Requires the primary console on USB Serial/JTAG.
+endmenu
