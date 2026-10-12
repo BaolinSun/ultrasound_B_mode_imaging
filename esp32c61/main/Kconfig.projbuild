@@ -16,6 +16,14 @@ config PSRAM_UDP_TIMEOUT_MS
     default 30000
 endmenu
 menu "SDIO TCP frame performance"
+config PSRAM_TCP_SEND_BYTES
+    int "Send buffer bytes for the upload TCP socket only"
+    range 2880 65535
+    default LWIP_TCP_SND_BUF_DEFAULT
+    help
+        Applied to the exclusively owned upload socket before connect().
+        Other sockets, including HTTP, retain LWIP_TCP_SND_BUF_DEFAULT.
+        Requires the project-local IDF 6.1 lwIP adapter; not a frame buffer.
 config PSRAM_TCP_STAGE_BYTES
     int "Internal SRAM TCP staging bytes"
     range 1472 16384

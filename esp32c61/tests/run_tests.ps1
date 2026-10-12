@@ -10,6 +10,20 @@ New-Item -ItemType Directory -Force -Path $testOutput | Out-Null
 if (-not (Test-Path -LiteralPath $Compiler)) { throw 'Supply -Compiler with a host GCC path.' }
 $env:PATH = "$(Split-Path $Compiler -Parent);$env:PATH"
 $env:PYTHONUTF8 = '1'
+$socketOutput = Join-Path $testOutput 'tcp-socket'
+New-Item -ItemType Directory -Force -Path $socketOutput | Out-Null
+Push-Location $socketOutput
+try {
+    & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g `
+        '-I' (Join-Path $projectRoot 'main') '-I' (Join-Path $PSScriptRoot 'socket_stubs') `
+        (Join-Path $PSScriptRoot 'test_tcp_socket_tuning.c') (Join-Path $projectRoot 'main/tcp_socket_tuning.c') `
+        -o test_socket.exe
+    if ($LASTEXITCODE -ne 0) { throw 'TCP socket adapter compilation failed' }
+    & ./test_socket.exe
+    if ($LASTEXITCODE -ne 0) { throw 'TCP socket adapter self-check failed' }
+    & (Join-Path (Split-Path $Compiler -Parent) 'gcov.exe') -b -c tcp_socket_tuning.gcno
+    if ($LASTEXITCODE -ne 0) { throw 'TCP socket adapter coverage failed' }
+} finally { Pop-Location }
 $executable = Join-Path $testOutput 'test_core.exe'
 Push-Location $testOutput
 try {

@@ -6,7 +6,7 @@ param(
     [string]$Profile = 'default',
     [ValidateSet('auto', 'tcp', 'udp')]
     [string]$Transport = 'auto',
-    [ValidateSet('auto', 'baseline', 'mid', 'fast')]
+    [ValidateSet('auto', 'baseline', 'mid', 'fast', 'faster')]
     [string]$TcpTuning = 'auto',
     [string]$IdfPath = 'D:\Program Files\esp\v6.1\esp-idf',
     [string]$ActivationScript = 'C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1'
@@ -37,7 +37,7 @@ try {
     $resolvedTuning = if ($TcpTuning -ne 'auto') { $TcpTuning } elseif ($Profile -eq 'throughput') { 'fast' } else { 'baseline' }
     if ($Profile -eq 'throughput' -or $Transport -ne 'auto' -or $TcpTuning -ne 'auto') {
         # Isolate all generated configuration/output; never reset user's sdkconfig.
-        $name = if ($Transport -eq 'auto') { "build-$Profile-$resolvedTuning" } else { "build-$Profile-$Transport-$resolvedTuning" }
+        $name = if ($Transport -eq 'auto') { "build-$Profile-$resolvedTuning-socket" } else { "build-$Profile-$Transport-$resolvedTuning-socket" }
         $buildDir = Join-Path $PSScriptRoot $name
         $configFile = Join-Path $buildDir 'sdkconfig'
         New-Item -ItemType Directory -Force -Path $buildDir | Out-Null

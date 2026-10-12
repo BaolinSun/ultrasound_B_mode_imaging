@@ -1,3 +1,4 @@
 # Optimized sender control path, original TX capacity, unchanged RX window.
 CONFIG_LWIP_TCP_SND_BUF_DEFAULT=5760
+CONFIG_PSRAM_TCP_SEND_BYTES=5760
 CONFIG_PSRAM_TCP_STAGE_BYTES=5760

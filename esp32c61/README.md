@@ -26,13 +26,15 @@ Set-Location 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61'
 .\build.ps1 -Profile throughput -Action flash -Port COM7
 ```
 
-`throughput` 按用户速度优先选择，默认使用 TCP 高档：独立 `build-throughput-fast/` 目录及 sdkconfig，TCP 发送缓冲 23040 B、staging 5760 B，保留原 RX 窗口。合并基础、Wi-Fi 性能和 TCP 分档 defaults，不覆盖原有 `sdkconfig`、`build/` 或旧 `build-throughput/`。TX BA 窗口仍为 32，保留 lwIP IRAM 优化、看门狗和 PHY 设置。配置生成后保留，可用相同参数的 `-Action menuconfig` 调整。
+`throughput` 按用户速度优先选择，默认使用 TCP 高档：独立 `build-throughput-fast-socket/` 目录及 sdkconfig，仅上传 socket 发送缓冲 23040 B，其他 TCP/网页默认 5760 B，staging 5760 B，保留原 RX 窗口。合并基础、Wi-Fi 性能和 TCP 分档 defaults，不覆盖原有 `sdkconfig`、`build/` 或旧性能构建目录。TX BA 窗口仍为 32，保留 lwIP IRAM 优化、看门狗和 PHY 设置。配置生成后保留，可用相同参数的 `-Action menuconfig` 调整。
 
-指定 `-TcpTuning baseline/mid/fast` 选择 5760/11520/23040 B TCP 发送缓冲，各自独立目录；此前高档实测约 10.93 Mbit/s，但内部堆低水位仅约 20 KiB，中档约 5.92 Mbit/s、低水位约 51 KiB。高档默认优先速度，保留中档作为内存余量更大的回退选项；短测不代表长期稳定。原始 UDP 与 SDIO TCP/UDP 宏选择保持不变。详见 [TCP 优化与板测](TCP_OPTIMIZATION.md)。
+指定 `-TcpTuning baseline/mid/fast/faster` 选择 5760/11520/23040/28800 B 上传专用 TCP 发送缓冲，各自独立 `*-socket` 目录。28800 B 是实验档，不默认启用；最终板测堆低水位约 10.2 KiB，出现既有上游停帧，尚不能确认持续提速。高档默认优先速度，中档作为内存余量更大的回退选项；短测不代表长期稳定。原始 UDP 与 SDIO TCP/UDP 宏选择保持不变。当前实现及结果见 [上传连接专用缓冲](TCP_SOCKET_TUNING.md)，此前全局缓冲分级数据见 [历史 TCP 优化板测](TCP_OPTIMIZATION.md)。
 
 ```powershell
 # 如需更大内部 heap 余量，显式回退中档
 .\build.ps1 -Profile throughput -TcpTuning mid -Action flash -Port COM7
+# 实验性更大上传容量，不保证更快，需板测内存及持续吞吐
+.\build.ps1 -Profile throughput -TcpTuning faster -Action flash -Port COM7
 ```
 
 默认：Flash 4 MiB，IDF 内置 1500 KiB 单应用分区，Quad PSRAM 40 MHz，USB Serial/JTAG 控制台，FreeRTOS 1000 Hz。PSRAM 容量由启动检测确定。PSRAM 缺失或自测分配失败时仍可访问配置页，但禁止自测上传，不使用 SRAM 替代测试数据。

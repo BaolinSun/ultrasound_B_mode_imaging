@@ -146,7 +146,9 @@ static esp_err_t get_status(httpd_req_t *req)
         cJSON_AddNumberToObject(json,"tcp_connect_us",udp.tcp_connect_us);
         cJSON_AddNumberToObject(json,"tcp_ack_us",udp.tcp_ack_us);
         cJSON_AddStringToObject(json,"tcp_phase",tcp_phase_name(udp.tcp_phase));
-        cJSON_AddNumberToObject(json,"tcp_send_buffer",CONFIG_LWIP_TCP_SND_BUF_DEFAULT);
+        cJSON_AddNumberToObject(json,"tcp_send_buffer",CONFIG_PSRAM_TCP_SEND_BYTES);
+        cJSON_AddNumberToObject(json,"tcp_send_buffer_actual",udp.tcp_send_buffer_actual);
+        cJSON_AddNumberToObject(json,"tcp_default_send_buffer",CONFIG_LWIP_TCP_SND_BUF_DEFAULT);
         cJSON_AddNumberToObject(json,"tcp_receive_window",CONFIG_LWIP_TCP_WND_DEFAULT);
         cJSON_AddNumberToObject(json,"tcp_stage_bytes",TCP_STAGE_BYTES);
         cJSON_AddNumberToObject(json,"tcp_metric_session",udp.tcp_metric_session);

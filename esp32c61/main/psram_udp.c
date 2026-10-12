@@ -13,6 +13,7 @@
 #include "lwip/sockets.h"
 #include "sdkconfig.h"
 #include "tcp_transfer.h"
+#include "tcp_socket_tuning.h"
 #include "lwip/tcp.h"
 #include <fcntl.h>
 
@@ -142,6 +143,10 @@ static raw_result_t connect_tcp(send_ctx_t *ctx,uint64_t deadline)
     tcp_socket=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
     if(tcp_socket<0)return RAW_SEND_ERROR;
     ctx->socket=tcp_socket;
+    unsigned actual=0;
+    int tuning_error=tcp_upload_set_send_buffer(tcp_socket,CONFIG_PSRAM_TCP_SEND_BYTES,&actual);
+    if(tuning_error) { errno=tuning_error;return RAW_SEND_ERROR; }
+    xSemaphoreTake(lock,portMAX_DELAY);status.tcp_send_buffer_actual=actual;xSemaphoreGive(lock);
     struct timeval timeout={.tv_sec=0,.tv_usec=100000};int yes=1;
     if(setsockopt(tcp_socket,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout))<0 ||
        setsockopt(tcp_socket,IPPROTO_TCP,TCP_NODELAY,&yes,sizeof(yes))<0 ||
@@ -283,6 +288,7 @@ esp_err_t psram_udp_init(void)
     staging = heap_caps_malloc(TCP_STAGE_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!lock || !staging) return ESP_ERR_NO_MEM;
     status.result = RAW_NOT_READY;
+    status.tcp_send_buffer_actual=0;
     status.tcp_metric_result=RAW_NOT_READY;
     if (xTaskCreate(upload_worker, "psram_udp", 4096, NULL, 5, &worker) != pdPASS)
         return ESP_ERR_NO_MEM;

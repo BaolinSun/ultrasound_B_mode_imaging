@@ -70,7 +70,7 @@ test('TCP verified ACK differs from UDP local completion and exposes protocol',a
   const e=setup();await e.settle();
   Object.assign(e.backend.status,{sdio_transport:'tcp',active_transport:'tcp',result:'received_verified',
     tcp_connected:true,tcp_confirmed_frames:12,tcp_chunks:137,tcp_waits:4,tcp_ack_us:12000,socket_errno:12,
-    tcp_phase:'payload',tcp_send_buffer:23040,tcp_stage_bytes:5760,tcp_metric_frame:9,
+    tcp_phase:'payload',tcp_send_buffer:28800,tcp_send_buffer_actual:28800,tcp_default_send_buffer:5760,tcp_stage_bytes:5760,tcp_metric_frame:9,
     tcp_metric_result:'sent_local',tcp_payload_us:500000,tcp_write_wait_us:420000,tcp_yield_us:22000});
   await vm.runInContext('refresh()',e.context);
   assert.match(e.elements.result.textContent,/PC 完整收帧且 CRC 校验通过/);
@@ -79,7 +79,9 @@ test('TCP verified ACK differs from UDP local completion and exposes protocol',a
   assert.match(e.elements['sdio-timing'].textContent,/PC 确认 12/);
   assert.match(e.elements.packets.textContent,/不是 TCP 分段数/);
   assert.match(e.elements['tcp-timing'].textContent,/发送载荷/);
-  assert.match(e.elements['tcp-timing'].textContent,/23040 B/);
+  assert.match(e.elements['tcp-timing'].textContent,/配置 28800 B/);
+  assert.match(e.elements['tcp-timing'].textContent,/实际 28800 B/);
+  assert.match(e.elements['tcp-timing'].textContent,/其他 TCP 默认 5760 B/);
   assert.match(e.elements['tcp-timing'].textContent,/500.0 ms/);
   assert.match(e.elements['tcp-timing'].textContent,/不能相加/);
   Object.assign(e.backend.status,{active_transport:'udp',result:'sent_local'});
