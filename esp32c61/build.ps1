@@ -34,7 +34,7 @@ try {
     $configFile = Join-Path $PSScriptRoot 'sdkconfig'
     $buildDir = Join-Path $PSScriptRoot 'build'
     $profileArgs = @()
-    $resolvedTuning = if ($TcpTuning -ne 'auto') { $TcpTuning } elseif ($Profile -eq 'throughput') { 'mid' } else { 'baseline' }
+    $resolvedTuning = if ($TcpTuning -ne 'auto') { $TcpTuning } elseif ($Profile -eq 'throughput') { 'fast' } else { 'baseline' }
     if ($Profile -eq 'throughput' -or $Transport -ne 'auto' -or $TcpTuning -ne 'auto') {
         # Isolate all generated configuration/output; never reset user's sdkconfig.
         $name = if ($Transport -eq 'auto') { "build-$Profile-$resolvedTuning" } else { "build-$Profile-$Transport-$resolvedTuning" }

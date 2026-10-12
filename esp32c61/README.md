@@ -26,13 +26,13 @@ Set-Location 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61'
 .\build.ps1 -Profile throughput -Action flash -Port COM7
 ```
 
-`throughput` 现在默认使用平衡 TCP 中档：独立 `build-throughput-mid/` 目录及 sdkconfig，TCP 发送缓冲 11520 B、staging 5760 B，保留原 RX 窗口。合并基础、Wi-Fi 性能和 TCP 分档 defaults，不覆盖原有 `sdkconfig`、`build/` 或旧 `build-throughput/`。TX BA 窗口仍为 32，保留 lwIP IRAM 优化、看门狗和 PHY 设置。配置生成后保留，可用相同参数的 `-Action menuconfig` 调整。
+`throughput` 按用户速度优先选择，默认使用 TCP 高档：独立 `build-throughput-fast/` 目录及 sdkconfig，TCP 发送缓冲 23040 B、staging 5760 B，保留原 RX 窗口。合并基础、Wi-Fi 性能和 TCP 分档 defaults，不覆盖原有 `sdkconfig`、`build/` 或旧 `build-throughput/`。TX BA 窗口仍为 32，保留 lwIP IRAM 优化、看门狗和 PHY 设置。配置生成后保留，可用相同参数的 `-Action menuconfig` 调整。
 
-指定 `-TcpTuning baseline/mid/fast` 选择 5760/11520/23040 B TCP 发送缓冲，各自独立目录；高档实测约 10.93 Mbit/s，但内部堆低水位仅约 20 KiB，中档约 5.92 Mbit/s、低水位约 51 KiB。默认中档侧重内存余量，高档是可选性能配置，短测不代表长期稳定。原始 UDP 与 SDIO TCP/UDP 宏选择保持不变。详见 [TCP 优化与板测](TCP_OPTIMIZATION.md)。
+指定 `-TcpTuning baseline/mid/fast` 选择 5760/11520/23040 B TCP 发送缓冲，各自独立目录；此前高档实测约 10.93 Mbit/s，但内部堆低水位仅约 20 KiB，中档约 5.92 Mbit/s、低水位约 51 KiB。高档默认优先速度，保留中档作为内存余量更大的回退选项；短测不代表长期稳定。原始 UDP 与 SDIO TCP/UDP 宏选择保持不变。详见 [TCP 优化与板测](TCP_OPTIMIZATION.md)。
 
 ```powershell
-# 可选高档；监测内部 heap，勿与中档固件/配置混淆
-.\build.ps1 -Profile throughput -TcpTuning fast -Action flash -Port COM7
+# 如需更大内部 heap 余量，显式回退中档
+.\build.ps1 -Profile throughput -TcpTuning mid -Action flash -Port COM7
 ```
 
 默认：Flash 4 MiB，IDF 内置 1500 KiB 单应用分区，Quad PSRAM 40 MHz，USB Serial/JTAG 控制台，FreeRTOS 1000 Hz。PSRAM 容量由启动检测确定。PSRAM 缺失或自测分配失败时仍可访问配置页，但禁止自测上传，不使用 SRAM 替代测试数据。
@@ -71,7 +71,7 @@ python 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\pc_tools\raw_u
 
 原始 UDP 不支持可靠帧重组、端到端确认或丢包重传；上位机必须预先知道本次长度，每次仅触发一个上传。自测可通过已知内容检测异常，但不能据此恢复丢失数据。一般业务流在丢失或乱序后无法保证对齐。`sent_local` 仅代表本地 `sendto()` 成功。
 
-原始 UDP 数据路径为：登记的 PSRAM 缓冲区 → 内部 SRAM staging 的 1440 字节前缀 → UDP socket → 上位机。共用 staging 分配为 4096 字节，TCP 使用整块。发送任务优先级 5，UDP 每 32 包让出 CPU 至少 1 ms；`ENOMEM/ENOBUFS/EAGAIN/EWOULDBLOCK` 最多重试 100 次。socket 发送超时 100 ms，总期限从接受提交起计时。断网、IP 丢失、重新配网、停止或超时终止当前上传，不自动重放。
+原始 UDP 数据路径为：登记的 PSRAM 缓冲区 → 内部 SRAM staging 的 1440 字节前缀 → UDP socket → 上位机。共用 staging 默认分配为 5760 字节，TCP 使用整块。发送任务优先级 5，UDP 每 32 包让出 CPU 至少 1 ms；`ENOMEM/ENOBUFS/EAGAIN/EWOULDBLOCK` 最多重试 100 次。socket 发送超时 100 ms，总期限从接受提交起计时。断网、IP 丢失、重新配网、停止或超时终止当前上传，不自动重放。
 
 公共接口位于 `main/psram_udp.h`。为了检查完整缓冲区范围，提交仅接受已登记的 PSRAM 内存，可提交登记缓冲区的子范围；最多登记 4 个缓冲区。
 

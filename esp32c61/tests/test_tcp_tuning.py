@@ -13,9 +13,9 @@ class TuningTests(unittest.TestCase):
                                      'CONFIG_PSRAM_TCP_STAGE_BYTES':5760})
             self.assertEqual(capacity%1440,0)
 
-    def test_balanced_default_uses_isolated_tuning_dirs(self):
+    def test_performance_default_uses_isolated_tuning_dirs(self):
         script=(ROOT/'build.ps1').read_text()
-        self.assertIn("elseif ($Profile -eq 'throughput') { 'mid' }",script)
+        self.assertIn("elseif ($Profile -eq 'throughput') { 'fast' }",script)
         self.assertIn('build-$Profile-$resolvedTuning',script)
         self.assertIn('build-$Profile-$Transport-$resolvedTuning',script)
         header=(ROOT/'main/wifi_transport_config.h').read_text()
