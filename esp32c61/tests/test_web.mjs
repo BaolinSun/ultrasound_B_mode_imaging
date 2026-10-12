@@ -72,8 +72,10 @@ test('SDIO starts only after explicit host selection and shares stop control',as
     sdio:{ready:true,host_sdio:false,running:false,raw_busy:false,free_slots:2}});
   e.elements['target-ip'].value='192.168.3.31';await submit(e);
   assert.equal(e.elements['sdio-once'].disabled,true);
+  assert.match(e.elements['sdio-gate'].textContent,/Zynq SDIO 初始化\/握手尚未完成/);
   e.backend.status.sdio.host_sdio=true;await vm.runInContext('refresh()',e.context);
   assert.equal(e.elements['sdio-once'].disabled,false);
+  assert.match(e.elements['sdio-gate'].textContent,/可启动/);
   await e.elements['sdio-once'].listeners.click();
   assert.equal(e.backend.status.sdio.running,true);
   assert.equal(e.elements.upload.disabled,true);

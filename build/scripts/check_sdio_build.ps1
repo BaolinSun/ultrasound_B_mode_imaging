@@ -14,7 +14,7 @@ function Assert-EqualFiles($a,$b) {
 Assert-EqualFiles 'build/src/bd/pus_ctrl_system.bd' 'vivado/ultrasound_B_mode_imaging.srcs/sources_1/bd/bd/pus_ctrl_system.bd'
 foreach ($file in @('main.c','outbyte.c','uart/uart.c','uart/uart_log.c','uart/uart_log.h','usb/usb.c','data_transfer/sdio_bridge.c',
                      'data_transfer/sdio_bridge.h','data_transfer/output_config.h','data_transfer/sdio_host.c',
-                     'data_transfer/sdio_host.h','data_transfer/bridge_protocol.h')) {
+                     'data_transfer/sdio_host.h','data_transfer/sdio_cmd_engine.c','data_transfer/sdio_cmd_engine.h','data_transfer/bridge_protocol.h')) {
     Assert-EqualFiles "build/src/ps/$file" "workspace/B_mode_focus_imaging/src/$file"
     $canonical=[IO.File]::ReadAllText((Join-Path $root "build/src/ps/$file")).Replace("`r`n","`n").TrimEnd()
     $built=[IO.File]::ReadAllText((Join-Path $Workspace "B_mode_focus_imaging/src/$file")).Replace("`r`n","`n").TrimEnd()

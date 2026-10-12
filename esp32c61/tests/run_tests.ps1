@@ -24,6 +24,18 @@ $gcov = Join-Path (Split-Path $Compiler -Parent) 'gcov.exe'
 & $gcov -b -c 'raw_transfer.gcno' 'config_model.gcno'
 if ($LASTEXITCODE -ne 0) { throw 'C coverage report failed' }
 } finally { Pop-Location }
+$sdkBsp=Join-Path (Split-Path $projectRoot -Parent) 'workspace/ubmi_p/ps7_cortexa9_0/standalone_ps7_cortexa9_0/bsp'
+if (Test-Path (Join-Path $sdkBsp 'include/xil_printf.h')) {
+    Push-Location $testOutput
+    try {
+        & $Compiler -std=c11 '-I' (Join-Path $PSScriptRoot 'stubs/formatter') '-I' (Join-Path $sdkBsp 'include') `
+            (Join-Path $PSScriptRoot 'test_xil_log_format.c') (Join-Path $sdkBsp 'libsrc/standalone/src/common/xil_printf.c') `
+            -o test_actual_formatter.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Actual SDK formatter compilation failed' }
+        & ./test_actual_formatter.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Actual SDK formatter regression failed' }
+    } finally { Pop-Location }
+}
 foreach ($suite in @('framed','sdio_bridge')) {
     $extra = if ($suite -eq 'framed') { 'framed_transfer.c' } else { 'sdio_bridge.c' }
     $suiteOutput = Join-Path $testOutput $suite
@@ -50,6 +62,19 @@ foreach ($suite in @('framed','sdio_bridge')) {
     } finally { Pop-Location }
 }
 Write-Host "C test output and coverage: $testOutput"
+$cmdOutput=Join-Path $testOutput 'sdio-command'
+New-Item -ItemType Directory -Force -Path $cmdOutput | Out-Null
+Push-Location $cmdOutput
+try {
+    $cmdSources=Join-Path (Split-Path $projectRoot -Parent) 'build/src/ps/data_transfer'
+    & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g '-I' $cmdSources `
+        (Join-Path $PSScriptRoot 'test_sdio_cmd_engine.c') (Join-Path $cmdSources 'sdio_cmd_engine.c') -o test_command.exe
+    if ($LASTEXITCODE -ne 0) { throw 'SDIO command engine compilation failed' }
+    & ./test_command.exe
+    if ($LASTEXITCODE -ne 0) { throw 'SDIO command engine tests failed' }
+    & $gcov -b -c sdio_cmd_engine.gcno
+    if ($LASTEXITCODE -ne 0) { throw 'SDIO command engine coverage failed' }
+} finally { Pop-Location }
 foreach ($outputMode in @('SDIO','USB')) {
 $hostOutput = Join-Path $testOutput "host-$outputMode"
 New-Item -ItemType Directory -Force -Path $hostOutput | Out-Null

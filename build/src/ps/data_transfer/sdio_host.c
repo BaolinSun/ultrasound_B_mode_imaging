@@ -1,4 +1,5 @@
 #include "sdio_host.h"
+#include "sdio_cmd_engine.h"
 
 #include <stddef.h>
 #include <string.h>
@@ -82,7 +83,7 @@ static int sdio_cmd53_fast_cmd(sdio_host_t *host, u32 arg, u32 blk_count);
 
 static u32 sdio_elapsed_ms(XTime start, XTime end)
 {
-    return (u32)(((u64)(end - start) * 1000u) / (u64)COUNTS_PER_SECOND);
+    return (u32)(((u64)(end - start) * 1000u) / (u64)(COUNTS_PER_SECOND));
 }
 
 void sdio_host_take_timing(sdio_host_timing_t *timing)
@@ -130,7 +131,7 @@ static void sdio_print_stats_if_due(const char *tag, u32 write_count)
 
 void sdio_host_print_stats(const char *tag)
 {
-    xil_printf("[ZYNQ][SDIO] CMD53 stats %s total=%lu dma=%lu pio_warmup=%lu pio_fallback=%lu dma_error=%lu\r\n",
+    xil_printf("[ZYNQ][SDIO] CMD53 stats %s total=%u dma=%u pio_warmup=%u pio_fallback=%u dma_error=%u\r\n",
                (tag != NULL) ? tag : "",
                s_cmd53_write_count,
                s_cmd53_dma_blocks,
@@ -153,13 +154,13 @@ static void sdio_dump_regs(sdio_host_t *host, const char *tag, u32 cmd, u32 arg,
     u32 resp0 = XSdPs_ReadReg(base, XSDPS_RESP0_OFFSET);
     u32 psr = XSdPs_ReadReg(base, XSDPS_PRES_STATE_OFFSET);
 
-    xil_printf("[ZYNQ][SDIO] %s cmd=0x%08lx arg=0x%08lx blk=%lu resp0=0x%08lx\r\n",
+    xil_printf("[ZYNQ][SDIO] %s cmd=0x%08x arg=0x%08x blk=%u resp0=0x%08x\r\n",
                tag,
                cmd,
                arg,
                blk_count,
                resp0);
-    xil_printf("[ZYNQ][SDIO] %s norm=0x%04x err=0x%04x psr=0x%08lx xfer=0x%04x blk_size=0x%04x blk_cnt=0x%04x\r\n",
+    xil_printf("[ZYNQ][SDIO] %s norm=0x%04x err=0x%04x psr=0x%08x xfer=0x%04x blk_size=0x%04x blk_cnt=0x%04x\r\n",
                tag,
                XSdPs_ReadReg16(base, XSDPS_NORM_INTR_STS_OFFSET),
                XSdPs_ReadReg16(base, XSDPS_ERR_INTR_STS_OFFSET),
@@ -167,13 +168,13 @@ static void sdio_dump_regs(sdio_host_t *host, const char *tag, u32 cmd, u32 arg,
                XSdPs_ReadReg16(base, XSDPS_XFER_MODE_OFFSET),
                XSdPs_ReadReg16(base, XSDPS_BLK_SIZE_OFFSET),
                XSdPs_ReadReg16(base, XSDPS_BLK_CNT_OFFSET));
-    xil_printf("[ZYNQ][SDIO] %s host_ctrl1=0x%02x adma_err=0x%02x adma_sar=0x%08lx sdma_addr=0x%08lx\r\n",
+    xil_printf("[ZYNQ][SDIO] %s host_ctrl1=0x%02x adma_err=0x%02x adma_sar=0x%08x sdma_addr=0x%08x\r\n",
                tag,
                XSdPs_ReadReg8(base, XSDPS_HOST_CTRL1_OFFSET),
                XSdPs_ReadReg8(base, XSDPS_ADMA_ERR_STS_OFFSET),
                XSdPs_ReadReg(base, XSDPS_ADMA_SAR_OFFSET),
                XSdPs_ReadReg(base, XSDPS_SDMA_SYS_ADDR_OFFSET));
-    xil_printf("[ZYNQ][SDIO] %s cmd_inhibit=%lu dat_inhibit=%lu dat_active=%lu wr_active=%lu bwr_en=%lu dat[3:0]=0x%lx cmd_lvl=%lu\r\n",
+    xil_printf("[ZYNQ][SDIO] %s cmd_inhibit=%u dat_inhibit=%u dat_active=%u wr_active=%u bwr_en=%u dat[3:0]=0x%x cmd_lvl=%u\r\n",
                tag,
                psr & 1u,
                (psr >> 1) & 1u,
@@ -189,7 +190,7 @@ static void sdio_reset_cmd_dat_lines(sdio_host_t *host, const char *reason)
     u32 base = host->sd.Config.BaseAddress;
     u32 retry;
 
-    xil_printf("[ZYNQ][SDIO] reset CMD/DAT after %s psr=0x%08lx\r\n",
+    xil_printf("[ZYNQ][SDIO] reset CMD/DAT after %s psr=0x%08x\r\n",
                reason,
                XSdPs_ReadReg(base, XSDPS_PRES_STATE_OFFSET));
     XSdPs_WriteReg8(base,
@@ -203,7 +204,7 @@ static void sdio_reset_cmd_dat_lines(sdio_host_t *host, const char *reason)
         usleep(10u);
     }
     sdio_clear_intr_status(host);
-    xil_printf("[ZYNQ][SDIO] reset CMD/DAT done retry=%lu psr=0x%08lx\r\n",
+    xil_printf("[ZYNQ][SDIO] reset CMD/DAT done retry=%u psr=0x%08x\r\n",
                retry,
                XSdPs_ReadReg(base, XSDPS_PRES_STATE_OFFSET));
 }
@@ -320,7 +321,7 @@ static int sdio_pio_write_block(sdio_host_t *host, u32 arg, const u8 *block, u8 
     XSdPs_WriteReg16(base, XSDPS_NORM_INTR_STS_OFFSET, XSDPS_INTR_TC_MASK);
 
     if (trace != 0u) {
-        xil_printf("[ZYNQ][SDIO] CMD53 PIO write complete resp0=0x%08lx psr=0x%08lx\r\n",
+        xil_printf("[ZYNQ][SDIO] CMD53 PIO write complete resp0=0x%08x psr=0x%08x\r\n",
                    XSdPs_ReadReg(base, XSDPS_RESP0_OFFSET),
                    XSdPs_ReadReg(base, XSDPS_PRES_STATE_OFFSET));
     }
@@ -333,58 +334,29 @@ static int sdio_cmd(sdio_host_t *host, u32 cmd, u32 arg, u32 blk_count)
         host->sd.TransferMode = 0u;
     }
 
-    if (XSdPs_CmdTransfer(&host->sd, cmd, arg, blk_count) != XST_SUCCESS) {
-        return SDIO_HOST_ERR_CMD;
-    }
+    return sdio_fast_cmd(host,cmd,arg,blk_count,0u);
+}
 
-    return SDIO_HOST_OK;
+static uint32_t cmd_read32(void *ctx,unsigned p) { return XSdPs_ReadReg(((sdio_host_t*)ctx)->sd.Config.BaseAddress,p); }
+static uint16_t cmd_read16(void *ctx,unsigned p) { return XSdPs_ReadReg16(((sdio_host_t*)ctx)->sd.Config.BaseAddress,p); }
+static void cmd_write32(void *ctx,unsigned p,uint32_t v) { XSdPs_WriteReg(((sdio_host_t*)ctx)->sd.Config.BaseAddress,p,v); }
+static void cmd_write16(void *ctx,unsigned p,uint16_t v) { XSdPs_WriteReg16(((sdio_host_t*)ctx)->sd.Config.BaseAddress,p,v); }
+static void cmd_write8(void *ctx,unsigned p,uint8_t v) { XSdPs_WriteReg8(((sdio_host_t*)ctx)->sd.Config.BaseAddress,p,v); }
+static uint64_t cmd_time(void *ctx) {
+    XTime t; (void)ctx; XTime_GetTime(&t);
+    return sdio_ticks_us((u64)t,(u64)(COUNTS_PER_SECOND));
 }
 
 static int sdio_fast_cmd(sdio_host_t *host, u32 cmd, u32 arg, u32 blk_count, u8 data_events_ok)
 {
-    u32 base = host->sd.Config.BaseAddress;
-    XTime started, now;
-    XTime_GetTime(&started);
-    u32 timeout = 100000u;
-    u32 polls = 0u;
-    u8 saw_cmd_inhibit = 0u;
-
-    if (XSdPs_SetupCmd(&host->sd, arg, blk_count) != XST_SUCCESS) {
-        return SDIO_HOST_ERR_CMD;
+    const sdio_cmd_io_t io={host,cmd_read32,cmd_read16,cmd_write32,cmd_write16,cmd_write8,cmd_time};
+    int result=sdio_cmd_execute(&io,XSdPs_FrameCmd(&host->sd,cmd),arg,(u16)blk_count,
+                               host->sd.TransferMode,data_events_ok,100000U);
+    if(result!=SDIO_HOST_OK) {
+        sdio_dump_regs(host,result==SDIO_HOST_ERR_TIMEOUT?"COMMAND_TIMEOUT":"COMMAND_ERROR",cmd,arg,blk_count);
+        sdio_reset_cmd_dat_lines(host,"bounded command failure");
     }
-    if (XSdPs_SendCmd(&host->sd, cmd) != XST_SUCCESS) {
-        return SDIO_HOST_ERR_CMD;
-    }
-
-    while (timeout != 0u) {
-        u16 norm = XSdPs_ReadReg16(base, XSDPS_NORM_INTR_STS_OFFSET);
-        u32 psr = XSdPs_ReadReg(base, XSDPS_PRES_STATE_OFFSET);
-
-        polls++;
-        if ((psr & XSDPS_PSR_INHIBIT_CMD_MASK) != 0u) {
-            saw_cmd_inhibit = 1u;
-        }
-        if ((norm & XSDPS_INTR_ERR_MASK) != 0u) {
-            return SDIO_HOST_ERR_CMD;
-        }
-        if ((norm & XSDPS_INTR_CC_MASK) != 0u) {
-            XSdPs_WriteReg16(base, XSDPS_NORM_INTR_STS_OFFSET, XSDPS_INTR_CC_MASK);
-            return SDIO_HOST_OK;
-        }
-        if (data_events_ok != 0u &&
-            (norm & (XSDPS_INTR_BWR_MASK | XSDPS_INTR_TC_MASK)) != 0u) {
-            return SDIO_HOST_OK;
-        }
-        if ((psr & XSDPS_PSR_INHIBIT_CMD_MASK) == 0u &&
-            (saw_cmd_inhibit != 0u || polls > 32u)) {
-            return SDIO_HOST_OK;
-        }
-        XTime_GetTime(&now);
-        if (now-started > COUNTS_PER_SECOND/10U) break;
-        timeout--;
-    }
-
-    return SDIO_HOST_ERR_TIMEOUT;
+    return result;
 }
 
 static int sdio_cmd52_fast_cmd(sdio_host_t *host, u32 arg)
@@ -465,6 +437,7 @@ static int sdio_enable_fn1(sdio_host_t *host)
 
     for (u32 i = 0u; i < 1000u; ++i) {
         ret = sdio_cmd52(host, 0u, 0u, SDIO_CCCR_IO_READY, 0u, &ready);
+        if(ret!=SDIO_HOST_OK) return ret;
         if (ret == SDIO_HOST_OK && (ready & 0x02u) != 0u) {
             return SDIO_HOST_OK;
         }
@@ -502,36 +475,56 @@ static int sdio_enumerate_card(sdio_host_t *host)
     if (XSdPs_ResetConfig(&host->sd) != XST_SUCCESS) {
         return SDIO_HOST_ERR_CONFIG;
     }
+    /* ResetConfig clears status-enable registers. Restore polling events;
+     * signal IRQs remain disabled (no interrupt-handler dependency). */
+    XSdPs_ConfigInterrupt(&host->sd);
+    sdio_config_dma_preserve_bus(host);
+    xil_printf("[ZYNQ][SDIO] poll events enabled norm=0x%04x err=0x%04x\r\n",
+        (unsigned)XSdPs_ReadReg16(host->sd.Config.BaseAddress,XSDPS_NORM_INTR_STS_EN_OFFSET),
+        (unsigned)XSdPs_ReadReg16(host->sd.Config.BaseAddress,XSDPS_ERR_INTR_STS_EN_OFFSET));
     if (XSdPs_Change_ClkFreq(&host->sd, SDIO_INIT_CLOCK_HZ) != XST_SUCCESS) {
         return SDIO_HOST_ERR_CONFIG;
     }
 
+    /* CMD0 alone does not reset an already-selected SDIO function. Follow
+     * IDF sdmmc_io_reset: CCCR IO_ABORT bit3 before GO_IDLE_STATE. The reset
+     * itself may time out/lose CRC; subsequent CMD5 must still succeed. */
+    xil_printf("[ZYNQ][SDIO] CMD52 I/O reset before enumeration\r\n");
+    (void)sdio_cmd52(host,1u,0u,0x06u,0x08u,NULL);
+    usleep(1000u);
     xil_printf("[ZYNQ][SDIO] CMD0 reset card\r\n");
-    (void)sdio_cmd(host, CMD0, 0u, 0u);
+    ret=sdio_cmd(host, CMD0, 0u, 0u);
+    if(ret!=SDIO_HOST_OK) return ret;
+    xil_printf("[ZYNQ][SDIO] CMD0 complete; CMD5 OCR probe\r\n");
     usleep(10000u);
-
+    XTime ocr_start,ocr_now;
+    XTime_GetTime(&ocr_start);
     for (u32 retry = 0u; retry < 500u; ++retry) {
         sdio_clear_intr_status(host);
         ret = sdio_cmd(host, SDIO_CMD5_R4, SDIO_OCR_3V3, 0u);
         resp0 = sdio_resp0(host);
+        if(ret!=SDIO_HOST_OK) return ret;
         if (ret == SDIO_HOST_OK && (resp0 & SDIO_OCR_READY) != 0u) {
             break;
         }
         usleep(1000u);
+        XTime_GetTime(&ocr_now);
+        if(sdio_elapsed_ms(ocr_start,ocr_now)>=1000U) break;
     }
 
     if ((resp0 & SDIO_OCR_READY) == 0u) {
-        xil_printf("[ZYNQ][SDIO] CMD5 timeout resp0=0x%08lx\r\n", resp0);
+        xil_printf("[ZYNQ][SDIO] CMD5 timeout resp0=0x%08x\r\n", resp0);
         return SDIO_HOST_ERR_TIMEOUT;
     }
 
+    xil_printf("[ZYNQ][SDIO] CMD5 ready; CMD3 assign RCA\r\n");
     ret = sdio_cmd(host, SDIO_CMD3_R6, 0u, 0u);
     if (ret != SDIO_HOST_OK) {
         return ret;
     }
     host->rca = sdio_resp0(host) & 0xffff0000u;
     if (host->rca == 0u) {
-        host->rca = 0x00010000u;
+        return SDIO_HOST_ERR_CMD;
     }
 
     ret = sdio_cmd(host, CMD7, host->rca, 0u);
@@ -539,6 +532,7 @@ static int sdio_enumerate_card(sdio_host_t *host)
         return ret;
     }
 
+    xil_printf("[ZYNQ][SDIO] CMD7 selected; enable function1\r\n");
     ret = sdio_enable_fn1(host);
     if (ret != SDIO_HOST_OK) {
         return ret;
@@ -596,7 +590,7 @@ int sdio_host_init(sdio_host_t *host)
         if (candidate && candidate->BaseAddress==SDIO_HOST_BASEADDR) cfg=candidate;
     }
 #endif
-    if (cfg == NULL) {
+    if (cfg == NULL || cfg->BaseAddress!=SDIO_HOST_BASEADDR) {
         return SDIO_HOST_ERR_LOOKUP;
     }
 
@@ -621,7 +615,7 @@ int sdio_host_init(sdio_host_t *host)
 
         (void)sdio_cmd52(host, 0u, 0u, device_addr, 0u, &fn0_device_id);
         (void)sdio_cmd52(host, 0u, host->function_num, device_addr, 0u, &fn1_device_id);
-        xil_printf("[ZYNQ][SDIO] bad ESP device id: got=0x%02x expected=0x%02x addr=0x%05lx fn=%u fn0=0x%02x fn1=0x%02x\r\n",
+        xil_printf("[ZYNQ][SDIO] bad ESP device id: got=0x%02x expected=0x%02x addr=0x%05x fn=%u fn0=0x%02x fn1=0x%02x\r\n",
                    device_id,
                    SDIO_DEVICE_ID_ESP32C61,
                    device_addr,
@@ -631,7 +625,7 @@ int sdio_host_init(sdio_host_t *host)
         return SDIO_HOST_ERR_DEVICE_ID;
     }
 
-    xil_printf("[ZYNQ][SDIO] init OK, RCA=0x%08lx block=%u data_port=0x%05lx clk=%lu window_max=%u batch_max=%u pio=%u first_pio_warmup=%u dma_fallback_pio=%u relaxed_resp=%u\r\n",
+    xil_printf("[ZYNQ][SDIO] init OK, RCA=0x%08x block=%u data_port=0x%05x clk=%u window_max=%u batch_max=%u pio=%u first_pio_warmup=%u dma_fallback_pio=%u relaxed_resp=%u\r\n",
                host->rca,
                host->block_size,
                host->data_port_addr,
@@ -732,7 +726,7 @@ int sdio_host_send_block(sdio_host_t *host, const u8 block[US_SDIO_BLOCK_BYTES])
           1u;
 
     if (trace != 0u) {
-        xil_printf("[ZYNQ][SDIO] CMD53 write#%lu addr=0x%05lx count=1 block=%lu mode=%s arg=0x%08lx\r\n",
+        xil_printf("[ZYNQ][SDIO] CMD53 write#%u addr=0x%05x count=1 block=%u mode=%s arg=0x%08x\r\n",
                    write_count,
                    cmd53_addr,
                    (u32)US_SDIO_BLOCK_BYTES,
@@ -792,10 +786,9 @@ int sdio_host_send_block(sdio_host_t *host, const u8 block[US_SDIO_BLOCK_BYTES])
         Xil_DCacheFlushRange((UINTPTR)block, US_SDIO_BLOCK_BYTES);
         sdio_config_dma_preserve_bus(host);
 
-        if (XSdPs_SetupTransfer(&host->sd) != XST_SUCCESS) {
-            sdio_dump_regs(host, "CMD53_SETUP_FAIL", SDIO_CMD53_R5_DATA, 0u, 1u);
-            return SDIO_HOST_ERR_TRANSFER;
-        }
+        /* SetupTransfer may issue memory-card CMD16. SDIO block length was
+         * already configured through CCCR/FBR CMD52, so set only host HW. */
+        XSdPs_WriteReg16(host->sd.Config.BaseAddress,XSDPS_BLK_SIZE_OFFSET,US_SDIO_BLOCK_BYTES);
 
         XSdPs_SetupWriteDma(&host->sd, 1u, US_SDIO_BLOCK_BYTES, (u8 *)block);
         host->sd.TransferMode &= (u32)~XSDPS_TM_DAT_DIR_SEL_MASK;
@@ -828,7 +821,7 @@ int sdio_host_send_block(sdio_host_t *host, const u8 block[US_SDIO_BLOCK_BYTES])
     }
 
     if (trace != 0u) {
-        xil_printf("[ZYNQ][SDIO] CMD53 DMA xfer_mode=0x%04lx\r\n",
+        xil_printf("[ZYNQ][SDIO] CMD53 DMA xfer_mode=0x%04x\r\n",
                    host->sd.TransferMode & 0xffffu);
         sdio_dump_regs(host, "CMD53_DMA_BEFORE_CMD", SDIO_CMD53_R5_DATA, arg, 1u);
     }
@@ -954,10 +947,8 @@ int sdio_host_send_blocks(sdio_host_t *host, const u8 *blocks, u32 block_count)
         Xil_DCacheFlushRange((UINTPTR)blocks, total_bytes);
         sdio_config_dma_preserve_bus(host);
 
-        if (XSdPs_SetupTransfer(&host->sd) != XST_SUCCESS) {
-            sdio_dump_regs(host, "CMD53_BATCH_SETUP_FAIL", SDIO_CMD53_R5_DATA, 0u, block_count);
-            return SDIO_HOST_ERR_TRANSFER;
-        }
+        /* Never send SD-memory CMD16 to an SDIO-only slave. */
+        XSdPs_WriteReg16(host->sd.Config.BaseAddress,XSDPS_BLK_SIZE_OFFSET,US_SDIO_BLOCK_BYTES);
 
         XSdPs_SetupWriteDma(&host->sd, (u16)block_count, US_SDIO_BLOCK_BYTES, blocks);
         host->sd.TransferMode &= (u32)~XSDPS_TM_DAT_DIR_SEL_MASK;

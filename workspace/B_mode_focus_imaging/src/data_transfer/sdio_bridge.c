@@ -20,7 +20,7 @@ static u8 command_seq;
 static u32 session_id, frame_id, frame_crc, offset, failures, frames;
 static u64 deadline, retry_at;
 enum { IDLE, BEGIN_WAIT, WINDOW, DONE_WAIT };
-static u64 milliseconds(void) { XTime n; XTime_GetTime(&n); return (u64)n*1000U/COUNTS_PER_SECOND; }
+static u64 milliseconds(void) { XTime n; XTime_GetTime(&n); return (u64)n*1000U/(u64)(COUNTS_PER_SECOND); }
 static int read8(unsigned p,u8 *v) { return sdio_read_reg(&host,p,v); }
 static int write8(unsigned p,u8 v) { return sdio_write_reg(&host,p,v); }
 static int read32(unsigned p,u32 *v) {
@@ -34,7 +34,7 @@ static int write32(unsigned p,u32 v) {
 }
 static void fail_link(void) {
     failures++; online=0; phase=IDLE; offset=0; reset_on_connect=1; retry_at=milliseconds()+500;
-    xil_printf("@SDIO ERROR failures=%lu; re-enumerate, no payload replay\r\n",(unsigned long)failures);
+    xil_printf("@SDIO ERROR failures=%u; re-enumerate, no payload replay\r\n",(unsigned)failures);
 }
 void sdio_bridge_init(void) {
     /* Boot/reinitialization starts a fresh handshake; never replay payload. */
@@ -45,14 +45,18 @@ void sdio_bridge_init(void) {
     }
     frame_crc=br_crc32(0,test_frame,sizeof(test_frame));
     Xil_DCacheFlushRange((UINTPTR)test_frame,sizeof(test_frame));
-    xil_printf("@SDIO DDR_TEST addr=%08lx bytes=%lu crc32=%08lx compiled=SDIO\r\n",
-        (unsigned long)(UINTPTR)test_frame,(unsigned long)sizeof(test_frame),(unsigned long)frame_crc);
+    xil_printf("@SDIO DDR_TEST addr=%08x bytes=%u crc32=%08x compiled=SDIO\r\n",
+        (unsigned)(UINTPTR)test_frame,(unsigned)sizeof(test_frame),(unsigned)frame_crc);
 }
 void sdio_bridge_poll(void) {
     u64 now=milliseconds(); u8 state,mode,version,ack,result;
     if(!online) {
         if(now<retry_at) return;
-        if(sdio_host_init(&host)!=SDIO_HOST_OK) { fail_link(); return; }
+        int init_result=sdio_host_init(&host);
+        if(init_result!=SDIO_HOST_OK) {
+            xil_printf("@SDIO INIT_FAILED rc=%d; retry after 500 ms\r\n",init_result);
+            fail_link(); return;
+        }
         if(reset_on_connect) {
             /* A host restart can leave the slave halfway through an old frame.
              * Abort once, then enumerate after the slave resets. */
@@ -109,8 +113,8 @@ void sdio_bridge_poll(void) {
         if(read8(BR_RESULT,&result)) { fail_link(); return; }
         if(result==BR_DONE) {
             frames++; phase=IDLE;
-            xil_printf("@SDIO FRAME id=%lu bytes=%lu elapsed_ms=%lu (ESP receive, not PC ACK)\r\n",
-                (unsigned long)frame_id,(unsigned long)offset,(unsigned long)(now-(deadline-30000)));
+            xil_printf("@SDIO FRAME id=%u bytes=%u elapsed_ms=%u (ESP receive, not PC ACK)\r\n",
+                (unsigned)frame_id,(unsigned)offset,(unsigned)(now-(deadline-30000)));
         } else if(result==BR_BAD_CRC || result==BR_FAULT) fail_link();
     }
 }

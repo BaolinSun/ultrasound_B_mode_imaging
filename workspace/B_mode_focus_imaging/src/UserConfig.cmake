@@ -59,6 +59,7 @@ set(USER_COMPILE_SOURCES
 "outbyte.c"
 "uart/uart_log.c"
 "data_transfer/sdio_host.c"
+"data_transfer/sdio_cmd_engine.c"
 "data_transfer/sdio_bridge.c"
 "AFE5832/afe5832.c"
 "AFE5832/afe5832_spi.c"
