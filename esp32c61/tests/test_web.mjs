@@ -66,6 +66,22 @@ function setup() {
 }
 const submit = env => env.elements['config-form'].listeners.submit({preventDefault(){}});
 
+test('TCP verified ACK differs from UDP local completion and exposes protocol',async()=>{
+  const e=setup();await e.settle();
+  Object.assign(e.backend.status,{sdio_transport:'tcp',active_transport:'tcp',result:'received_verified',
+    tcp_connected:true,tcp_confirmed_frames:12,tcp_chunks:193,tcp_waits:4,tcp_ack_us:12000,socket_errno:12});
+  await vm.runInContext('refresh()',e.context);
+  assert.match(e.elements.result.textContent,/PC 完整收帧且 CRC 校验通过/);
+  assert.doesNotMatch(e.elements.result.textContent,/errno/);
+  assert.match(e.elements['sdio-timing'].textContent,/编译模式 TCP/);
+  assert.match(e.elements['sdio-timing'].textContent,/PC 确认 12/);
+  assert.match(e.elements.packets.textContent,/不是 TCP 分段数/);
+  Object.assign(e.backend.status,{active_transport:'udp',result:'sent_local'});
+  await vm.runInContext('refresh()',e.context);
+  assert.match(e.elements.result.textContent,/本地发送完成/);
+  assert.doesNotMatch(e.elements.result.textContent,/CRC 校验通过/);
+});
+
 test('SDIO starts only after explicit host selection and shares stop control',async()=>{
   const e=setup();await e.settle();
   Object.assign(e.backend.status,{connected:true,upload_ready:true,

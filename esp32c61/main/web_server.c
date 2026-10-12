@@ -1,6 +1,7 @@
 #include "web_server.h"
 #include "config_store.h"
 #include "psram_udp.h"
+#include "tcp_transfer.h"
 #include "selftest.h"
 #include "sdio_bridge.h"
 #include "wifi_manager.h"
@@ -130,7 +131,20 @@ static esp_err_t get_status(httpd_req_t *req)
         cJSON_AddNumberToObject(json, "selftest_bytes", selftest_size());
         cJSON_AddNumberToObject(json, "max_bytes", CONFIG_PSRAM_UDP_MAX_BYTES);
         cJSON_AddBoolToObject(json, "busy", udp.busy);
-        cJSON_AddStringToObject(json, "result", raw_result_name(udp.result));
+        cJSON_AddStringToObject(json, "result", udp.active_tcp && udp.result==RAW_OK ? "received_verified":raw_result_name(udp.result));
+        cJSON_AddStringToObject(json,"sdio_transport",psram_frame_transport());
+        cJSON_AddStringToObject(json,"active_transport",udp.active_tcp?"tcp":"udp");
+        cJSON_AddBoolToObject(json,"tcp_connected",udp.tcp_connected);
+        cJSON_AddBoolToObject(json,"tcp_failed",udp.tcp_failed);
+        cJSON_AddNumberToObject(json,"tcp_confirmed_frames",udp.tcp_confirmed_frames);
+        cJSON_AddNumberToObject(json,"tcp_connect_errors",udp.tcp_connect_errors);
+        cJSON_AddNumberToObject(json,"tcp_ack_errors",udp.tcp_ack_errors);
+        cJSON_AddNumberToObject(json,"tcp_error",udp.tcp_error);
+        cJSON_AddStringToObject(json,"tcp_error_reason",tcp_error_name(udp.tcp_error));
+        cJSON_AddNumberToObject(json,"tcp_chunks",udp.tcp_chunks);
+        cJSON_AddNumberToObject(json,"tcp_waits",udp.tcp_waits);
+        cJSON_AddNumberToObject(json,"tcp_connect_us",udp.tcp_connect_us);
+        cJSON_AddNumberToObject(json,"tcp_ack_us",udp.tcp_ack_us);
         cJSON_AddNumberToObject(json, "total_bytes", udp.total_bytes);
         cJSON_AddNumberToObject(json, "sent_bytes", udp.sent_bytes);
         cJSON_AddNumberToObject(json, "send_elapsed_us", udp.elapsed_us);

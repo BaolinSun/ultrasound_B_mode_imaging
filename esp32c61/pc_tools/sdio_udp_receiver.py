@@ -267,6 +267,7 @@ def main(argv=None):
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--log", type=Path)
     parser.add_argument("--queue-packets", type=int, default=4096, help="bounded PC receive queue")
+    parser.add_argument("--managed", action="store_true", help="benchmark stdin STOP command")
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535 or args.frames < 0 or args.seconds < 0 or args.idle_timeout <= 0 or not 1 <= args.queue_packets <= 65536:
         parser.error("invalid port/frame count/time limit")
@@ -286,6 +287,12 @@ def main(argv=None):
     reason = "completed"
     failed = False
     pump = None
+    controlled_stop = threading.Event()
+    def control():
+        for line in sys.stdin:
+            if line.strip() == 'STOP': break
+        controlled_stop.set()
+    if args.managed: threading.Thread(target=control, daemon=True).start()
     first_packet = last_packet = None
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
@@ -299,6 +306,8 @@ def main(argv=None):
             pump = DatagramPump(sock, args.queue_packets)
             pump.thread.start()
             while not args.frames or receiver.valid_frames < args.frames:
+                if controlled_stop.is_set():
+                    reason = "receiver stopped"; break
                 now = time.monotonic()
                 if args.seconds and now - started >= args.seconds:
                     reason = "duration reached"

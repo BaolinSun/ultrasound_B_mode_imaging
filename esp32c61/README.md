@@ -1,8 +1,8 @@
-# ESP32-C61 PSRAM 原始 UDP 上传
+# ESP32-C61 PSRAM UDP 自测与 SDIO TCP/UDP 帧上传
 
 本目录是独立 ESP-IDF 6.1 工程，读取 ESP32-C61 外部 PSRAM 缓冲区，经 Wi-Fi STA 向上位机发送原始 UDP 数据报。网页完成首次配网、目标 IP/端口在线配置、单次自测上传及停止操作。
 
-保留原始 PSRAM UDP 自测，并新增 Zynq 固定 DDR → SDIO → PSRAM → 带包头 UDP 链路；未接入真实连续采集，也未修改成像 RTL。接线、输出切换、网页启动和独立接收工具见 [SDIO 链路说明](SDIO_BRIDGE.md)。两种 UDP 格式不同，不能混用接收工具，也不能直接使用参考工程的旧接收程序。
+保留原始 PSRAM UDP 自测，Zynq 固定 DDR → SDIO → PSRAM → Wi-Fi 帧链路支持 C 宏选择 TCP/带头 UDP，默认 TCP。TCP 完成等待 PC 收齐并校验 CRC 后的回执；不保证 TCP 更快。未接入真实连续采集，也未修改成像 RTL。接线见 [SDIO 链路说明](SDIO_BRIDGE.md)，宏、简短命令、协议和测试记录见 [TCP/UDP 模式说明](TCP_TRANSPORT.md)。三种接收工具不能混用。
 
 ## 构建与烧录
 
@@ -40,8 +40,8 @@ Set-Location 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61'
 
 1. 烧录并打开 USB 控制台，读取 `Ultrasound-C61-xxxxxx` 配置热点及随机密码。密码保存到 NVS，重启保持。
 2. 手机或电脑连接该热点，访问 `http://192.168.4.1/`。
-3. 填写路由器 SSID/密码、上位机 IPv4 和 UDP 端口。端口默认 50001，目标 IP 默认未配置。上位机填写运行接收程序的电脑局域网地址，不能填写 ESP32 自己的地址。
-4. 保存后等待 STA 获得 IP，网页和控制台显示 `http://设备局域网IP/`。连接成功 15 秒后关闭配置热点，电脑连接同一路由器后使用该地址访问配置页。路由器须允许客户端互访，Windows 防火墙需允许接收程序使用指定 UDP 端口。
+3. 填写路由器 SSID/密码、上位机 IPv4 和 TCP/UDP 共用端口。端口默认 50001，目标 IP 默认未配置。上位机填写运行接收程序的电脑局域网地址，不能填写 ESP32 自己的地址。
+4. 保存后等待 STA 获得 IP，网页和控制台显示 `http://设备局域网IP/`。连接成功 15 秒后关闭配置热点，电脑连接同一路由器后使用该地址访问配置页。路由器须允许客户端互访。
 5. 先运行接收程序，再在网页点击“上传一次 PSRAM 自测数据”。每次接收使用一个新输出文件，避免覆盖既有结果。
 
 ```powershell
@@ -64,7 +64,7 @@ python 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\pc_tools\raw_u
 
 原始 UDP 不支持可靠帧重组、端到端确认或丢包重传；上位机必须预先知道本次长度，每次仅触发一个上传。自测可通过已知内容检测异常，但不能据此恢复丢失数据。一般业务流在丢失或乱序后无法保证对齐。`sent_local` 仅代表本地 `sendto()` 成功。
 
-数据路径为：登记的 PSRAM 缓冲区 → 1440 字节内部 SRAM staging → UDP socket → 上位机。发送任务优先级 5，每 32 包让出 CPU 至少 1 ms；`ENOMEM/ENOBUFS/EAGAIN/EWOULDBLOCK` 最多重试 100 次。socket 发送超时 100 ms，总期限从接受提交起计时。断网、IP 丢失、重新配网、停止或超时终止当前上传，不自动重放。
+原始 UDP 数据路径为：登记的 PSRAM 缓冲区 → 内部 SRAM staging 的 1440 字节前缀 → UDP socket → 上位机。共用 staging 分配为 4096 字节，TCP 使用整块。发送任务优先级 5，UDP 每 32 包让出 CPU 至少 1 ms；`ENOMEM/ENOBUFS/EAGAIN/EWOULDBLOCK` 最多重试 100 次。socket 发送超时 100 ms，总期限从接受提交起计时。断网、IP 丢失、重新配网、停止或超时终止当前上传，不自动重放。
 
 公共接口位于 `main/psram_udp.h`。为了检查完整缓冲区范围，提交仅接受已登记的 PSRAM 内存，可提交登记缓冲区的子范围；最多登记 4 个缓冲区。
 

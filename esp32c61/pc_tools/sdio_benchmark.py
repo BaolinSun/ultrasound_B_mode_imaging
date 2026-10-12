@@ -19,7 +19,7 @@ def main():
     parser.add_argument('--port', type=int, default=50001)
     args = parser.parse_args()
     if not 1 <= args.seconds <= 3600 or not 1 <= args.port <= 65535:
-        parser.error('invalid seconds or UDP port')
+        parser.error('invalid seconds or TCP/UDP port')
     base = 'http://' + args.device_ip
     def api(path, payload=None):
         body = json.dumps(payload).encode() if payload is not None else None
@@ -28,6 +28,8 @@ def main():
         with urllib.request.urlopen(request, timeout=5) as response:
             return json.load(response)
     before = api('/api/status')
+    transport=before.get('sdio_transport','udp')
+    if transport not in ('tcp','udp'): raise SystemExit('Unknown compiled transport')
     sdio = before.get('sdio', {})
     if before.get('busy') or sdio.get('running') or not sdio.get('host_sdio') or sdio.get('free_slots') != 2:
         raise SystemExit('Device must be idle, handshaken, with two free slots')
@@ -44,38 +46,65 @@ def main():
     started = time.monotonic()
     try:
         with stdout_path.open('w', encoding='utf-8') as stdout, args.log.with_suffix('.stderr.log').open('w') as stderr:
-            command = [sys.executable, str(Path(__file__).with_name('sdio_udp_receiver.py')),
-                       '--source-ip', args.device_ip, '--frames', '0', '--seconds', str(args.seconds+2),
+            command = [sys.executable, str(Path(__file__).with_name('sdio_'+transport+'_receiver.py')),
+                       '--source-ip', args.device_ip, '--frames', '0', '--seconds', str(args.seconds+10),
                        '--port', str(args.port),
-                       '--test-pattern', '--log', str(args.log)]
+                       '--test-pattern', '--log', str(args.log),'--managed']
             process = subprocess.Popen(command, stdout=stdout, stderr=stderr,
+                                       stdin=subprocess.PIPE,
                                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
             deadline = time.monotonic()+5
-            while 'Listening UBSD' not in stdout_path.read_text(encoding='utf-8'):
+            while ('Listening UBST TCP' if transport=='tcp' else 'Listening UBSD') not in stdout_path.read_text(encoding='utf-8'):
                 if process.poll() is not None or time.monotonic() >= deadline:
                     raise RuntimeError('Receiver did not become ready')
                 time.sleep(.05)
             armed = True
             api('/api/sdio/start', {'frames': 0})
+            active_started=time.monotonic()
             print('Fixed DDR benchmark running; do not press device start/stop buttons.', flush=True)
             while process.poll() is None:
+                if time.monotonic()-active_started>=args.seconds: break
                 state = api('/api/status')
                 samples.append({'t': time.monotonic()-started, 'status': state})
                 if not state.get('sdio', {}).get('running'):
                     unexpected_stop = True
+                    break
                 time.sleep(.5)
+            if process.poll() is not None and time.monotonic()-active_started < args.seconds:
+                unexpected_stop = True  # e.g. receiver idle timeout while device claims running
     finally:
         try:
             if armed:
+                # TCP may cancel a partially sent frame. Announce the planned
+                # cancellation, but keep the receiver/socket alive until the
+                # device has stopped. Unexpected disconnects during the run
+                # remain errors. UDP control ignores this non-STOP line.
+                if process and process.poll() is None:
+                    process.stdin.write(b'QUIESCE\n');process.stdin.flush()
                 api('/api/sdio/stop', {})
+                deadline=time.monotonic()+2
+                while time.monotonic()<deadline:
+                    if not api('/api/status').get('busy'): break
+                    time.sleep(.05)
+                else:
+                    control_error='device sender did not stop within 2 seconds'
         except Exception as exc:
             control_error = str(exc)
         if process and process.poll() is None:
-            process.terminate()
-            process.wait(timeout=5)
+            try:
+                process.stdin.write(b'STOP\n');process.stdin.flush()
+                process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):
+                process.terminate();process.wait(timeout=5)
+                control_error=control_error or 'receiver did not stop cleanly'
         result = {'before': before, 'samples': samples, 'unexpected_stop': unexpected_stop,
+                  'transport':transport,
                   'stop_error': control_error,
                   'receiver_exit': process.returncode if process else None}
+        if armed and not control_error:
+            try: result['after']=api('/api/status')
+            except Exception as exc:
+                control_error=str(exc);result['stop_error']=control_error
         args.log.with_suffix('.device.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     summaries = [json.loads(line) for line in args.log.read_text(encoding='utf-8').splitlines()
                  if json.loads(line).get('event') == 'summary']

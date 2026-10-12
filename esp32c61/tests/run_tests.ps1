@@ -36,8 +36,8 @@ if (Test-Path (Join-Path $sdkBsp 'include/xil_printf.h')) {
         if ($LASTEXITCODE -ne 0) { throw 'Actual SDK formatter regression failed' }
     } finally { Pop-Location }
 }
-foreach ($suite in @('framed','sdio_bridge','bridge_crc')) {
-    $extra = if ($suite -eq 'framed') { 'framed_transfer.c' } elseif ($suite -eq 'bridge_crc') { 'bridge_crc.c' } else { 'sdio_bridge.c' }
+foreach ($suite in @('framed','tcp_transfer','sdio_bridge','bridge_crc')) {
+    $extra = if ($suite -eq 'framed') { 'framed_transfer.c' } elseif ($suite -eq 'bridge_crc') { 'bridge_crc.c' } elseif ($suite -eq 'tcp_transfer') { 'tcp_transfer.c' } else { 'sdio_bridge.c' }
     [string[]]$crcSources = if ($suite -eq 'sdio_bridge') { @((Join-Path $projectRoot 'main/bridge_crc.c')) } else { @() }
     [string[]]$crcFlags = if ($suite -eq 'bridge_crc') { '-DCRC_TEST_ORACLE=1' } else { @() }
     $suiteOutput = Join-Path $testOutput $suite
@@ -61,6 +61,15 @@ foreach ($suite in @('framed','sdio_bridge','bridge_crc')) {
     }
     & $gcov -b -c ([System.IO.Path]::GetFileNameWithoutExtension($extra)+'.gcno')
     if ($LASTEXITCODE -ne 0) { throw "$suite coverage report failed" }
+    if ($suite -eq 'tcp_transfer') {
+        & $Compiler -std=c11 -DWIFI_FRAME_TRANSPORT=99 '-I' (Join-Path $projectRoot 'main') `
+            -c (Join-Path $PSScriptRoot 'test_tcp_transfer.c') -o invalid_tcp.o 2> invalid_tcp.log
+        if ($LASTEXITCODE -eq 0) { throw 'Invalid Wi-Fi transport macro accepted' }
+        if (-not (Select-String -LiteralPath invalid_tcp.log -SimpleMatch 'WIFI_FRAME_TRANSPORT must be' -Quiet)) {
+            throw 'Invalid transport failed for unexpected reason'
+        }
+        Write-Host 'PASS: invalid Wi-Fi transport macro rejected'
+    }
     } finally { Pop-Location }
 }
 Write-Host "C test output and coverage: $testOutput"

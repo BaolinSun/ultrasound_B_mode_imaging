@@ -4,6 +4,8 @@ param(
     [string]$Port = '',
     [ValidateSet('default', 'throughput')]
     [string]$Profile = 'default',
+    [ValidateSet('auto', 'tcp', 'udp')]
+    [string]$Transport = 'auto',
     [string]$IdfPath = 'D:\Program Files\esp\v6.1\esp-idf',
     [string]$ActivationScript = 'C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1'
 )
@@ -30,15 +32,20 @@ try {
     $configFile = Join-Path $PSScriptRoot 'sdkconfig'
     $buildDir = Join-Path $PSScriptRoot 'build'
     $profileArgs = @()
-    if ($Profile -eq 'throughput') {
+    if ($Profile -eq 'throughput' -or $Transport -ne 'auto') {
         # Isolate all generated configuration/output; never reset user's sdkconfig.
-        $buildDir = Join-Path $PSScriptRoot 'build-throughput'
+        $name = if ($Transport -eq 'auto') { 'build-throughput' } else { "build-$Profile-$Transport" }
+        $buildDir = Join-Path $PSScriptRoot $name
         $configFile = Join-Path $buildDir 'sdkconfig'
         New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
-        $defaults = (Join-Path $PSScriptRoot 'sdkconfig.defaults') + ';' +
-                    (Join-Path $PSScriptRoot 'sdkconfig.throughput.defaults')
+        $defaults = Join-Path $PSScriptRoot 'sdkconfig.defaults'
+        if ($Profile -eq 'throughput') { $defaults += ';' + (Join-Path $PSScriptRoot 'sdkconfig.throughput.defaults') }
         $profileArgs = @('-B', $buildDir, "-DSDKCONFIG=$configFile", "-DSDKCONFIG_DEFAULTS=$defaults")
     }
+    # Verification overrides live in separate directories. Normal builds always
+    # clear the cache override and select the C header, never a sticky -D value.
+    $override = if ($Transport -eq 'tcp') { '1' } elseif ($Transport -eq 'udp') { '0' } else { '' }
+    $profileArgs += "-DWIFI_FRAME_TRANSPORT_OVERRIDE=$override"
     if (-not (Test-Path -LiteralPath $configFile)) {
         if (Test-Path -LiteralPath $buildDir) {
             # A failed first configure may leave a directory that fullclean

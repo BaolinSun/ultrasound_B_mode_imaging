@@ -2,6 +2,7 @@
 #include "esp_err.h"
 #include "raw_transfer.h"
 #include "framed_transfer.h"
+#include "wifi_transport_config.h"
 
 typedef raw_completion_t psram_udp_completion_cb_t;
 typedef struct {
@@ -13,6 +14,11 @@ typedef struct {
     unsigned retries;
     int socket_errno;
     uint64_t elapsed_us;
+    bool active_tcp, tcp_connected, tcp_failed;
+    uint64_t tcp_connect_us, tcp_ack_us;
+    uint32_t tcp_confirmed_frames, tcp_connect_errors, tcp_ack_errors;
+    unsigned tcp_chunks, tcp_waits;
+    int tcp_error;
     raw_result_t result;
     char active_ip[16];
     uint16_t active_port;
@@ -40,3 +46,8 @@ esp_err_t psram_udp_submit_frame(const void *data, size_t length,
 void psram_udp_stop(void);
 void psram_udp_set_link(bool connected);
 void psram_udp_get_status(psram_udp_status_t *status);
+/* Selected SDIO transport. TCP completion waits for the peer CRC ACK. */
+esp_err_t psram_frame_submit(const void *data,size_t length,const bridge_frame_t *frame,
+                            psram_udp_completion_cb_t completion_cb,void *user_ctx);
+void psram_frame_prepare(bool continuous); /* New explicit SDIO test, only while idle. */
+const char *psram_frame_transport(void);

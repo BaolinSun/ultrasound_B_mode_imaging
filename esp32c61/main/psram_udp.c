@@ -12,6 +12,9 @@
 #include "freertos/task.h"
 #include "lwip/sockets.h"
 #include "sdkconfig.h"
+#include "tcp_transfer.h"
+#include "lwip/tcp.h"
+#include <fcntl.h>
 
 typedef struct { void *base; size_t size; bool allocated_here; } buffer_t;
 static buffer_t buffers[4];
@@ -26,6 +29,11 @@ static uint64_t accepted_deadline;
 static struct sockaddr_in accepted_dest;
 static bool accepted_framed;
 static bridge_frame_t accepted_frame;
+static bool accepted_tcp, close_requested, tcp_continuous;
+/* Only upload_worker owns this persistent socket, including idle cleanup. */
+static int tcp_socket=-1;
+static struct sockaddr_in tcp_dest;
+static uint32_t tcp_generation;
 
 typedef struct { int socket; uint32_t generation; struct sockaddr_in dest; } send_ctx_t;
 static uint64_t now_ms(void *ctx) { (void)ctx; return esp_timer_get_time() / 1000ULL; }
@@ -70,23 +78,134 @@ static void progress(void *ctx, size_t sent, unsigned packets, unsigned retries)
     xSemaphoreGive(lock);
 }
 
+static void drop_tcp(void)
+{
+    if(tcp_socket>=0) { shutdown(tcp_socket,SHUT_RDWR); close(tcp_socket); tcp_socket=-1; }
+    xSemaphoreTake(lock,portMAX_DELAY);status.tcp_connected=false;xSemaphoreGive(lock);
+}
+static void tcp_progress(void *ctx,size_t sent,unsigned chunks,unsigned waits)
+{
+    (void)ctx;xSemaphoreTake(lock,portMAX_DELAY);
+    status.sent_bytes=sent;status.tcp_chunks=chunks;status.tcp_waits=waits;
+    xSemaphoreGive(lock);
+}
+static int tcp_io_result(int n)
+{
+    if(n>=0)return n;
+    int saved=errno;
+    xSemaphoreTake(lock,portMAX_DELAY);status.socket_errno=saved;xSemaphoreGive(lock);
+    return saved==EAGAIN || saved==EWOULDBLOCK || saved==ENOMEM || saved==ENOBUFS || saved==EINTR ? -2:-1;
+}
+static int tcp_socket_write(void *p,const uint8_t *data,size_t n) { return tcp_io_result(send(((send_ctx_t*)p)->socket,data,n,0)); }
+static int tcp_read(void *p,uint8_t *data,size_t n) { return tcp_io_result(recv(((send_ctx_t*)p)->socket,data,n,0)); }
+static void tcp_wait(void *p,bool reading,unsigned ms)
+{
+    int fd=((send_ctx_t*)p)->socket;fd_set ready;FD_ZERO(&ready);FD_SET(fd,&ready);
+    struct timeval t={.tv_sec=0,.tv_usec=(long)ms*1000};
+    (void)select(fd+1,reading?&ready:NULL,reading?NULL:&ready,NULL,&t);
+    /* ENOMEM may coexist with socket writability. Avoid spinning on ready. */
+    if(!reading)delay_ms(p,1);
+}
+static raw_result_t connect_tcp(send_ctx_t *ctx,uint64_t deadline)
+{
+    if(tcp_socket>=0 && (tcp_generation!=ctx->generation || tcp_dest.sin_addr.s_addr!=ctx->dest.sin_addr.s_addr ||
+                         tcp_dest.sin_port!=ctx->dest.sin_port)) drop_tcp();
+    if(tcp_socket>=0) {
+        uint8_t byte;int n=recv(tcp_socket,&byte,1,MSG_PEEK);
+        if(n==0 || n>0 || (errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR)) {
+            xSemaphoreTake(lock,portMAX_DELAY);status.tcp_error=n>0?TCP_ERROR_BAD_ACK:TCP_ERROR_CLOSED;xSemaphoreGive(lock);
+            return RAW_SEND_ERROR; /* Never reconnect silently inside this test. */
+        }
+        ctx->socket=tcp_socket;return RAW_OK;
+    }
+    tcp_socket=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
+    if(tcp_socket<0)return RAW_SEND_ERROR;
+    ctx->socket=tcp_socket;
+    struct timeval timeout={.tv_sec=0,.tv_usec=100000};int yes=1;
+    if(setsockopt(tcp_socket,SOL_SOCKET,SO_SNDTIMEO,&timeout,sizeof(timeout))<0 ||
+       setsockopt(tcp_socket,IPPROTO_TCP,TCP_NODELAY,&yes,sizeof(yes))<0 ||
+       fcntl(tcp_socket,F_SETFL,O_NONBLOCK)<0) return RAW_SEND_ERROR;
+    int64_t started=esp_timer_get_time();
+    int r=connect(tcp_socket,(struct sockaddr*)&ctx->dest,sizeof(ctx->dest));
+    if(r<0 && errno!=EINPROGRESS && errno!=EALREADY && errno!=EWOULDBLOCK)return RAW_SEND_ERROR;
+    uint64_t until=now_ms(NULL)+5000;if(until>deadline)until=deadline;
+    while(r<0) {
+        raw_result_t abort=abort_reason(ctx);if(abort!=RAW_OK)return abort;
+        if(now_ms(NULL)>=until)return RAW_TIMEOUT;
+        fd_set wr;FD_ZERO(&wr);FD_SET(tcp_socket,&wr);struct timeval t={.tv_sec=0,.tv_usec=100000};
+        int selected=select(tcp_socket+1,NULL,&wr,NULL,&t);
+        if(selected<0) { if(errno==EINTR)continue;return RAW_SEND_ERROR; }
+        if(!selected)continue;
+        int error=0;socklen_t n=sizeof(error);
+        if(getsockopt(tcp_socket,SOL_SOCKET,SO_ERROR,&error,&n)<0)return RAW_SEND_ERROR;
+        if(error) { errno=error;return RAW_SEND_ERROR; }r=0;
+    }
+    tcp_dest=ctx->dest;tcp_generation=ctx->generation;
+    xSemaphoreTake(lock,portMAX_DELAY);status.tcp_connected=true;
+    status.tcp_connect_us=(uint64_t)(esp_timer_get_time()-started);xSemaphoreGive(lock);
+    return RAW_OK;
+}
+
 static void upload_worker(void *arg)
 {
     (void)arg;
     for (;;) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(100));
         xSemaphoreTake(lock, portMAX_DELAY);
+        bool closing=close_requested;close_requested=false;
+        bool have_job=session.busy;
         raw_session_t job = session;
         uint64_t deadline = accepted_deadline;
         bool framed = accepted_framed;
+        bool tcp=accepted_tcp;
         bridge_frame_t frame = accepted_frame;
         send_ctx_t ctx = {.socket = -1, .generation = accepted_generation,
                           .dest = accepted_dest};
         xSemaphoreGive(lock);
+        if(closing)drop_tcp();
+        if(!have_job) {
+            /* A peer can exit while SDIO is receiving the next frame or while
+             * a single-frame test is idle. Detect that without reconnecting. */
+            if(tcp_socket>=0) {
+                uint8_t byte;int n=recv(tcp_socket,&byte,1,MSG_PEEK);
+                if(n>=0 || (errno!=EAGAIN && errno!=EWOULDBLOCK && errno!=EINTR)) {
+                    drop_tcp();xSemaphoreTake(lock,portMAX_DELAY);
+                    /* A finite receiver normally closes after its successful
+                     * single-frame ACK. Only an active continuous test fails. */
+                    if(tcp_continuous) {
+                        status.tcp_failed=true;status.tcp_error=n>0?TCP_ERROR_BAD_ACK:TCP_ERROR_CLOSED;
+                    }
+                    xSemaphoreGive(lock);
+                }
+            }
+            continue;
+        }
         raw_result_t result = abort_reason(&ctx);
         int64_t started=esp_timer_get_time();
         size_t sent = 0;
-        if (result == RAW_OK) {
+        tcp_metrics_t metrics={0};
+        if(result==RAW_OK && tcp) {
+            result=connect_tcp(&ctx,deadline);
+            if(result==RAW_OK) {
+                tcp_io_t io={&ctx,now_ms,abort_reason,tcp_socket_write,tcp_read,tcp_wait,delay_ms,tcp_progress};
+                result=tcp_frame_send(job.data,job.length,&frame,staging,deadline,&io,&metrics);
+                sent=metrics.sent;
+                xSemaphoreTake(lock,portMAX_DELAY);status.tcp_ack_us=metrics.ack_ms*1000;
+                if(metrics.error)status.tcp_error=metrics.error;
+                if(metrics.error==TCP_ERROR_BAD_ACK || metrics.error==TCP_ERROR_REJECTED ||
+                   metrics.error==TCP_ERROR_ACK_TIMEOUT ||
+                   (result==RAW_SEND_ERROR && sent==job.length))status.tcp_ack_errors++;
+                xSemaphoreGive(lock);
+            } else {
+                int saved=result==RAW_TIMEOUT?ETIMEDOUT:errno;
+                xSemaphoreTake(lock,portMAX_DELAY);
+                if(result!=RAW_CANCELLED && result!=RAW_LINK_DOWN) {
+                    status.socket_errno=saved;status.tcp_connect_errors++;
+                    if(!status.tcp_error)status.tcp_error=TCP_ERROR_CONNECT;
+                }
+                xSemaphoreGive(lock);
+            }
+        } else if (result == RAW_OK) {
             ctx.socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
             if (ctx.socket < 0) {
                 result = RAW_SEND_ERROR;
@@ -106,11 +225,16 @@ static void upload_worker(void *arg)
                     psram_raw_send(job.data, job.length, staging, deadline, &io, &sent);
             }
         }
-        if (ctx.socket >= 0) close(ctx.socket);
+        if(tcp && result!=RAW_OK)drop_tcp();
+        if(!tcp && ctx.socket>=0)close(ctx.socket);
         raw_completion_t done = NULL;
         void *done_ctx = NULL;
         xSemaphoreTake(lock, portMAX_DELAY);
         status.result = result;
+        if(tcp) {
+            if(result==RAW_OK)status.tcp_confirmed_frames++;
+            else if(result!=RAW_CANCELLED && result!=RAW_LINK_DOWN)status.tcp_failed=true;
+        }
         status.sent_bytes = sent;
         status.elapsed_us=(uint64_t)(esp_timer_get_time()-started);
         status.busy = false;
@@ -123,7 +247,7 @@ static void upload_worker(void *arg)
 esp_err_t psram_udp_init(void)
 {
     lock = xSemaphoreCreateMutex();
-    staging = heap_caps_malloc(RAW_UDP_BYTES + BR_UDP_HEADER, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    staging = heap_caps_malloc(TCP_STAGE_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!lock || !staging) return ESP_ERR_NO_MEM;
     status.result = RAW_NOT_READY;
     if (xTaskCreate(upload_worker, "psram_udp", 4096, NULL, 5, &worker) != pdPASS)
@@ -187,7 +311,7 @@ static esp_err_t remove_buffer(void *base, bool free_memory)
 esp_err_t psram_udp_free(void *base) { return remove_buffer(base, true); }
 esp_err_t psram_udp_unregister_buffer(void *base) { return remove_buffer(base, false); }
 
-static esp_err_t submit(const void *data, size_t length, const bridge_frame_t *frame,
+static esp_err_t submit(const void *data, size_t length, const bridge_frame_t *frame,bool tcp,
                        psram_udp_completion_cb_t done, void *user_ctx)
 {
     if (!lock || !worker) return ESP_ERR_INVALID_STATE;
@@ -196,6 +320,7 @@ static esp_err_t submit(const void *data, size_t length, const bridge_frame_t *f
     app_config_t config;
     config_store_get(&config);
     xSemaphoreTake(lock, portMAX_DELAY);
+    if(tcp && status.tcp_failed) { xSemaphoreGive(lock);return ESP_ERR_INVALID_STATE; }
     bool valid = false;
     for (unsigned i = 0; i < 4; ++i)
         if (buffers[i].base && raw_span_inside((uintptr_t)data, length,
@@ -205,6 +330,7 @@ static esp_err_t submit(const void *data, size_t length, const bridge_frame_t *f
                                        done, user_ctx);
     if (result == RAW_OK) {
         accepted_framed = frame != NULL;
+        accepted_tcp=tcp;
         if (frame) accepted_frame = *frame;
         accepted_dest = (struct sockaddr_in){.sin_family = AF_INET,
                                              .sin_port = htons(config.target_port)};
@@ -212,11 +338,10 @@ static esp_err_t submit(const void *data, size_t length, const bridge_frame_t *f
         accepted_generation = link_generation;
         accepted_deadline = now_ms(NULL) + CONFIG_PSRAM_UDP_TIMEOUT_MS;
         cancel_requested = false;
-        bool connected = status.connected;
-        uint64_t previous_elapsed=status.elapsed_us;
-        status = (psram_udp_status_t){.busy = true, .connected = connected,
-                    .total_bytes = length, .result = RAW_BUSY, .active_port = config.target_port,
-                    .elapsed_us = previous_elapsed};
+        status.busy=true;status.total_bytes=length;status.sent_bytes=0;status.result=RAW_BUSY;
+        status.active_port=config.target_port;status.active_tcp=tcp;status.packets=0;status.retries=0;
+        status.socket_errno=0;status.tcp_error=0;status.tcp_chunks=0;status.tcp_waits=0;
+        status.tcp_connect_us=0;status.tcp_ack_us=0;
         memcpy(status.active_ip, config.target_ip, sizeof(status.active_ip));
         xTaskNotifyGive(worker);
     }
@@ -226,25 +351,41 @@ static esp_err_t submit(const void *data, size_t length, const bridge_frame_t *f
 }
 esp_err_t psram_udp_submit(const void *data, size_t length,
                           psram_udp_completion_cb_t done, void *ctx) {
-    return submit(data,length,NULL,done,ctx);
+    return submit(data,length,NULL,false,done,ctx);
 }
 esp_err_t psram_udp_submit_frame(const void *data,size_t length,const bridge_frame_t *frame,
                                psram_udp_completion_cb_t done,void *ctx) {
     if (!frame) return ESP_ERR_INVALID_ARG;
-    return submit(data,length,frame,done,ctx);
+    return submit(data,length,frame,false,done,ctx);
 }
+esp_err_t psram_frame_submit(const void *p,size_t n,const bridge_frame_t *f,psram_udp_completion_cb_t cb,void *ctx) {
+    if(!f)return ESP_ERR_INVALID_ARG;
+    return submit(p,n,f,WIFI_FRAME_TRANSPORT==WIFI_FRAME_TCP,cb,ctx);
+}
+void psram_frame_prepare(bool continuous) {
+    if(!lock || !worker)return;
+    xSemaphoreTake(lock,portMAX_DELAY);
+    if(session.busy) { xSemaphoreGive(lock);return; }
+    tcp_continuous=continuous;status.tcp_failed=false;close_requested=true;xSemaphoreGive(lock);
+    xTaskNotifyGive(worker);
+}
+const char *psram_frame_transport(void) { return WIFI_FRAME_TRANSPORT==WIFI_FRAME_TCP?"tcp":"udp"; }
 void psram_udp_stop(void)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
     if (session.busy) cancel_requested = true;
+    tcp_continuous=false;
+    close_requested=true;
     xSemaphoreGive(lock);
+    xTaskNotifyGive(worker);
 }
 void psram_udp_set_link(bool connected)
 {
     xSemaphoreTake(lock, portMAX_DELAY);
-    if (!connected) ++link_generation;
+    if (!connected) { ++link_generation;close_requested=true; }
     status.connected = connected;
     xSemaphoreGive(lock);
+    if(!connected)xTaskNotifyGive(worker);
 }
 void psram_udp_get_status(psram_udp_status_t *out)
 {

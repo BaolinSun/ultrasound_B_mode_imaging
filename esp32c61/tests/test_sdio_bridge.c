@@ -85,6 +85,10 @@ esp_err_t psram_udp_submit(const void*p,size_t n,raw_completion_t cb,void*ctx) {
 esp_err_t psram_udp_submit_frame(const void*p,size_t n,const bridge_frame_t*m,raw_completion_t cb,void*ctx) {
     assert(br_crc32(0,p,n)==m->crc32);return psram_udp_submit(p,n,cb,ctx);
 }
+esp_err_t psram_frame_submit(const void*p,size_t n,const bridge_frame_t*m,raw_completion_t cb,void*ctx) {
+    return psram_udp_submit_frame(p,n,m,cb,ctx);
+}
+void psram_frame_prepare(bool continuous) { (void)continuous; assert(!udp_busy); }
 static void step(void) { if(!setjmp(scheduler)) entry(NULL); }
 static sdio_bridge_status_t status(void) { sdio_bridge_status_t s;sdio_bridge_get_status(&s);return s; }
 static void put32(unsigned p,uint32_t n) { for(unsigned i=0;i<4;i++)regs[p+i]=(uint8_t)(n>>(8*i)); }

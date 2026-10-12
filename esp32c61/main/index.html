@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>超声 PSRAM · UDP 上传</title>
+<title>超声 PSRAM · TCP/UDP 上传</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#eef2f6;color:#172b42;font:16px/1.6 system-ui,sans-serif}
 main{max-width:840px;margin:36px auto;padding:0 18px}h1{font-size:28px;margin-bottom:8px}h2{font-size:20px;margin:0 0 16px}
@@ -13,13 +13,13 @@ progress{width:100%;height:18px;margin-top:18px}.notice{padding:12px 16px;border
 a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template-columns:1fr}.card{padding:18px}dl{grid-template-columns:100px 1fr}}
 </style></head><body><main>
 <p class="muted">ESP32-C61 / B-mode imaging</p><h1>PSRAM 数据上传</h1>
-<p class="muted">配置 Wi-Fi 与上位机地址，从外部 PSRAM 读取数据并以原始 UDP 数据报发送。</p>
+<p class="muted">配置 Wi-Fi 与上位机地址。PSRAM 自测使用原始 UDP；SDIO 帧使用编译选择的 TCP/UDP。</p>
 <div id="message" class="notice" role="status" aria-live="polite">正在读取设备配置…</div>
 <section class="card"><h2>连接与目标地址</h2><form id="config-form">
 <div class="grid"><label>路由器 SSID<input id="ssid" maxlength="32" autocomplete="off"><small>为空时保留配置热点；长度按 UTF-8 字节计算。</small></label>
 <label>Wi-Fi 密码<input id="password" type="password" maxlength="64" autocomplete="new-password"><small>留空保留已有密码；开放网络请勾选下方选项。</small></label>
-<label>上位机 IPv4<input id="target-ip" placeholder="192.168.1.100" inputmode="decimal"><small>填写运行 UDP 接收程序的电脑地址。</small></label>
-<label>UDP 端口<input id="target-port" type="number" min="1" max="65535" value="50001" required></label></div>
+<label>上位机 IPv4<input id="target-ip" placeholder="192.168.1.100" inputmode="decimal"><small>填写运行相应 TCP/UDP 接收程序的电脑地址。</small></label>
+<label>TCP/UDP 端口<input id="target-port" type="number" min="1" max="65535" value="50001" required><small>共用目标端口；PSRAM 自测仍使用 UDP。</small></label></div>
 <label><input id="open-network" type="checkbox"> 使用开放 Wi-Fi（清空已保存密码）</label>
 <button id="save" type="submit">保存并应用</button><small>目标地址下一次上传生效。修改 Wi-Fi 后会重新连接；连接成功 15 秒后关闭配置热点。</small>
 </form></section>
@@ -31,8 +31,8 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 </dl><progress id="progress" max="1" value="0"></progress><p id="bytes" class="muted">尚未上传</p>
 <button id="upload" disabled>上传一次 PSRAM 自测数据</button><button id="stop" class="secondary" disabled>停止上传</button>
 <p class="muted">先启动上位机接收程序，再点击上传。数据包不包含帧头或序号；“本地发送完成”不代表上位机已完整收到，请查看接收端校验结果。</p>
-</section><section class="card"><h2>Zynq SDIO → Wi-Fi UDP 测试</h2>
-<p class="muted">Zynq 需使用 DATA_OUTPUT_MODE=DATA_OUTPUT_SDIO 编译并启动，再运行 PC 帧接收工具。本模式含包头与 CRC32，不能使用原始 UDP 接收工具。</p>
+</section><section class="card"><h2>Zynq SDIO → Wi-Fi TCP/UDP 测试</h2>
+<p class="muted">Zynq 需使用 DATA_OUTPUT_MODE=DATA_OUTPUT_SDIO 编译并启动，再运行与固件 TCP/UDP 宏相符的 PC 帧接收工具。TCP 等待 PC 校验回执；原始 PSRAM 自测仍为 UDP。</p>
 <p id="sdio-status">正在读取 SDIO 状态…</p>
 <p id="sdio-gate" class="muted"></p><p id="sdio-timing" class="muted"></p>
 <button id="sdio-once" disabled>SDIO 单帧</button><button id="sdio-stream" disabled>SDIO 连续测试</button>
@@ -52,14 +52,15 @@ function render(s){
  el('memory').textContent=`总计 ${s.psram_total} B / 空闲 ${s.psram_free} B / 最大空闲块 ${s.psram_largest} B`;
  el('test-size').textContent=s.selftest_bytes?`${s.selftest_bytes} B`:'不可用（检查 PSRAM 与串口日志）';
  el('destination').textContent=s.active_ip?`${s.active_ip}:${s.active_port}`:'尚未上传';
- el('result').textContent=(results[s.result]||s.result)+(s.socket_errno?` · errno ${s.socket_errno}`:'');
- el('packets').textContent=`${s.packets} / ${s.retries}`;
+ el('result').textContent=(s.result==='received_verified'?'PC 完整收帧且 CRC 校验通过':results[s.result]||s.result)+(s.active_transport==='tcp'&&s.tcp_error?` · ${s.tcp_error_reason||s.tcp_error}`:s.socket_errno&&s.result!=='sent_local'&&s.result!=='received_verified'?` · errno ${s.socket_errno}`:'');
+ el('packets').textContent=s.active_transport==='tcp'?`TCP 内部块 ${s.tcp_chunks||0} / 等待 ${s.tcp_waits||0}（不是 TCP 分段数）`:`${s.packets} / ${s.retries}`;
  el('progress').max=s.total_bytes||1;el('progress').value=s.sent_bytes;
  el('bytes').textContent=`本地发送 ${s.sent_bytes} / ${s.total_bytes} B`;
  el('upload').disabled=saving||!configLoaded||!targetConfigured||!s.upload_ready||!s.selftest_bytes||s.busy;el('stop').disabled=!s.busy;
  const d=s.sdio||{};
- el('sdio-timing').textContent=`最近一帧：SDIO 接收 ${((d.last_receive_us||0)/1000).toFixed(1)} ms（其中 CRC ${((d.last_crc_us||0)/1000).toFixed(1)} ms）；最近一次 UDP 本地发送 ${((s.send_elapsed_us||0)/1000).toFixed(1)} ms`;
- el('sdio-status').textContent=`SDIO ${d.ready?'就绪':'不可用'} / Zynq ${d.host_sdio?'SDIO 已握手':'SDIO 握手未完成（或 USB 模式）'} / ${d.running?'接收中':'已停止'}；接收 ${d.received_frames||0} 帧，本地发送 ${d.sent_frames||0} 帧 / ${d.sent_bytes||0} B；CRC 错误 ${d.crc_errors||0}，错误 ${d.errors||0}，丢弃 ${d.dropped_frames||0}，背压 ${d.backpressure||0}，空闲槽位 ${d.free_slots||0}`;
+ const transport=s.sdio_transport||'udp';
+ el('sdio-timing').textContent=`编译模式 ${transport.toUpperCase()}；最近一帧 SDIO 接收 ${((d.last_receive_us||0)/1000).toFixed(1)} ms（CRC ${((d.last_crc_us||0)/1000).toFixed(1)} ms）；最近一次 ${s.active_transport||'udp'} 传输 ${((s.send_elapsed_us||0)/1000).toFixed(1)} ms；TCP 连接 ${s.tcp_connected?'已建立':'未建立'}，PC 确认 ${s.tcp_confirmed_frames||0} 帧，连接/回执错误 ${s.tcp_connect_errors||0}/${s.tcp_ack_errors||0}，回执等待 ${((s.tcp_ack_us||0)/1000).toFixed(1)} ms`;
+ el('sdio-status').textContent=`SDIO ${d.ready?'就绪':'不可用'} / Zynq ${d.host_sdio?'SDIO 已握手':'SDIO 握手未完成（或 USB 模式）'} / ${d.running?'接收中':'已停止'}；接收 ${d.received_frames||0} 帧，${transport==='tcp'?'PC 校验确认':'本地发送'} ${d.sent_frames||0} 帧 / ${d.sent_bytes||0} B；CRC 错误 ${d.crc_errors||0}，错误 ${d.errors||0}，丢弃 ${d.dropped_frames||0}，背压 ${d.backpressure||0}，空闲槽位 ${d.free_slots||0}`;
  const canStart=!saving&&configLoaded&&targetConfigured&&s.upload_ready&&d.ready&&d.host_sdio&&!d.running&&!d.raw_busy&&!s.busy&&d.free_slots===2;
  el('sdio-once').disabled=!canStart;el('sdio-stream').disabled=!canStart;
  const reasons=[];

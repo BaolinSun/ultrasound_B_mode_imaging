@@ -1,4 +1,4 @@
-# SDIO → PSRAM → Wi-Fi UDP 固定 DDR 测试
+# SDIO → PSRAM → Wi-Fi TCP/UDP 固定 DDR 测试
 
 ## 当前范围与启动
 
@@ -6,21 +6,23 @@ Zynq 日志现可经 ESP32 的 USB `idf.py monitor` 查看，单向接线和操�
 
 本版本只发送 **Zynq 独立 DDR 测试缓冲区**，不是实时成像数据。不会调用 BEAM START、CFG END 或 HV ENABLE。USB 数据与 SDIO 数据互斥，USB 参数配置始终保留。ESP32 默认不自动发送。
 
+ESP32 的 `main/wifi_transport_config.h` 选择 Wi-Fi 帧协议，当前默认 TCP。仅切换 TCP/UDP 不修改 Zynq 或 SDIO 协议，不需要更新 bit/XSA/BOOT.BIN。详细协议、宏切换和验证见 [TCP_TRANSPORT.md](TCP_TRANSPORT.md)。下文 UDP 格式说明仅适用于选择 UDP 时，原始 PSRAM UDP 自测始终保持不变。
+
 1. 使用本次生成的新 Zynq 启动镜像和 ESP32 固件（烧录前确认板卡及端口）。
 2. Zynq 使用 `DATA_OUTPUT_MODE=DATA_OUTPUT_SDIO` 编译的 BOOT.BIN 启动后，自动建立 SDIO 链路；等待 `@SDIO ONLINE`，无需发送串口命令。当前交付默认 SDIO，但仍由网页启动单帧/连续发送。
-3. 网页配置 PC 的 IPv4 与 UDP 端口，等待 Wi-Fi 连接。
+3. 网页配置 PC 的 IPv4 与 TCP/UDP 共用端口，等待 Wi-Fi 连接。
 4. 在 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61` 启动接收，再点网页“SDIO 单帧”或“SDIO 连续测试”。
 
 单帧接收命令：
 
 ```powershell
-python .\pc_tools\sdio_udp_receiver.py --source-ip 192.168.3.27 --test-pattern --output-dir .\sdio_capture
+python .\pc_tools\sdio_tcp_receiver.py --source-ip 192.168.3.27 --test-pattern --output-dir .\sdio_capture
 ```
 
-3 分钟连续接收（先运行，再点网页连续测试；结束后点停止全部传输）：
+3 分钟连续测试（自动识别 TCP/UDP；自动先监听再启动，结束先停止设备再停止接收，无需点击网页）：
 
 ```powershell
-python .\pc_tools\sdio_udp_receiver.py --source-ip 192.168.3.27 --test-pattern --frames 0 --seconds 180 --log sdio_3min.jsonl
+python .\pc_tools\sdio_benchmark.py --device-ip 192.168.3.27 --seconds 180 --log sdio_3min.jsonl
 ```
 
 原来的 `raw_udp_receiver.py`、`soak_test.py` 仍只用于网页“PSRAM 自测上传”，不能接收带包头 SDIO 数据。
@@ -30,7 +32,7 @@ python .\pc_tools\sdio_udp_receiver.py --source-ip 192.168.3.27 --test-pattern -
 修改规范源 `build/src/ps/data_transfer/output_config.h` 中的一行，然后重新构建 Zynq 应用和 BOOT.BIN：
 
 ```c
-#define DATA_OUTPUT_MODE DATA_OUTPUT_SDIO  /* SDIO → ESP32 → UDP，目前默认 */
+#define DATA_OUTPUT_MODE DATA_OUTPUT_SDIO  /* SDIO → ESP32 → TCP/UDP，目前默认 */
 /* 或改为：#define DATA_OUTPUT_MODE DATA_OUTPUT_USB */
 ```
 
@@ -72,7 +74,7 @@ python .\pc_tools\sdio_udp_receiver.py --source-ip 192.168.3.27 --test-pattern -
 
 授权序号按 1..255 循环，0 不代表有效窗口。前一窗口收齐、所有块重新装载 DMA 且主机确认后才授权下一窗口；两帧均占用时，在下一帧 BEGIN 前背压。帧状态为 FREE→RECEIVING→READY→SENDING→FREE，异步发送回调归还读租约后才可覆盖。
 
-CRC32 为 IEEE reflected，多项式 0xEDB88320，初值和终值取反，与 `zlib.crc32` 一致。Zynq 初始化时计算固定 DDR 内容 CRC，ESP 收齐并校验后才提交 UDP；失败不转发。
+CRC32 为 IEEE reflected，多项式 0xEDB88320，初值和终值取反，与 `zlib.crc32` 一致。Zynq 初始化时计算固定 DDR 内容 CRC，ESP 收齐并校验后才提交 Wi-Fi 帧；失败不转发。
 
 UDP 包头 32 B，全部字段使用网络字节序：
 
@@ -126,7 +128,11 @@ BOOT.BIN 打包输入（顺序固定，绝对路径）：
 5. 48 小时接收命令（启动后网页选择连续测试）：
 
 ```powershell
-python .\pc_tools\sdio_udp_receiver.py --source-ip 192.168.3.27 --test-pattern --frames 0 --seconds 172800 --log sdio_48h.jsonl
+1..48 | ForEach-Object {
+  python .\pc_tools\sdio_benchmark.py --device-ip 192.168.3.27 --seconds 3600 --log "sdio_48h_$_.jsonl"
+  if ($LASTEXITCODE -ne 0) { throw "第 $_ 轮失败，检查日志，不自动重放" }
+  Start-Sleep -Seconds 2
+}
 ```
 
 保存首尾网页状态和两端日志，确认堆内存无持续下降、无复位/挂死、有效帧均内容正确。断网恢复不自动继续是设计行为，故障注入与无中断 48 小时分别执行。软件模拟通过与板测通过必须分别记录，未执行的板测不能标成完成。

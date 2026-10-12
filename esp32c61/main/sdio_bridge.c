@@ -56,7 +56,7 @@ static void reap(void) {
     for(unsigned i=0;i<2;i++) if(bits&(1U<<i)) {
         if(slots[i].state==SENDING) {
             if(slots[i].result==RAW_OK) { stats.sent_frames++; stats.sent_bytes+=slots[i].sent; }
-            else { stats.dropped_frames++; stats.errors++; }
+            else { stats.dropped_frames++; stats.errors++;stop_requested=true; }
         } else if(slots[i].state==RAW_TEST) {
             stats.raw_busy=false;
             ESP_LOGI(TAG,"raw selftest result=%s bytes=%u",raw_result_name(slots[i].result),(unsigned)slots[i].sent);
@@ -168,7 +168,7 @@ static void upload_ready(void) {
         (index<0 || (int32_t)(slots[i].meta.frame_id-slots[index].meta.frame_id)<0)) index=(int)i;
     if(index<0) return;
     slot_t *s=&slots[index]; s->state=SENDING;
-    esp_err_t r=psram_udp_submit_frame(s->data,BR_FRAME_BYTES,&s->meta,done,s);
+    esp_err_t r=psram_frame_submit(s->data,BR_FRAME_BYTES,&s->meta,done,s);
     if(r!=ESP_OK) { s->state=FREE; stats.dropped_frames++; stats.errors++; stop_requested=true; }
 }
 static void bridge_task(void *ctx) {
@@ -180,6 +180,7 @@ static void bridge_task(void *ctx) {
         bool pending=receiving>=0;
         for(unsigned i=0;i<2;i++) pending|=slots[i].state==READY || slots[i].state==SENDING;
         if(!u.connected && (stats.running || pending)) stop_requested=true;
+        if(u.tcp_failed && (stats.running || pending))stop_requested=true;
         if(stats.ready) {
             stats.host_sdio=read8(BR_HOST_MODE)==1;
             if(!stats.host_sdio && (stats.running || pending)) stop_requested=true;
@@ -261,6 +262,7 @@ esp_err_t sdio_bridge_start(unsigned frames) {
             receiving>=0 || window_size || slots[0].state!=FREE || slots[1].state!=FREE || stop_requested || reset_requested)
         r=ESP_ERR_TIMEOUT;
     else {
+        psram_frame_prepare(frames==0);
         stats.session=esp_random(); if(!stats.session) stats.session=1;
         write32(BR_SESSION,stats.session); frames_left=frames; stats.running=true;
     }
