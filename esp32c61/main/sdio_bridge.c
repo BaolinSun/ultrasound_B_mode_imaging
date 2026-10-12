@@ -1,6 +1,7 @@
 #include "sdio_bridge.h"
 #include "psram_udp.h"
 #include "config_store.h"
+#include "bridge_crc.h"
 #include <string.h>
 #include <inttypes.h>
 #include "driver/sdio_slave.h"
@@ -28,6 +29,7 @@ static int receiving=-1;
 static size_t offset;
 static uint32_t crc;
 static int64_t frame_start;
+static uint64_t crc_us;
 static const char *TAG="sdio_bridge";
 static uint8_t read8(unsigned p) { return sdio_slave_read_reg(p); }
 static void write8(unsigned p,uint8_t v) {
@@ -129,7 +131,7 @@ static void command(void) {
         write8(BR_RESULT,BR_REJECTED);
     } else {
         receiving=index; slots[index].state=RECEIVING; slots[index].meta=m;
-        offset=0; crc=0; frame_start=esp_timer_get_time();
+        offset=0; crc=0; crc_us=0; frame_start=esp_timer_get_time();
         write8(BR_RESULT,BR_ACCEPTED);
     }
     command_ack=seq; write8(BR_CMD_ACK,seq);
@@ -138,9 +140,14 @@ static void consume(const uint8_t *p,size_t length) {
     if(receiving<0 || !window_size || window_received>=window_size || length!=BR_BLOCK_BYTES ||
        offset+length>BR_FRAME_BYTES) { stats.errors++; reset_requested=true; return; }
     slot_t *s=&slots[receiving];
-    memcpy(s->data+offset,p,length); crc=br_crc32(crc,p,length);
+    memcpy(s->data+offset,p,length);
+    int64_t crc_start=esp_timer_get_time();
+    crc=bridge_crc32(crc,p,length);
+    crc_us+=(uint64_t)(esp_timer_get_time()-crc_start);
     offset+=length; window_received++;
     if(offset==BR_FRAME_BYTES) {
+        stats.last_receive_us=(uint64_t)(esp_timer_get_time()-frame_start);
+        stats.last_crc_us=crc_us;
         if(crc!=s->meta.crc32) {
             stats.crc_errors++; stats.dropped_frames++; s->state=FREE;
             write8(BR_RESULT,BR_BAD_CRC); reset_requested=true;
@@ -199,11 +206,33 @@ static void bridge_task(void *ctx) {
         }
         stats.free_slots=0;
         for(unsigned i=0;i<2;i++) stats.free_slots+=slots[i].data && slots[i].state==FREE;
+        bool wait_rx=stats.ready && !stop_requested && !reset_requested &&
+                     receiving>=0 && window_size && window_received<window_size;
         xSemaphoreGive(mutex);
-        vTaskDelay(1); /* Fairness on the single C61 core, including idle polls. */
+        if(wait_rx) {
+            /* Block on the DMA receive event, not a mandatory sleep between
+             * every window. Never wait holding the web/control mutex. Only
+             * this task resets/deinitializes the driver. A stop arriving here
+             * suppresses consumption, but the returned descriptor is still
+             * reloaded before reset on the next iteration. */
+            sdio_slave_buf_handle_t h=NULL; uint8_t *p=NULL; size_t len=0;
+            esp_err_t r=sdio_slave_recv(&h,&p,&len,1);
+            xSemaphoreTake(mutex,portMAX_DELAY);
+            if(r==ESP_OK) {
+                if(!stop_requested && !reset_requested) consume(p,len);
+                if(sdio_slave_recv_load_buf(h)!=ESP_OK) { stats.errors++; reset_requested=true; }
+            } else if(r!=ESP_ERR_TIMEOUT) { stats.errors++; reset_requested=true; }
+            xSemaphoreGive(mutex);
+        } else {
+            vTaskDelay(1); /* Idle/ACK/backpressure polls stay bounded and fair. */
+        }
     }
 }
 esp_err_t sdio_bridge_init(void) {
+    if(!bridge_crc_init()) return ESP_ERR_INVALID_STATE;
+    stats.crc_sram_table=bridge_crc_using_table();
+    stats.crc_rom_bench_us=bridge_crc_benchmark_us(false);
+    stats.crc_table_bench_us=bridge_crc_benchmark_us(true);
     if(CONFIG_PSRAM_UDP_TEST_BYTES>BR_FRAME_BYTES || BR_FRAME_BYTES>CONFIG_PSRAM_UDP_MAX_BYTES)
         return ESP_ERR_INVALID_SIZE;
     mutex=xSemaphoreCreateMutex(); if(!mutex) return ESP_ERR_NO_MEM;

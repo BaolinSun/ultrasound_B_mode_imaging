@@ -84,6 +84,7 @@ static void upload_worker(void *arg)
                           .dest = accepted_dest};
         xSemaphoreGive(lock);
         raw_result_t result = abort_reason(&ctx);
+        int64_t started=esp_timer_get_time();
         size_t sent = 0;
         if (result == RAW_OK) {
             ctx.socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -111,6 +112,7 @@ static void upload_worker(void *arg)
         xSemaphoreTake(lock, portMAX_DELAY);
         status.result = result;
         status.sent_bytes = sent;
+        status.elapsed_us=(uint64_t)(esp_timer_get_time()-started);
         status.busy = false;
         bool completed = raw_finish(&session, &done, &done_ctx);
         xSemaphoreGive(lock);
@@ -211,8 +213,10 @@ static esp_err_t submit(const void *data, size_t length, const bridge_frame_t *f
         accepted_deadline = now_ms(NULL) + CONFIG_PSRAM_UDP_TIMEOUT_MS;
         cancel_requested = false;
         bool connected = status.connected;
+        uint64_t previous_elapsed=status.elapsed_us;
         status = (psram_udp_status_t){.busy = true, .connected = connected,
-                    .total_bytes = length, .result = RAW_BUSY, .active_port = config.target_port};
+                    .total_bytes = length, .result = RAW_BUSY, .active_port = config.target_port,
+                    .elapsed_us = previous_elapsed};
         memcpy(status.active_ip, config.target_ip, sizeof(status.active_ip));
         xTaskNotifyGive(worker);
     }

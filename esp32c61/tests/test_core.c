@@ -11,7 +11,7 @@ typedef struct {
     unsigned cancel_after, sends, transient, permanent_after, delays, packets, retries;
     uint8_t collected[50000];
     size_t collected_bytes, last_length;
-    unsigned callbacks;
+    unsigned callbacks, progress_calls;
 } mock_t;
 static uint64_t clock_ms(void *p) { return ((mock_t *)p)->now; }
 static raw_result_t abort_check(void *p)
@@ -37,6 +37,7 @@ static void progress_mock(void *p, size_t n, unsigned packets, unsigned retries)
 {
     mock_t *m = p;
     assert(n == m->collected_bytes);
+    ++m->progress_calls;
     m->packets = packets; m->retries = retries;
 }
 static void done_mock(raw_result_t r, size_t n, void *p)
@@ -97,6 +98,7 @@ static void send_tests(void)
         assert(m.packets == (sizes[i] + 1439) / 1440);
         assert(m.last_length == (sizes[i] - 1) % 1440 + 1);
         assert(m.delays == (m.packets - 1) / 32);
+        assert(m.progress_calls == (m.packets+31)/32);
     }
     mock_t retry = {.transient = 2}; size_t sent;
     assert(transfer(&retry, data, 1441, 30000, &sent) == RAW_OK);
@@ -111,6 +113,7 @@ static void send_tests(void)
     assert(transfer(&permanent, data, 3000, 30000, &sent) == RAW_SEND_ERROR && sent == 1440);
     mock_t cancel = {.cancel_after = 1};
     assert(transfer(&cancel, data, 3000, 30000, &sent) == RAW_CANCELLED && sent == 1440);
+    assert(cancel.packets == 1); /* Throttled snapshots must flush on abort. */
     mock_t disconnected = {.abort = RAW_LINK_DOWN};
     assert(transfer(&disconnected, data, 8, 30000, &sent) == RAW_LINK_DOWN && sent == 0);
     mock_t timeout = {.transient = 100};

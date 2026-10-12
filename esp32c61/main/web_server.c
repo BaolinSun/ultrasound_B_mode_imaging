@@ -133,6 +133,7 @@ static esp_err_t get_status(httpd_req_t *req)
         cJSON_AddStringToObject(json, "result", raw_result_name(udp.result));
         cJSON_AddNumberToObject(json, "total_bytes", udp.total_bytes);
         cJSON_AddNumberToObject(json, "sent_bytes", udp.sent_bytes);
+        cJSON_AddNumberToObject(json, "send_elapsed_us", udp.elapsed_us);
         cJSON_AddNumberToObject(json, "packets", udp.packets);
         cJSON_AddNumberToObject(json, "retries", udp.retries);
         cJSON_AddNumberToObject(json, "socket_errno", udp.socket_errno);
@@ -155,6 +156,11 @@ static esp_err_t get_status(httpd_req_t *req)
             cJSON_AddNumberToObject(sdio,"sent_bytes",s.sent_bytes);
             cJSON_AddNumberToObject(sdio,"dropped_frames",s.dropped_frames);
             cJSON_AddNumberToObject(sdio,"free_slots",s.free_slots);
+            cJSON_AddNumberToObject(sdio,"last_receive_us",s.last_receive_us);
+            cJSON_AddNumberToObject(sdio,"last_crc_us",s.last_crc_us);
+            cJSON_AddBoolToObject(sdio,"crc_sram_table",s.crc_sram_table);
+            cJSON_AddNumberToObject(sdio,"crc_rom_bench_us",s.crc_rom_bench_us);
+            cJSON_AddNumberToObject(sdio,"crc_table_bench_us",s.crc_table_bench_us);
         }
     }
     return reply(req, "200 OK", json);

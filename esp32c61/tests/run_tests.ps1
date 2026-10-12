@@ -36,8 +36,10 @@ if (Test-Path (Join-Path $sdkBsp 'include/xil_printf.h')) {
         if ($LASTEXITCODE -ne 0) { throw 'Actual SDK formatter regression failed' }
     } finally { Pop-Location }
 }
-foreach ($suite in @('framed','sdio_bridge')) {
-    $extra = if ($suite -eq 'framed') { 'framed_transfer.c' } else { 'sdio_bridge.c' }
+foreach ($suite in @('framed','sdio_bridge','bridge_crc')) {
+    $extra = if ($suite -eq 'framed') { 'framed_transfer.c' } elseif ($suite -eq 'bridge_crc') { 'bridge_crc.c' } else { 'sdio_bridge.c' }
+    [string[]]$crcSources = if ($suite -eq 'sdio_bridge') { @((Join-Path $projectRoot 'main/bridge_crc.c')) } else { @() }
+    [string[]]$crcFlags = if ($suite -eq 'bridge_crc') { '-DCRC_TEST_ORACLE=1' } else { @() }
     $suiteOutput = Join-Path $testOutput $suite
     New-Item -ItemType Directory -Force -Path $suiteOutput | Out-Null
     $binary = Join-Path $suiteOutput "test_$suite.exe"
@@ -46,7 +48,7 @@ foreach ($suite in @('framed','sdio_bridge')) {
     & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g `
         '-I' (Join-Path $projectRoot 'main') '-I' (Join-Path $PSScriptRoot 'stubs') `
         (Join-Path $PSScriptRoot "test_$suite.c") (Join-Path $projectRoot "main\$extra") `
-        (Join-Path $projectRoot 'main\raw_transfer.c') -o $binary
+        (Join-Path $projectRoot 'main\raw_transfer.c') @crcSources @crcFlags -o $binary
     if ($LASTEXITCODE -ne 0) { throw "$suite compilation failed" }
     & $binary
     if ($LASTEXITCODE -ne 0) { throw "$suite tests failed" }

@@ -25,6 +25,7 @@ static raw_completion_t completion;
 static void *completion_ctx;
 static const char *fault="";
 static bool target_configured=true;
+static unsigned wait_inject, wait_delivered;
 SemaphoreHandle_t xSemaphoreCreateMutex(void) { return !strcmp(fault,"mutex")?NULL:(void*)1; }
 int xSemaphoreTake(SemaphoreHandle_t p,uint32_t t) { (void)p;(void)t;assert(!locked);locked=true;return 1; }
 int xSemaphoreGive(SemaphoreHandle_t p) { (void)p;assert(locked);locked=false;return 1; }
@@ -53,11 +54,18 @@ esp_err_t sdio_slave_recv_load_buf(sdio_slave_buf_handle_t h) {
     descriptor_t*d=h;assert(!d->loaded);d->loaded=true;d->filled=false;return ESP_OK;
 }
 esp_err_t sdio_slave_recv(sdio_slave_buf_handle_t*h,uint8_t**p,size_t*n,uint32_t t) {
-    (void)t;
+    if(t) assert(!locked); /* Event wait must never hold the control mutex. */
     if(!strcmp(fault,"recv"))return ESP_ERR_INVALID_STATE;
     for(unsigned i=0;i<descriptors;i++) if(desc[i].filled) {
         *h=&desc[i];*p=desc[i].data;*n=!strcmp(fault,"short")?511:512;desc[i].loaded=false;desc[i].filled=false;return ESP_OK;
     }
+    if(t && wait_inject) {
+        wait_inject=0; wait_delivered=512;
+        descriptor_t*d=&desc[0]; assert(d->loaded);
+        memcpy(d->data,reference,512);d->loaded=false;
+        *h=d;*p=d->data;*n=512;return ESP_OK;
+    }
+    if(t) { clock_us+=(int64_t)t*1000;longjmp(scheduler,1); }
     return ESP_ERR_TIMEOUT;
 }
 uint8_t sdio_slave_read_reg(unsigned p) { assert(p<64);return regs[p]; }
@@ -99,9 +107,11 @@ static void batch(size_t offset,unsigned count,bool acknowledge,bool corrupt) {
     step();
 }
 static void frame(bool acknowledge_last,bool corrupt) {
-    for(size_t off=0;off<BR_FRAME_BYTES;) {
+    size_t initial=wait_delivered;wait_delivered=0;
+    for(size_t off=initial;off<BR_FRAME_BYTES;) {
         unsigned n=regs[BR_CREDIT];
-        assert(n==br_window(BR_FRAME_BYTES-off,16));
+        if(off==512 && initial) n--;
+        else assert(n==br_window(BR_FRAME_BYTES-off,16));
         batch(off,n,acknowledge_last || off+n*512<BR_FRAME_BYTES,corrupt && off==0);
         off+=n*512;
     }
@@ -134,7 +144,7 @@ int main(int argc,char **argv) {
     regs[BR_CMD]=99;regs[BR_CMD_SEQ]=br_next_seq(regs[BR_CMD_ACK]);step();assert(regs[BR_RESULT]==BR_REJECTED);
     regs[BR_CMD]=BR_BEGIN;regs[BR_CMD_SEQ]=br_next_seq(regs[BR_CMD_ACK]);step();assert(regs[BR_RESULT]==BR_REJECTED);
     random_id=UINT32_MAX;
-    assert(sdio_bridge_start(1)==ESP_OK);step();begin(1,checksum);frame(true,false);
+    assert(sdio_bridge_start(1)==ESP_OK);step();wait_inject=1;begin(1,checksum);frame(true,false);
     assert(status().received_frames==1 && jobs==1 && !status().running);
     assert(!memcmp(job_data,reference,BR_FRAME_BYTES));
     assert(sdio_bridge_selftest()==ESP_ERR_TIMEOUT);

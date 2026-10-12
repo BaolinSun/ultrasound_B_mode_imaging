@@ -8,6 +8,9 @@ typedef struct {
     uint32_t session, received_frames, crc_errors, errors, backpressure,
              sent_frames, dropped_frames;
     uint64_t sent_bytes;
+    uint64_t last_receive_us, last_crc_us;
+    bool crc_sram_table;
+    uint32_t crc_rom_bench_us, crc_table_bench_us;
     unsigned free_slots;
 } sdio_bridge_status_t;
 esp_err_t sdio_bridge_init(void);

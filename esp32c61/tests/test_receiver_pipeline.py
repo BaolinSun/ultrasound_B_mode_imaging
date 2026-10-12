@@ -1,0 +1,84 @@
+import json
+import pathlib
+import sys
+import tempfile
+import threading
+import time
+import unittest
+from unittest.mock import patch
+
+ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'pc_tools'))
+import sdio_udp_receiver as r
+
+
+class PipelineTests(unittest.TestCase):
+    def test_missing_indices_and_recovery(self):
+        rx = r.FrameReceiver(3000)
+        data = r.test_pattern(3000)
+        rx.feed(r.encode_packet(data, 1, 1, 0), ('127.0.0.1', 1), 0)
+        rx.feed(r.encode_packet(data, 1, 1, 2880), ('127.0.0.1', 1), .01)
+        event = rx.expire(3)[0]
+        self.assertEqual(event['missing_indices'], [1])
+        self.assertEqual(event['missing_packets'], 1)
+        for offset in (0, 1440, 2880):
+            _, complete = rx.feed(r.encode_packet(data, 1, 2, offset), ('127.0.0.1', 1), 4)
+        self.assertEqual(complete[1], data)
+
+    def test_receive_queue_loss_is_bounded_and_visible(self):
+        class BurstSocket:
+            def __init__(self): self.n = 100
+            def recvfrom(self, maximum):
+                if not self.n: raise OSError('end of fixture')
+                self.n -= 1
+                return b'x', ('127.0.0.1', 1)
+        pump = r.DatagramPump(BurstSocket(), 4)
+        pump.thread.start()
+        pump.thread.join(2)
+        self.assertEqual(pump.items.qsize(), 4)
+        self.assertEqual(pump.drops, 96)
+        self.assertEqual(pump.high_water, 4)
+        self.assertIsNotNone(pump.error)
+        pump.close()
+
+    def test_slow_output_does_not_block_submit(self):
+        entered = threading.Event()
+        release = threading.Event()
+        def stalled_print(*args, **kwargs):
+            entered.set()
+            release.wait(1)
+        with tempfile.TemporaryDirectory() as folder, patch.object(r, 'print', stalled_print, create=True):
+            path = pathlib.Path(folder) / 'test.jsonl'
+            writer = r.EventWriter(path, capacity=1)
+            try:
+                writer.submit({'event': 'frame', 'frame': 1})
+                self.assertTrue(entered.wait(1))
+                writer.submit({'event': 'summary', 'passed': True})
+                started = time.monotonic()
+                with self.assertRaisesRegex(OSError, 'output queue full'):
+                    writer.submit({'event': 'frame', 'frame': 2})
+                self.assertLess(time.monotonic()-started, .1)
+            finally:
+                release.set()
+                writer.close()
+            events = [json.loads(line) for line in path.read_text().splitlines()]
+            self.assertEqual([e['event'] for e in events], ['frame', 'summary'])
+            self.assertIsNone(writer.error)
+
+    def test_output_failure_is_reported_without_overwriting(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(r, 'print', lambda *a, **k: None, create=True):
+            dest = pathlib.Path(folder)
+            existing = dest / 'frame_00000001_00000001.bin'
+            existing.write_bytes(b'keep')
+            writer = r.EventWriter(output_dir=dest)
+            writer.submit({'event': 'frame'}, ((1, 1), b'new'))
+            writer.close()
+            self.assertIsNotNone(writer.error)
+            self.assertEqual(existing.read_bytes(), b'keep')
+
+    def test_invalid_queue_capacity(self):
+        with self.assertRaises(ValueError): r.DatagramPump(None, 0)
+        with self.assertRaises(ValueError): r.EventWriter(capacity=0)
+
+
+if __name__ == '__main__': unittest.main()

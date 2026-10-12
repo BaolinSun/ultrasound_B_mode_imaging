@@ -35,7 +35,7 @@ int main(void) {
         raw_io_t io={&m,clock_ms,abort_check,send_mock,delay,progress};
         assert(psram_framed_send(data,lengths[i],&frame,staging,30000,&io,&sent)==RAW_OK);
         assert(sent==lengths[i] && m.retries==2);
-        m.abort=RAW_CANCELLED;
+        m.bytes=0; m.packets=0; m.abort=RAW_CANCELLED;
         assert(psram_framed_send(data,lengths[i],&frame,staging,30000,&io,&sent)==RAW_CANCELLED && sent==0);
         m.abort=RAW_OK; m.now=30000;
         assert(psram_framed_send(data,lengths[i],&frame,staging,30000,&io,&sent)==RAW_TIMEOUT);

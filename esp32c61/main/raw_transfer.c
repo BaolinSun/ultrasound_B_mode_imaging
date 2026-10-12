@@ -57,23 +57,35 @@ raw_result_t psram_raw_send(const uint8_t *data, size_t length, uint8_t *staging
     *sent = 0;
     while (*sent < length) {
         raw_result_t result = check_abort(deadline, io);
-        if (result != RAW_OK) return result;
+        if (result != RAW_OK) {
+            io->progress(io->ctx, *sent, packets, retries);
+            return result;
+        }
         size_t bytes = length - *sent;
         if (bytes > RAW_UDP_BYTES) bytes = RAW_UDP_BYTES;
         memcpy(staging, data + *sent, bytes);
         for (unsigned attempt = 0;; ++attempt) {
             result = check_abort(deadline, io);
-            if (result != RAW_OK) return result;
+            if (result != RAW_OK) {
+                io->progress(io->ctx, *sent, packets, retries);
+                return result;
+            }
             int ret = io->send(io->ctx, staging, bytes);
             if (ret == 0) break;
-            if (ret < 0 || attempt == RAW_RETRY_COUNT) return RAW_SEND_ERROR;
+            if (ret < 0 || attempt == RAW_RETRY_COUNT) {
+                io->progress(io->ctx, *sent, packets, retries);
+                return RAW_SEND_ERROR;
+            }
             ++retries;
             io->progress(io->ctx, *sent, packets, retries);
             io->delay_ms(io->ctx, 1);
         }
         *sent += bytes;
         ++packets;
-        io->progress(io->ctx, *sent, packets, retries);
+        /* UI snapshots need not lock on every datagram. The framed adapter
+         * tracks its own offset, so header offsets remain exact. */
+        if (packets % RAW_BURST_PACKETS == 0 || *sent == length)
+            io->progress(io->ctx, *sent, packets, retries);
         if (*sent < length && packets % RAW_BURST_PACKETS == 0)
             io->delay_ms(io->ctx, 1);
     }

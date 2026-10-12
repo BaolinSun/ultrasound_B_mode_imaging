@@ -69,7 +69,17 @@ void sdio_bridge_poll(void) {
         online=1; phase=IDLE; host.last_grant_seq=0;
         xil_printf("@SDIO ONLINE SD1 4bit; waiting webpage start\r\n");
     }
-    if(read8(BR_HOST_MODE,&mode) || mode!=1 || read8(BR_STATUS,&state)) { fail_link(); return; }
+    if(phase!=IDLE && now>=deadline) { fail_link(); return; }
+    if(read8(BR_STATUS,&state)) { fail_link(); return; }
+    u8 next_grant=0;
+    if(phase==WINDOW && (state&BR_STREAM) && !(state&BR_BACKPRESSURE)) {
+        /* No new credit: avoid re-reading four session bytes and metadata
+         * on every tight poll. Revalidate host/session before every actual
+         * DMA window, so a reset never permits stale payload replay. */
+        if(read8(BR_GRANT,&next_grant)) { fail_link(); return; }
+        if(!next_grant || next_grant==host.last_grant_seq) return;
+    }
+    if(read8(BR_HOST_MODE,&mode) || mode!=1) { fail_link(); return; }
     u32 current_session;
     if(read32(BR_SESSION,&current_session)) { fail_link(); return; }
     if(phase!=IDLE && (current_session!=session_id || !(state&BR_STREAM))) {
@@ -77,7 +87,6 @@ void sdio_bridge_poll(void) {
          * still needs acknowledgement even though STREAM has become zero. */
         if(phase!=DONE_WAIT || current_session!=session_id) { phase=IDLE; offset=0; }
     }
-    if(phase!=IDLE && now>=deadline) { fail_link(); return; }
     if(phase==IDLE) {
         if((state&(BR_READY|BR_STREAM|BR_BACKPRESSURE))!=(BR_READY|BR_STREAM)) return;
         session_id=current_session; frame_id++; if(!frame_id) frame_id=1;
@@ -99,7 +108,8 @@ void sdio_bridge_poll(void) {
     if(phase==WINDOW) {
         u8 sequence,count;
         if(state&BR_BACKPRESSURE) return;
-        if(read8(BR_GRANT,&sequence) || read8(BR_CREDIT,&count)) { fail_link(); return; }
+        sequence=next_grant;
+        if((!sequence && read8(BR_GRANT,&sequence)) || read8(BR_CREDIT,&count)) { fail_link(); return; }
         if(!sequence || sequence==host.last_grant_seq) return;
         unsigned maximum=br_window(BR_FRAME_BYTES-offset,BR_WINDOW_BLOCKS);
         if(!count || count>maximum) { fail_link(); return; }

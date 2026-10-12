@@ -12,6 +12,7 @@ typedef struct {
     unsigned packets;
     unsigned retries;
     int socket_errno;
+    uint64_t elapsed_us;
     raw_result_t result;
     char active_ip[16];
     uint16_t active_port;

@@ -7,12 +7,14 @@ static uint64_t clock_ms(void *p) { adapter_t *a=p; return a->io->now_ms(a->io->
 static raw_result_t abort_job(void *p) { adapter_t *a=p; return a->io->abort_reason(a->io->ctx); }
 static void delay(void *p,unsigned ms) { adapter_t *a=p; a->io->delay_ms(a->io->ctx,ms); }
 static void progress(void *p,size_t sent,unsigned packets,unsigned retries) {
-    adapter_t *a=p; a->offset=sent; a->io->progress(a->io->ctx,sent,packets,retries);
+    adapter_t *a=p; a->io->progress(a->io->ctx,sent,packets,retries);
 }
 static int send_packet(void *p,const uint8_t *data,size_t bytes) {
     adapter_t *a=p; (void)data;
     br_udp_header(a->staging,a->frame,(uint32_t)a->offset,(unsigned)bytes);
-    return a->io->send(a->io->ctx,a->staging,bytes+BR_UDP_HEADER);
+    int result=a->io->send(a->io->ctx,a->staging,bytes+BR_UDP_HEADER);
+    if(result==0) a->offset+=bytes; /* Retry must retain the same index/offset. */
+    return result;
 }
 raw_result_t psram_framed_send(const uint8_t *data,size_t length,
     const bridge_frame_t *frame,uint8_t *staging,uint64_t deadline,
