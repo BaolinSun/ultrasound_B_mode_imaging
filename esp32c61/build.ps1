@@ -6,6 +6,8 @@ param(
     [string]$Profile = 'default',
     [ValidateSet('auto', 'tcp', 'udp')]
     [string]$Transport = 'auto',
+    [ValidateSet('auto', 'baseline', 'mid', 'fast')]
+    [string]$TcpTuning = 'auto',
     [string]$IdfPath = 'D:\Program Files\esp\v6.1\esp-idf',
     [string]$ActivationScript = 'C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1'
 )
@@ -32,14 +34,16 @@ try {
     $configFile = Join-Path $PSScriptRoot 'sdkconfig'
     $buildDir = Join-Path $PSScriptRoot 'build'
     $profileArgs = @()
-    if ($Profile -eq 'throughput' -or $Transport -ne 'auto') {
+    $resolvedTuning = if ($TcpTuning -ne 'auto') { $TcpTuning } elseif ($Profile -eq 'throughput') { 'mid' } else { 'baseline' }
+    if ($Profile -eq 'throughput' -or $Transport -ne 'auto' -or $TcpTuning -ne 'auto') {
         # Isolate all generated configuration/output; never reset user's sdkconfig.
-        $name = if ($Transport -eq 'auto') { 'build-throughput' } else { "build-$Profile-$Transport" }
+        $name = if ($Transport -eq 'auto') { "build-$Profile-$resolvedTuning" } else { "build-$Profile-$Transport-$resolvedTuning" }
         $buildDir = Join-Path $PSScriptRoot $name
         $configFile = Join-Path $buildDir 'sdkconfig'
         New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
         $defaults = Join-Path $PSScriptRoot 'sdkconfig.defaults'
         if ($Profile -eq 'throughput') { $defaults += ';' + (Join-Path $PSScriptRoot 'sdkconfig.throughput.defaults') }
+        $defaults += ';' + (Join-Path $PSScriptRoot "sdkconfig.tcp-$resolvedTuning.defaults")
         $profileArgs = @('-B', $buildDir, "-DSDKCONFIG=$configFile", "-DSDKCONFIG_DEFAULTS=$defaults")
     }
     # Verification overrides live in separate directories. Normal builds always

@@ -35,8 +35,12 @@ static int tcp_socket=-1;
 static struct sockaddr_in tcp_dest;
 static uint32_t tcp_generation;
 
-typedef struct { int socket; uint32_t generation; struct sockaddr_in dest; } send_ctx_t;
+typedef struct {
+    int socket; uint32_t generation; struct sockaddr_in dest;
+    unsigned fast_ready_count; uint64_t extra_yield_us;
+} send_ctx_t;
 static uint64_t now_ms(void *ctx) { (void)ctx; return esp_timer_get_time() / 1000ULL; }
+static uint64_t now_us(void *ctx) { (void)ctx; return (uint64_t)esp_timer_get_time(); }
 static void delay_ms(void *ctx, unsigned ms)
 {
     (void)ctx;
@@ -89,22 +93,39 @@ static void tcp_progress(void *ctx,size_t sent,unsigned chunks,unsigned waits)
     status.sent_bytes=sent;status.tcp_chunks=chunks;status.tcp_waits=waits;
     xSemaphoreGive(lock);
 }
-static int tcp_io_result(int n)
+static int tcp_io_result(send_ctx_t *ctx,int n)
 {
-    if(n>=0)return n;
+    if(n>=0) {
+        if(n>0)ctx->fast_ready_count=0; /* Progress ends a spurious-ready streak. */
+        return n;
+    }
     int saved=errno;
     xSemaphoreTake(lock,portMAX_DELAY);status.socket_errno=saved;xSemaphoreGive(lock);
-    return saved==EAGAIN || saved==EWOULDBLOCK || saved==ENOMEM || saved==ENOBUFS || saved==EINTR ? -2:-1;
+    if(saved==ENOMEM || saved==ENOBUFS)return -3;
+    return saved==EAGAIN || saved==EWOULDBLOCK || saved==EINTR ? -2:-1;
 }
-static int tcp_socket_write(void *p,const uint8_t *data,size_t n) { return tcp_io_result(send(((send_ctx_t*)p)->socket,data,n,0)); }
-static int tcp_read(void *p,uint8_t *data,size_t n) { return tcp_io_result(recv(((send_ctx_t*)p)->socket,data,n,0)); }
-static void tcp_wait(void *p,bool reading,unsigned ms)
+static int tcp_socket_write(void *p,const uint8_t *data,size_t n) { return tcp_io_result(p,send(((send_ctx_t*)p)->socket,data,n,0)); }
+static int tcp_read(void *p,uint8_t *data,size_t n) { return tcp_io_result(p,recv(((send_ctx_t*)p)->socket,data,n,0)); }
+static void tcp_phase(void *ctx,tcp_phase_t phase)
 {
-    int fd=((send_ctx_t*)p)->socket;fd_set ready;FD_ZERO(&ready);FD_SET(fd,&ready);
+    (void)ctx;xSemaphoreTake(lock,portMAX_DELAY);status.tcp_phase=phase;xSemaphoreGive(lock);
+}
+static void tcp_wait(void *p,bool reading,bool resource,unsigned ms)
+{
+    send_ctx_t *ctx=p;
+    if(resource) { delay_ms(p,1);ctx->fast_ready_count=0;return; }
+    int fd=ctx->socket;fd_set ready;FD_ZERO(&ready);FD_SET(fd,&ready);
     struct timeval t={.tv_sec=0,.tv_usec=(long)ms*1000};
-    (void)select(fd+1,reading?&ready:NULL,reading?NULL:&ready,NULL,&t);
-    /* ENOMEM may coexist with socket writability. Avoid spinning on ready. */
-    if(!reading)delay_ms(p,1);
+    uint64_t start=now_us(NULL);
+    int selected=select(fd+1,reading?&ready:NULL,reading?NULL:&ready,NULL,&t);
+    /* Normal EAGAIN waits for socket readiness without an extra sleep.
+     * Rare ready-but-no-progress loops still get a bounded CPU backoff. */
+    if(selected>0 && now_us(NULL)-start<250)ctx->fast_ready_count++;
+    else ctx->fast_ready_count=0;
+    if(ctx->fast_ready_count>=8) {
+        start=now_us(NULL);delay_ms(p,1);ctx->extra_yield_us+=now_us(NULL)-start;
+        ctx->fast_ready_count=0;
+    }
 }
 static raw_result_t connect_tcp(send_ctx_t *ctx,uint64_t deadline)
 {
@@ -187,10 +208,12 @@ static void upload_worker(void *arg)
         if(result==RAW_OK && tcp) {
             result=connect_tcp(&ctx,deadline);
             if(result==RAW_OK) {
-                tcp_io_t io={&ctx,now_ms,abort_reason,tcp_socket_write,tcp_read,tcp_wait,delay_ms,tcp_progress};
+                tcp_io_t io={.ctx=&ctx,.now_ms=now_ms,.now_us=now_us,.abort_reason=abort_reason,
+                    .write=tcp_socket_write,.read=tcp_read,.wait=tcp_wait,.yield_ms=delay_ms,
+                    .progress=tcp_progress,.phase=tcp_phase};
                 result=tcp_frame_send(job.data,job.length,&frame,staging,deadline,&io,&metrics);
                 sent=metrics.sent;
-                xSemaphoreTake(lock,portMAX_DELAY);status.tcp_ack_us=metrics.ack_ms*1000;
+                xSemaphoreTake(lock,portMAX_DELAY);
                 if(metrics.error)status.tcp_error=metrics.error;
                 if(metrics.error==TCP_ERROR_BAD_ACK || metrics.error==TCP_ERROR_REJECTED ||
                    metrics.error==TCP_ERROR_ACK_TIMEOUT ||
@@ -232,12 +255,22 @@ static void upload_worker(void *arg)
         xSemaphoreTake(lock, portMAX_DELAY);
         status.result = result;
         if(tcp) {
+            status.tcp_ack_us=metrics.ack_us;status.tcp_header_us=metrics.header_us;
+            status.tcp_payload_us=metrics.payload_us;status.tcp_write_wait_us=metrics.write_wait_us;
+            status.tcp_read_wait_us=metrics.read_wait_us;status.tcp_yield_us=metrics.yield_us+ctx.extra_yield_us;
+            status.tcp_copy_us=metrics.copy_us;status.tcp_write_calls=metrics.write_calls;
+            status.tcp_read_calls=metrics.read_calls;status.tcp_partial_writes=metrics.partial_writes;
+            status.tcp_send_waits=metrics.send_waits;status.tcp_ack_waits=metrics.ack_waits;
+            status.tcp_resource_waits=metrics.resource_waits;
+            status.tcp_metric_session=frame.session_id;status.tcp_metric_frame=frame.frame_id;
+            status.tcp_metric_result=result;status.tcp_metric_bytes=sent;
             if(result==RAW_OK)status.tcp_confirmed_frames++;
             else if(result!=RAW_CANCELLED && result!=RAW_LINK_DOWN)status.tcp_failed=true;
         }
         status.sent_bytes = sent;
         status.elapsed_us=(uint64_t)(esp_timer_get_time()-started);
         status.busy = false;
+        status.tcp_phase=TCP_PHASE_IDLE;
         bool completed = raw_finish(&session, &done, &done_ctx);
         xSemaphoreGive(lock);
         if (completed && done) done(result, sent, done_ctx);
@@ -250,6 +283,7 @@ esp_err_t psram_udp_init(void)
     staging = heap_caps_malloc(TCP_STAGE_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!lock || !staging) return ESP_ERR_NO_MEM;
     status.result = RAW_NOT_READY;
+    status.tcp_metric_result=RAW_NOT_READY;
     if (xTaskCreate(upload_worker, "psram_udp", 4096, NULL, 5, &worker) != pdPASS)
         return ESP_ERR_NO_MEM;
     return ESP_OK;
@@ -340,8 +374,9 @@ static esp_err_t submit(const void *data, size_t length, const bridge_frame_t *f
         cancel_requested = false;
         status.busy=true;status.total_bytes=length;status.sent_bytes=0;status.result=RAW_BUSY;
         status.active_port=config.target_port;status.active_tcp=tcp;status.packets=0;status.retries=0;
+        status.tcp_phase=tcp?TCP_PHASE_CONNECT:TCP_PHASE_IDLE;
         status.socket_errno=0;status.tcp_error=0;status.tcp_chunks=0;status.tcp_waits=0;
-        status.tcp_connect_us=0;status.tcp_ack_us=0;
+        status.tcp_connect_us=0; /* Retain last completed frame timings while busy. */
         memcpy(status.active_ip, config.target_ip, sizeof(status.active_ip));
         xTaskNotifyGive(worker);
     }

@@ -10,6 +10,23 @@ import sys
 import time
 import urllib.request
 
+def tcp_phase_summary(samples):
+    """Deduplicate successful last-frame metrics; polling does not see all frames."""
+    frames={}
+    for sample in samples[1:]:  # Exclude pre-test history.
+        s=sample['status'];session=s.get('tcp_metric_session');frame=s.get('tcp_metric_frame')
+        if not session or not frame or session!=s.get('sdio',{}).get('session'):
+            continue
+        if s.get('tcp_metric_result') not in ('received_verified','sent_local'):
+            continue
+        frames[(session,frame)]=s
+    fields=('tcp_header_us','tcp_payload_us','tcp_ack_us','tcp_write_wait_us',
+            'tcp_read_wait_us','tcp_yield_us','tcp_copy_us','tcp_write_calls',
+            'tcp_partial_writes','tcp_send_waits','tcp_ack_waits','tcp_resource_waits')
+    return {'sampled_complete_frames':len(frames),
+            'mean':{f:sum(s.get(f,0) for s in frames.values())/len(frames) for f in fields} if frames else {},
+            'note':'Unique completed frames observed by status polling, not every frame. Wait/yield/copy are overlapping subsets of stage durations.'}
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -105,6 +122,7 @@ def main():
             try: result['after']=api('/api/status')
             except Exception as exc:
                 control_error=str(exc);result['stop_error']=control_error
+        if transport=='tcp':result['tcp_phase_summary']=tcp_phase_summary(samples)
         args.log.with_suffix('.device.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     summaries = [json.loads(line) for line in args.log.read_text(encoding='utf-8').splitlines()
                  if json.loads(line).get('event') == 'summary']

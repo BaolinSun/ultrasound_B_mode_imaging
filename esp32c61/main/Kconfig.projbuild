@@ -15,6 +15,15 @@ config PSRAM_UDP_TIMEOUT_MS
     range 100 300000
     default 30000
 endmenu
+menu "SDIO TCP frame performance"
+config PSRAM_TCP_STAGE_BYTES
+    int "Internal SRAM TCP staging bytes"
+    range 1472 16384
+    default 5760
+    help
+        Shared sender staging allocation, not an additional frame buffer.
+        5760 is four default MSS payloads. UDP uses only its existing prefix.
+endmenu
 menu "Zynq receive-only UART log"
 config ZYNQ_UART_BRIDGE_ENABLE
     bool "Forward Zynq UART0 logs to USB Serial/JTAG console"

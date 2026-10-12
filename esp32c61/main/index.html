@@ -35,6 +35,7 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <p class="muted">Zynq 需使用 DATA_OUTPUT_MODE=DATA_OUTPUT_SDIO 编译并启动，再运行与固件 TCP/UDP 宏相符的 PC 帧接收工具。TCP 等待 PC 校验回执；原始 PSRAM 自测仍为 UDP。</p>
 <p id="sdio-status">正在读取 SDIO 状态…</p>
 <p id="sdio-gate" class="muted"></p><p id="sdio-timing" class="muted"></p>
+<p id="tcp-timing" class="muted"></p>
 <button id="sdio-once" disabled>SDIO 单帧</button><button id="sdio-stream" disabled>SDIO 连续测试</button>
 <button id="sdio-stop" class="secondary">停止全部传输</button>
 </section></main><script>
@@ -59,6 +60,9 @@ function render(s){
  el('upload').disabled=saving||!configLoaded||!targetConfigured||!s.upload_ready||!s.selftest_bytes||s.busy;el('stop').disabled=!s.busy;
  const d=s.sdio||{};
  const transport=s.sdio_transport||'udp';
+ const phases={idle:'空闲',connect:'建立连接',header:'发送帧头',payload:'发送载荷',ack:'等待 PC 回执'};
+ const metric=s.tcp_metric_frame?`最近 TCP 帧 ${s.tcp_metric_frame}（${s.tcp_metric_result||'unknown'}）：载荷 ${((s.tcp_payload_us||0)/1000).toFixed(1)} ms，发送等待 ${((s.tcp_write_wait_us||0)/1000).toFixed(1)} ms，回执 ${((s.tcp_ack_us||0)/1000).toFixed(1)} ms，主动退让 ${((s.tcp_yield_us||0)/1000).toFixed(1)} ms；等待与退让是阶段内的重叠统计，不能相加`:'尚无 TCP 帧耗时记录';
+ el('tcp-timing').textContent=`TCP 阶段 ${phases[s.tcp_phase]||s.tcp_phase||'空闲'}；发送缓冲 ${s.tcp_send_buffer||0} B / staging ${s.tcp_stage_bytes||0} B。${metric}`;
  el('sdio-timing').textContent=`编译模式 ${transport.toUpperCase()}；最近一帧 SDIO 接收 ${((d.last_receive_us||0)/1000).toFixed(1)} ms（CRC ${((d.last_crc_us||0)/1000).toFixed(1)} ms）；最近一次 ${s.active_transport||'udp'} 传输 ${((s.send_elapsed_us||0)/1000).toFixed(1)} ms；TCP 连接 ${s.tcp_connected?'已建立':'未建立'}，PC 确认 ${s.tcp_confirmed_frames||0} 帧，连接/回执错误 ${s.tcp_connect_errors||0}/${s.tcp_ack_errors||0}，回执等待 ${((s.tcp_ack_us||0)/1000).toFixed(1)} ms`;
  el('sdio-status').textContent=`SDIO ${d.ready?'就绪':'不可用'} / Zynq ${d.host_sdio?'SDIO 已握手':'SDIO 握手未完成（或 USB 模式）'} / ${d.running?'接收中':'已停止'}；接收 ${d.received_frames||0} 帧，${transport==='tcp'?'PC 校验确认':'本地发送'} ${d.sent_frames||0} 帧 / ${d.sent_bytes||0} B；CRC 错误 ${d.crc_errors||0}，错误 ${d.errors||0}，丢弃 ${d.dropped_frames||0}，背压 ${d.backpressure||0}，空闲槽位 ${d.free_slots||0}`;
  const canStart=!saving&&configLoaded&&targetConfigured&&s.upload_ready&&d.ready&&d.host_sdio&&!d.running&&!d.raw_busy&&!s.busy&&d.free_slots===2;

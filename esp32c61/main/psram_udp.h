@@ -19,6 +19,12 @@ typedef struct {
     uint32_t tcp_confirmed_frames, tcp_connect_errors, tcp_ack_errors;
     unsigned tcp_chunks, tcp_waits;
     int tcp_error;
+    int tcp_phase;
+    uint32_t tcp_metric_session,tcp_metric_frame;
+    size_t tcp_metric_bytes;
+    raw_result_t tcp_metric_result;
+    uint64_t tcp_header_us,tcp_payload_us,tcp_write_wait_us,tcp_read_wait_us,tcp_yield_us,tcp_copy_us;
+    unsigned tcp_write_calls,tcp_read_calls,tcp_partial_writes,tcp_send_waits,tcp_ack_waits,tcp_resource_waits;
     raw_result_t result;
     char active_ip[16];
     uint16_t active_port;

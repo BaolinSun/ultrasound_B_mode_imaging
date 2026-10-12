@@ -40,7 +40,7 @@ def read_exact(sock, length, deadline, stop):
         if stop.is_set(): raise ReadFailure('receiver stopped', offset)
         if time.monotonic() >= deadline: raise ReadFailure('frame timeout', offset)
         try:
-            n = sock.recv_into(memoryview(data)[offset:offset+min(4096, length-offset)])
+            n = sock.recv_into(memoryview(data)[offset:offset+min(65536, length-offset)])
         except socket.timeout:
             continue
         except OSError as exc:
@@ -116,8 +116,10 @@ class TCPReceiver:
                         self.received_bytes += length
                         self.first_data = frame_start if self.first_data is None else self.first_data
                         self.last_data = last_activity
+                        validation_start=time.monotonic()
                         crc = zlib.crc32(data)
                         status = 1 if crc != expected_crc else 2 if self.expected is not None and data != self.expected else 0
+                        validation_elapsed=time.monotonic()-validation_start
                         if status:
                             self.integrity_errors += 1; self.dropped_frames += 1
                             self.emit({'event': 'discard', 'session': session, 'frame': frame,
@@ -127,6 +129,7 @@ class TCPReceiver:
                             elapsed = last_activity-frame_start
                             self.emit({'event': 'frame', 'session': session, 'frame': frame, 'bytes': length,
                                        'crc32': f'{crc:08x}', 'passed': True, 'elapsed_s': elapsed,
+                                       'validation_elapsed_s': validation_elapsed,
                                        'mbit_s': length*8/elapsed/1e6 if elapsed else None},
                                       ((session, frame), data) if self.args.output_dir else None)
                         # Validation ACK, not a filesystem durability ACK.

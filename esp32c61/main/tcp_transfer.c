@@ -1,5 +1,9 @@
 #include "tcp_transfer.h"
 #include <string.h>
+const char *tcp_phase_name(int phase) {
+    static const char *names[]={"idle","connect","header","payload","ack"};
+    return phase>=0 && (unsigned)phase<sizeof(names)/sizeof(names[0])?names[phase]:"unknown";
+}
 const char *tcp_error_name(int error) {
     static const char *names[]={"none","socket_io","peer_closed","invalid_ack","pc_rejected",
         "connect_failed","send_timeout","ack_timeout"};
@@ -25,11 +29,23 @@ static raw_result_t exact(const tcp_io_t*io,uint8_t*p,size_t n,bool reading,bool
             if(r==RAW_TIMEOUT)m->error=reading?TCP_ERROR_ACK_TIMEOUT:TCP_ERROR_SEND_TIMEOUT;
             return r;
         }
+        if(reading)m->read_calls++;else m->write_calls++;
         int got=reading?io->read(io->ctx,p,n):io->write(io->ctx,p,n);
-        if(got==-2) { m->waits++;io->wait(io->ctx,reading,100);continue; }
+        if(got==-2 || got==-3) {
+            m->waits++;
+            if(reading)m->ack_waits++;else m->send_waits++;
+            if(got==-3)m->resource_waits++;
+            uint64_t start=io->now_us(io->ctx);
+            io->wait(io->ctx,reading,got==-3,100);
+            uint64_t spent=io->now_us(io->ctx)-start;
+            if(reading)m->read_wait_us+=spent;else m->write_wait_us+=spent;
+            if(got==-3)m->yield_us+=spent;
+            continue;
+        }
         if(got<=0 || (size_t)got>n) {
             m->error=got==0?TCP_ERROR_CLOSED:TCP_ERROR_IO;return RAW_SEND_ERROR;
         }
+        if(!reading && (size_t)got<n)m->partial_writes++;
         p+=got;n-=(size_t)got;
         if(payload)m->sent+=(size_t)got;
     }
@@ -41,21 +57,36 @@ raw_result_t tcp_frame_send(const uint8_t*data,size_t length,const bridge_frame_
     if(!data || !staging || !br_meta_valid(frame,frame?frame->session_id:0,1048576) || frame->frame_bytes!=length)
         return RAW_INVALID;
     uint8_t header[TCP_FRAME_HEADER],ack[TCP_FRAME_ACK];tcp_frame_header(header,frame);
+    io->phase(io->ctx,TCP_PHASE_HEADER);
+    uint64_t start=io->now_us(io->ctx);
     raw_result_t r=exact(io,header,sizeof(header),false,false,deadline,m);
+    m->header_us=io->now_us(io->ctx)-start;
+    size_t since_yield=0;
+    start=io->now_us(io->ctx);
+    if(r==RAW_OK)io->phase(io->ctx,TCP_PHASE_PAYLOAD);
     while(r==RAW_OK && m->sent<length) {
         size_t n=length-m->sent;if(n>TCP_STAGE_BYTES)n=TCP_STAGE_BYTES;
+        uint64_t copy_start=io->now_us(io->ctx);
         memcpy(staging,data+m->sent,n);
+        m->copy_us+=io->now_us(io->ctx)-copy_start;
         r=exact(io,staging,n,false,true,deadline,m);
         if(r==RAW_OK) {
             m->chunks++;
             if(m->chunks%8==0 || m->sent==length)io->progress(io->ctx,m->sent,m->chunks,m->waits);
-            if(m->chunks%16==0 && m->sent<length)io->yield_ms(io->ctx,1);
+            since_yield+=n;
+            if(since_yield>=TCP_YIELD_BYTES && m->sent<length) {
+                uint64_t yield_start=io->now_us(io->ctx);
+                io->yield_ms(io->ctx,1);m->yield_us+=io->now_us(io->ctx)-yield_start;
+                since_yield=0;
+            }
         }
     }
+    m->payload_us=io->now_us(io->ctx)-start;
     if(r==RAW_OK) {
-        uint64_t start=io->now_ms(io->ctx);
+        io->phase(io->ctx,TCP_PHASE_ACK);
+        uint64_t ack_start=io->now_us(io->ctx);
         r=exact(io,ack,sizeof(ack),true,false,deadline,m);
-        m->ack_ms=io->now_ms(io->ctx)-start;
+        m->ack_us=io->now_us(io->ctx)-ack_start;m->ack_ms=m->ack_us/1000;
         if(r==RAW_OK) {
             if(be32(ack)!=TCP_ACK_MAGIC || ack[4]!=1 || ack[5]!=TCP_FRAME_ACK ||
                be32(ack+8)!=frame->session_id || be32(ack+12)!=frame->frame_id) {

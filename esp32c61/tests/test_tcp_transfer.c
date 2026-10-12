@@ -3,17 +3,21 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-static uint8_t data[787456],wire[787456+24],stage[4096];
+static uint8_t data[787456],wire[787456+24],stage[TCP_STAGE_BYTES];
 typedef struct {
     uint64_t clock,final_clock; size_t written,read; uint8_t ack[20];
-    unsigned part,blocked,read_blocked,yields,progress;
+    unsigned part,blocked,read_blocked,resource_blocked,yields,progress,phases;
+    tcp_phase_t phase;
     size_t fail_at; int failure; raw_result_t abort;
 } fixture_t;
 static uint64_t now(void*p) { return ((fixture_t*)p)->clock; }
+static uint64_t now_us(void*p) { return ((fixture_t*)p)->clock*1000; }
+static void phase_io(void*p,tcp_phase_t phase) { fixture_t*f=p;f->phase=phase;f->phases++; }
 static raw_result_t aborting(void*p) { return ((fixture_t*)p)->abort; }
 static int write_bytes(void*p,const uint8_t*b,size_t n) {
     fixture_t*f=p;
     if(f->blocked) { f->blocked--;return -2; }
+    if(f->resource_blocked) { f->resource_blocked--;return -3; }
     if(f->written>=f->fail_at)return f->failure;
     if(n>f->part)n=f->part;
     assert(f->written+n<=sizeof(wire));memcpy(wire+f->written,b,n);f->written+=n;
@@ -28,8 +32,9 @@ static int read_bytes(void*p,uint8_t*b,size_t n) {
     if(f->read==20 && f->final_clock)f->clock=f->final_clock;
     return (int)n;
 }
-static void wait_io(void*p,bool reading,unsigned ms) {
+static void wait_io(void*p,bool reading,bool resource,unsigned ms) {
     fixture_t*f=p;assert(ms<=100);f->clock++;
+    if(resource)assert(!reading);
     /* Must keep SENDING ownership throughout header/body/ACK waits. */
     if(reading)assert(f->written>=25);
 }
@@ -45,24 +50,33 @@ static fixture_t fresh(void) {
     br_put_be32(f.ack+16,meta.crc32);return f;
 }
 static raw_result_t run(fixture_t*f,tcp_metrics_t*m,uint64_t deadline) {
-    tcp_io_t io={f,now,aborting,write_bytes,read_bytes,wait_io,yield_io,progress_io};
+    tcp_io_t io={.ctx=f,.now_ms=now,.now_us=now_us,.abort_reason=aborting,
+        .write=write_bytes,.read=read_bytes,.wait=wait_io,.yield_ms=yield_io,.progress=progress_io,.phase=phase_io};
     return tcp_frame_send(data,meta.frame_bytes,&meta,stage,deadline,&io,m);
 }
 int main(void) {
     raw_pattern_fill(data,sizeof(data));assert(br_crc32(0,data,sizeof(data))==meta.crc32);
     tcp_metrics_t m;fixture_t f=fresh();f.blocked=150;f.read_blocked=150;
     assert(run(&f,&m,10000)==RAW_OK);assert(m.waits==300 && m.sent==sizeof(data));
-    assert(f.read==20 && f.written==sizeof(data)+24 && m.chunks==193 && f.yields==12);
+    unsigned chunks=(sizeof(data)+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES;
+    unsigned yield_chunks=(TCP_YIELD_BYTES+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES;
+    assert(f.read==20 && f.written==sizeof(data)+24 && m.chunks==chunks && f.yields==(chunks-1)/yield_chunks);
+    assert(f.phases==3 && f.phase==TCP_PHASE_ACK && m.send_waits==150 && m.ack_waits==150);
+    assert(m.header_us==150000 && m.write_wait_us==150000 && m.read_wait_us==150000);
+    assert(m.yield_us==f.yields*1000 && m.partial_writes>0 && m.resource_waits==0);
     assert(!memcmp(wire+24,data,sizeof(data)) && !memcmp(wire,"UBST\1\30\0\0",8));
     uint8_t header[24];tcp_frame_header(header,&meta);assert(!memcmp(header,wire,24));
     assert(m.ack_ms==150 && m.error==TCP_ERROR_NONE && f.progress>1);
-    for(unsigned n=1;n<=8193;n++) {
-        if(n>4 && n!=4095 && n!=4096 && n!=4097 && n!=8193)continue;
-        meta.frame_bytes=n;f=fresh();f.part=4096;
-        assert(run(&f,&m,10000)==RAW_OK && m.sent==n && m.chunks==(n+4095)/4096);
+    for(unsigned n=1;n<=TCP_STAGE_BYTES*2+1;n++) {
+        if(n>4 && n!=TCP_STAGE_BYTES-1 && n!=TCP_STAGE_BYTES && n!=TCP_STAGE_BYTES+1 && n!=TCP_STAGE_BYTES*2+1)continue;
+        meta.frame_bytes=n;f=fresh();f.part=TCP_STAGE_BYTES;
+        assert(run(&f,&m,10000)==RAW_OK && m.sent==n && m.chunks==(n+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES);
         assert(!memcmp(wire+24,data,n));
     }
     meta.frame_bytes=sizeof(data);
+    f=fresh();f.resource_blocked=120;
+    assert(run(&f,&m,10000)==RAW_OK && m.resource_waits==120 && m.send_waits==120);
+    assert(m.yield_us==120000+f.yields*1000);
     for(unsigned pos=0;pos<20;pos++) {
         f=fresh();f.ack[pos]^=1;
         assert(run(&f,&m,10000)==RAW_SEND_ERROR);
@@ -77,11 +91,13 @@ int main(void) {
     f=fresh();f.fail_at=0;f.failure=1000000;assert(run(&f,&m,10000)==RAW_SEND_ERROR && m.error==TCP_ERROR_IO);
     f=fresh();f.final_clock=10000;assert(run(&f,&m,10000)==RAW_TIMEOUT && m.error==TCP_ERROR_ACK_TIMEOUT);
     f=fresh();meta.frame_bytes=0;assert(run(&f,&m,10000)==RAW_INVALID);meta.frame_bytes=sizeof(data);
-    tcp_io_t io={&f,now,aborting,write_bytes,read_bytes,wait_io,yield_io,progress_io};
+    tcp_io_t io={.ctx=&f,.now_ms=now,.now_us=now_us,.abort_reason=aborting,
+        .write=write_bytes,.read=read_bytes,.wait=wait_io,.yield_ms=yield_io,.progress=progress_io,.phase=phase_io};
     assert(tcp_frame_send(NULL,sizeof(data),&meta,stage,10000,&io,&m)==RAW_INVALID);
     assert(tcp_frame_send(data,sizeof(data),NULL,stage,10000,&io,&m)==RAW_INVALID);
     assert(tcp_frame_send(data,sizeof(data),&meta,NULL,10000,&io,&m)==RAW_INVALID);
     assert(tcp_frame_send(data,1,&meta,stage,10000,&io,&m)==RAW_INVALID);
     assert(!strcmp(tcp_error_name(-1),"unknown") && !strcmp(tcp_error_name(TCP_ERROR_ACK_TIMEOUT),"ack_timeout"));
-    puts("PASS: TCP exact writes/reads, raw payload, 4KiB tails, >100 waits, ACK validation, stop/link/timeout/error");
+    assert(!strcmp(tcp_phase_name(TCP_PHASE_PAYLOAD),"payload") && !strcmp(tcp_phase_name(-1),"unknown"));
+    puts("PASS: TCP exact IO/staging tails, resource vs readiness wait, phase metrics, fairness, ACK/stop/link/timeout");
 }

@@ -1,0 +1,3 @@
+# Eight MSS of TX capacity; compare with baseline using identical sender code.
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=11520
+CONFIG_PSRAM_TCP_STAGE_BYTES=5760

@@ -12,6 +12,15 @@ import sdio_benchmark as b
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_phase_metrics_deduplicate_and_exclude_history_cancelled_and_other_sessions(self):
+        def metric(frame,value=100,result='received_verified',session=7):
+            return {'status':{'tcp_metric_frame':frame,'tcp_metric_session':session,
+                'tcp_metric_result':result,'tcp_payload_us':value,'sdio':{'session':7}}}
+        samples=[metric(99),metric(1),metric(1),metric(2,200),metric(3,result='cancelled'),metric(4,session=8)]
+        result=b.tcp_phase_summary(samples)
+        self.assertEqual(result['sampled_complete_frames'],2)
+        self.assertEqual(result['mean']['tcp_payload_us'],150)
+        self.assertEqual(b.tcp_phase_summary([metric(99)])['mean'],{})
     def run_fixture(self, folder, fault=None):
         log = pathlib.Path(folder)/'run.jsonl'
         calls = []

@@ -26,7 +26,14 @@ Set-Location 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61'
 .\build.ps1 -Profile throughput -Action flash -Port COM7
 ```
 
-`throughput` 使用独立 `build-throughput/` 目录及其中的 sdkconfig，合并 `sdkconfig.defaults` 与 `sdkconfig.throughput.defaults`，不会覆盖原有 `sdkconfig` 或默认 `build/`。采用 C61 iperf 示例中的 TX BA 窗口 32 和 lwIP IRAM 优化，其余保持项目默认值；没有复制示例中关闭看门狗或 PHY 实验设置。首次生成后，配置保留，可用同一 `-Profile throughput -Action menuconfig` 调整；自定义默认配置不会自动迁移进去，需按需同步。`-Profile default` 保留现有构建，可烧录回默认固件作对照。不保证性能配置一定更快，需同时比较有效帧率、丢帧率和内部堆余量。
+`throughput` 现在默认使用平衡 TCP 中档：独立 `build-throughput-mid/` 目录及 sdkconfig，TCP 发送缓冲 11520 B、staging 5760 B，保留原 RX 窗口。合并基础、Wi-Fi 性能和 TCP 分档 defaults，不覆盖原有 `sdkconfig`、`build/` 或旧 `build-throughput/`。TX BA 窗口仍为 32，保留 lwIP IRAM 优化、看门狗和 PHY 设置。配置生成后保留，可用相同参数的 `-Action menuconfig` 调整。
+
+指定 `-TcpTuning baseline/mid/fast` 选择 5760/11520/23040 B TCP 发送缓冲，各自独立目录；高档实测约 10.93 Mbit/s，但内部堆低水位仅约 20 KiB，中档约 5.92 Mbit/s、低水位约 51 KiB。默认中档侧重内存余量，高档是可选性能配置，短测不代表长期稳定。原始 UDP 与 SDIO TCP/UDP 宏选择保持不变。详见 [TCP 优化与板测](TCP_OPTIMIZATION.md)。
+
+```powershell
+# 可选高档；监测内部 heap，勿与中档固件/配置混淆
+.\build.ps1 -Profile throughput -TcpTuning fast -Action flash -Port COM7
+```
 
 默认：Flash 4 MiB，IDF 内置 1500 KiB 单应用分区，Quad PSRAM 40 MHz，USB Serial/JTAG 控制台，FreeRTOS 1000 Hz。PSRAM 容量由启动检测确定。PSRAM 缺失或自测分配失败时仍可访问配置页，但禁止自测上传，不使用 SRAM 替代测试数据。
 

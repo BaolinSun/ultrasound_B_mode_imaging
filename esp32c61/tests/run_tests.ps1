@@ -69,6 +69,15 @@ foreach ($suite in @('framed','tcp_transfer','sdio_bridge','bridge_crc')) {
             throw 'Invalid transport failed for unexpected reason'
         }
         Write-Host 'PASS: invalid Wi-Fi transport macro rejected'
+        foreach ($tcpStage in @(4096,11520)) {
+            & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic "-DTCP_STAGE_BYTES=$tcpStage" `
+                '-I' (Join-Path $projectRoot 'main') (Join-Path $PSScriptRoot 'test_tcp_transfer.c') `
+                (Join-Path $projectRoot 'main/tcp_transfer.c') (Join-Path $projectRoot 'main/raw_transfer.c') `
+                -o "test_stage_$tcpStage.exe"
+            if ($LASTEXITCODE -ne 0) { throw 'TCP stage variation compile failed' }
+            & "./test_stage_$tcpStage.exe"
+            if ($LASTEXITCODE -ne 0) { throw 'TCP stage variation test failed' }
+        }
     }
     } finally { Pop-Location }
 }
