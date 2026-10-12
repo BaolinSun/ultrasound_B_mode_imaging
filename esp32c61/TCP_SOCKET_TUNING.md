@@ -1,5 +1,7 @@
 # 上传连接专用 TCP 缓冲提速（2026-10-12）
 
+本文件是上传 socket 容量实验的历史记录。后续保持 23040 B、CRC/首块合并/内存背压和停帧诊断的当前实现见 [TCP 数据路径优化](TCP_PIPELINE_OPTIMIZATION.md)。历史应用哈希不要当作最新烧录文件。
+
 ## 改动范围
 
 只修改 ESP32 TCP 发送缓冲的容量选择，原始 UDP、SDIO 协议、Zynq 应用和成像 RTL 不变。CRC 应用回执、双 PSRAM 槽位所有权、超时/取消/断网停止与持久连接规则保留。staging 仍为 5760 B，不增加完整帧缓冲，不把 Wi-Fi DMA 转移到 PSRAM。

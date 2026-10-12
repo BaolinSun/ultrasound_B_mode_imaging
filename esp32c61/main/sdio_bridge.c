@@ -30,6 +30,7 @@ static size_t offset;
 static uint32_t crc;
 static int64_t frame_start;
 static uint64_t crc_us;
+static int64_t last_progress;
 static const char *TAG="sdio_bridge";
 static uint8_t read8(unsigned p) { return sdio_slave_read_reg(p); }
 static void write8(unsigned p,uint8_t v) {
@@ -79,6 +80,7 @@ static esp_err_t open_driver(void) {
     }
     grant=0; command_ack=0; window_size=window_received=0;
     stats.session=esp_random(); if(!stats.session) stats.session=1;
+    last_progress=esp_timer_get_time();
     write8(BR_CMD,BR_NOP); write8(BR_CMD_SEQ,0); write8(BR_CMD_ACK,0);
     write8(BR_HOST_MODE,0); write8(BR_GRANT,0); write8(BR_WINDOW_ACK,0); write8(BR_CREDIT,0);
     write8(BR_RESULT,BR_ACCEPTED); write32(BR_SESSION,stats.session);
@@ -132,6 +134,7 @@ static void command(void) {
     } else {
         receiving=index; slots[index].state=RECEIVING; slots[index].meta=m;
         offset=0; crc=0; crc_us=0; frame_start=esp_timer_get_time();
+        last_progress=frame_start;
         write8(BR_RESULT,BR_ACCEPTED);
     }
     command_ack=seq; write8(BR_CMD_ACK,seq);
@@ -145,6 +148,7 @@ static void consume(const uint8_t *p,size_t length) {
     crc=bridge_crc32(crc,p,length);
     crc_us+=(uint64_t)(esp_timer_get_time()-crc_start);
     offset+=length; window_received++;
+    last_progress=esp_timer_get_time();
     if(offset==BR_FRAME_BYTES) {
         stats.last_receive_us=(uint64_t)(esp_timer_get_time()-frame_start);
         stats.last_crc_us=crc_us;
@@ -154,7 +158,7 @@ static void consume(const uint8_t *p,size_t length) {
         } else {
             stats.received_frames++; s->state=READY; write8(BR_RESULT,BR_DONE);
             if(frames_left && --frames_left==0) stats.running=false;
-            ESP_LOGI(TAG,"SDIO frame=%" PRIu32 " bytes=%u crc=%08" PRIx32 " elapsed_ms=%" PRIi64,
+            ESP_LOGD(TAG,"SDIO frame=%" PRIu32 " bytes=%u crc=%08" PRIx32 " elapsed_ms=%" PRIi64,
                 s->meta.frame_id,BR_FRAME_BYTES,crc,(esp_timer_get_time()-frame_start)/1000);
         }
         receiving=-1;
@@ -207,6 +211,15 @@ static void bridge_task(void *ctx) {
         }
         stats.free_slots=0;
         for(unsigned i=0;i<2;i++) stats.free_slots+=slots[i].data && slots[i].state==FREE;
+        stats.receive_offset=(uint32_t)offset;stats.receiving_slot=receiving;
+        stats.current_frame=receiving>=0?slots[receiving].meta.frame_id:0;
+        stats.window_blocks=window_size;stats.window_received=window_received;
+        stats.grant=grant;stats.cmd_ack=command_ack;
+        stats.progress_idle_us=stats.running?(uint64_t)(esp_timer_get_time()-last_progress):0;
+        if(stats.ready) {
+            stats.window_ack=read8(BR_WINDOW_ACK);stats.cmd_seq=read8(BR_CMD_SEQ);
+            stats.command=read8(BR_CMD);stats.result=read8(BR_RESULT);stats.register_status=read8(BR_STATUS);
+        }
         bool wait_rx=stats.ready && !stop_requested && !reset_requested &&
                      receiving>=0 && window_size && window_received<window_size;
         xSemaphoreGive(mutex);
@@ -265,6 +278,7 @@ esp_err_t sdio_bridge_start(unsigned frames) {
         psram_frame_prepare(frames==0);
         stats.session=esp_random(); if(!stats.session) stats.session=1;
         write32(BR_SESSION,stats.session); frames_left=frames; stats.running=true;
+        last_progress=esp_timer_get_time();
     }
     xSemaphoreGive(mutex); return r;
 }

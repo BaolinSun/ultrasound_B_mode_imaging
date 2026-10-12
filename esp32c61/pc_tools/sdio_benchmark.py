@@ -10,6 +10,17 @@ import sys
 import time
 import urllib.request
 
+def upstream_idle(status):
+    s=status.get('sdio',{})
+    return bool(s.get('running') and s.get('ready',True) and s.get('host_sdio') and
+                s.get('free_slots')==2 and not status.get('busy'))
+
+def stalled_since(status, now, since, timeout):
+    """No frame in either slot despite an armed/handshaken stream. Not TCP loss."""
+    if not upstream_idle(status):return None,False
+    since=now if since is None else since
+    return since,now-since>=timeout
+
 def tcp_phase_summary(samples):
     """Deduplicate successful last-frame metrics; polling does not see all frames."""
     frames={}
@@ -22,7 +33,7 @@ def tcp_phase_summary(samples):
         frames[(session,frame)]=s
     fields=('tcp_header_us','tcp_payload_us','tcp_ack_us','tcp_write_wait_us',
             'tcp_read_wait_us','tcp_yield_us','tcp_copy_us','tcp_write_calls',
-            'tcp_partial_writes','tcp_send_waits','tcp_ack_waits','tcp_resource_waits')
+            'tcp_partial_writes','tcp_send_waits','tcp_ack_waits','tcp_resource_waits','tcp_heap_guard_waits')
     return {'sampled_complete_frames':len(frames),
             'mean':{f:sum(s.get(f,0) for s in frames.values())/len(frames) for f in fields} if frames else {},
             'note':'Unique completed frames observed by status polling, not every frame. Wait/yield/copy are overlapping subsets of stage durations.'}
@@ -34,8 +45,10 @@ def main():
     parser.add_argument('--seconds', type=float, default=30)
     parser.add_argument('--log', type=Path, required=True)
     parser.add_argument('--port', type=int, default=50001)
+    parser.add_argument('--stall-timeout',type=float,default=5,
+                        help='Fail if stream stays armed with two free slots and idle sender for N seconds')
     args = parser.parse_args()
-    if not 1 <= args.seconds <= 3600 or not 1 <= args.port <= 65535:
+    if not 1 <= args.seconds <= 3600 or not 1 <= args.port <= 65535 or not 1<=args.stall_timeout<=120:
         parser.error('invalid seconds or TCP/UDP port')
     base = 'http://' + args.device_ip
     def api(path, payload=None):
@@ -57,6 +70,7 @@ def main():
     stdout_path = args.log.with_suffix('.stdout.log')
     samples = [{'t': 0, 'status': before}]
     unexpected_stop = False
+    upstream_stall=False;idle_since=None
     process = None
     armed = False
     control_error = None
@@ -83,6 +97,11 @@ def main():
                 if time.monotonic()-active_started>=args.seconds: break
                 state = api('/api/status')
                 samples.append({'t': time.monotonic()-started, 'status': state})
+                idle_since,upstream_stall=stalled_since(state,time.monotonic(),idle_since,args.stall_timeout)
+                if upstream_stall:
+                    unexpected_stop=True
+                    print('Upstream stalled: stream armed, two free slots, no sender activity.',file=sys.stderr)
+                    break
                 if not state.get('sdio', {}).get('running'):
                     unexpected_stop = True
                     break
@@ -115,6 +134,7 @@ def main():
                 process.terminate();process.wait(timeout=5)
                 control_error=control_error or 'receiver did not stop cleanly'
         result = {'before': before, 'samples': samples, 'unexpected_stop': unexpected_stop,
+                  'upstream_stall':upstream_stall,'stall_timeout_s':args.stall_timeout,
                   'transport':transport,
                   'stop_error': control_error,
                   'receiver_exit': process.returncode if process else None}

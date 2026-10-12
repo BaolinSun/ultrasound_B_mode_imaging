@@ -1,5 +1,6 @@
 #include "tcp_transfer.h"
 #include "wifi_transport_config.h"
+#include "tcp_memory_guard.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -55,12 +56,20 @@ static raw_result_t run(fixture_t*f,tcp_metrics_t*m,uint64_t deadline) {
     return tcp_frame_send(data,meta.frame_bytes,&meta,stage,deadline,&io,m);
 }
 int main(void) {
+    assert(!tcp_memory_headroom(16383,1,16384));
+    assert(!tcp_memory_headroom(16384+2*5760-1,5760,16384));
+    assert(tcp_memory_headroom(16384+2*5760,5760,16384));
+    assert(tcp_memory_headroom(SIZE_MAX,1,16384));
+    assert(!tcp_memory_headroom(SIZE_MAX,SIZE_MAX,0));
+    assert(tcp_memory_headroom(0,0,0));
     raw_pattern_fill(data,sizeof(data));assert(br_crc32(0,data,sizeof(data))==meta.crc32);
     tcp_metrics_t m;fixture_t f=fresh();f.blocked=150;f.read_blocked=150;
     assert(run(&f,&m,10000)==RAW_OK);assert(m.waits==300 && m.sent==sizeof(data));
-    unsigned chunks=(sizeof(data)+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES;
+    unsigned chunks=(sizeof(data)+TCP_FRAME_HEADER+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES;
     unsigned yield_chunks=(TCP_YIELD_BYTES+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES;
-    assert(f.read==20 && f.written==sizeof(data)+24 && m.chunks==chunks && f.yields==(chunks-1)/yield_chunks);
+    unsigned first_yield=(TCP_YIELD_BYTES+TCP_FRAME_HEADER+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES;
+    unsigned yields=chunks>first_yield?1+(chunks-1-first_yield)/yield_chunks:0;
+    assert(f.read==20 && f.written==sizeof(data)+24 && m.chunks==chunks && f.yields==yields);
     assert(f.phases==3 && f.phase==TCP_PHASE_ACK && m.send_waits==150 && m.ack_waits==150);
     assert(m.header_us==150000 && m.write_wait_us==150000 && m.read_wait_us==150000);
     assert(m.yield_us==f.yields*1000 && m.partial_writes>0 && m.resource_waits==0);
@@ -68,12 +77,18 @@ int main(void) {
     uint8_t header[24];tcp_frame_header(header,&meta);assert(!memcmp(header,wire,24));
     assert(m.ack_ms==150 && m.error==TCP_ERROR_NONE && f.progress>1);
     for(unsigned n=1;n<=TCP_STAGE_BYTES*2+1;n++) {
-        if(n>4 && n!=TCP_STAGE_BYTES-1 && n!=TCP_STAGE_BYTES && n!=TCP_STAGE_BYTES+1 && n!=TCP_STAGE_BYTES*2+1)continue;
+        if(n>4 && n!=TCP_STAGE_BYTES-TCP_FRAME_HEADER && n!=TCP_STAGE_BYTES-TCP_FRAME_HEADER+1 &&
+           n!=TCP_STAGE_BYTES-1 && n!=TCP_STAGE_BYTES && n!=TCP_STAGE_BYTES+1 && n!=TCP_STAGE_BYTES*2+1)continue;
         meta.frame_bytes=n;f=fresh();f.part=TCP_STAGE_BYTES;
-        assert(run(&f,&m,10000)==RAW_OK && m.sent==n && m.chunks==(n+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES);
+        assert(run(&f,&m,10000)==RAW_OK && m.sent==n && m.chunks==(n+TCP_FRAME_HEADER+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES);
         assert(!memcmp(wire+24,data,n));
     }
     meta.frame_bytes=sizeof(data);
+    for(unsigned pos=0;pos<40;pos++) {
+        f=fresh();f.part=1;f.fail_at=pos;f.failure=-1;
+        assert(run(&f,&m,10000)==RAW_SEND_ERROR);
+        assert(m.sent==(pos>TCP_FRAME_HEADER?pos-TCP_FRAME_HEADER:0));
+    }
     f=fresh();f.resource_blocked=120;
     assert(run(&f,&m,10000)==RAW_OK && m.resource_waits==120 && m.send_waits==120);
     assert(m.yield_us==120000+f.yields*1000);

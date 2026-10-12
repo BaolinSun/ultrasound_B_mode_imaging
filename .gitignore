@@ -53,6 +53,7 @@ Release/
 /build/workspace_backups/
 /build/vitis_workspace_verify_2026_1/
 /build/sdio_vitis_*/
+/build/tcp_pipeline_usb/
 /build/reports/*.jou
 /build/reports/*.log
 /build/vivado-temp/

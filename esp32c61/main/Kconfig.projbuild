@@ -31,6 +31,14 @@ config PSRAM_TCP_STAGE_BYTES
     help
         Shared sender staging allocation, not an additional frame buffer.
         5760 is four default MSS payloads. UDP uses only its existing prefix.
+config PSRAM_TCP_HEAP_HEADROOM
+    int "Internal SRAM headroom before enqueueing TCP data"
+    range 0 32768
+    default 16384
+    help
+        Sender yields if free internal 8-bit heap is below this headroom plus
+        twice the attempted write. This is admission backpressure, not a
+        guaranteed heap reservation against allocations by other tasks.
 endmenu
 menu "Zynq receive-only UART log"
 config ZYNQ_UART_BRIDGE_ENABLE

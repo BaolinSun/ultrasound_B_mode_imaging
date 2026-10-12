@@ -4,6 +4,8 @@
 
 保留原始 PSRAM UDP 自测，Zynq 固定 DDR → SDIO → PSRAM → Wi-Fi 帧链路支持 C 宏选择 TCP/带头 UDP，默认 TCP。TCP 完成等待 PC 收齐并校验 CRC 后的回执；不保证 TCP 更快。未接入真实连续采集，也未修改成像 RTL。接线见 [SDIO 链路说明](SDIO_BRIDGE.md)，宏、简短命令、协议和测试记录见 [TCP/UDP 模式说明](TCP_TRANSPORT.md)。三种接收工具不能混用。
 
+当前 23040 B TCP 性能档加入 CRC 切片、帧头/首段合并、发送内存背压及两端停帧诊断；120/180 秒板测有效吞吐约 11.1..11.4 Mbit/s，未证明显著提速或停帧已根治。benchmark 默认在 armed 且两槽位空闲/发送空闲持续 5 秒时判失败，不再把该停帧当正常完成。最新测试、固件和 BOOT 输入见 [TCP 数据路径优化](TCP_PIPELINE_OPTIMIZATION.md)。
+
 ## 构建与烧录
 
 本机 IDF 源码：`D:\Program Files\esp\v6.1\esp-idf`。安装器实际工具环境：`C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1`。直接运行 IDF 的 `export.ps1` 可能错误地寻找用户目录下的 Python 环境，`build.ps1` 已使用安装器配置。

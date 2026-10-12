@@ -12,6 +12,11 @@ typedef struct {
     bool crc_sram_table;
     uint32_t crc_rom_bench_us, crc_table_bench_us;
     unsigned free_slots;
+    uint32_t receive_offset, current_frame;
+    unsigned window_blocks, window_received;
+    uint8_t grant, window_ack, cmd_seq, cmd_ack, command, result, register_status;
+    int receiving_slot;
+    uint64_t progress_idle_us;
 } sdio_bridge_status_t;
 esp_err_t sdio_bridge_init(void);
 esp_err_t sdio_bridge_start(unsigned frames); /* 0 continuous, 1 single */

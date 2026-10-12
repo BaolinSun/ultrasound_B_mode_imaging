@@ -19,6 +19,8 @@ static int reset_on_connect=1;
 static u8 command_seq;
 static u32 session_id, frame_id, frame_crc, offset, failures, frames;
 static u64 deadline, retry_at;
+static u64 last_progress, next_diagnostic;
+static u32 progress_offset, progress_frames;
 enum { IDLE, BEGIN_WAIT, WINDOW, DONE_WAIT };
 static u64 milliseconds(void) { XTime n; XTime_GetTime(&n); return (u64)n*1000U/(u64)(COUNTS_PER_SECOND); }
 static int read8(unsigned p,u8 *v) { return sdio_read_reg(&host,p,v); }
@@ -48,7 +50,7 @@ void sdio_bridge_init(void) {
     xil_printf("@SDIO DDR_TEST addr=%08x bytes=%u crc32=%08x compiled=SDIO\r\n",
         (unsigned)(UINTPTR)test_frame,(unsigned)sizeof(test_frame),(unsigned)frame_crc);
 }
-void sdio_bridge_poll(void) {
+static void poll_once(void) {
     u64 now=milliseconds(); u8 state,mode,version,ack,result;
     if(!online) {
         if(now<retry_at) return;
@@ -127,6 +129,26 @@ void sdio_bridge_poll(void) {
                 (unsigned)frame_id,(unsigned)offset,(unsigned)(now-(deadline-30000)));
         } else if(result==BR_BAD_CRC || result==BR_FAULT) fail_link();
     }
+}
+void sdio_bridge_poll(void) {
+    poll_once();
+    u64 now=milliseconds();
+    if(offset!=progress_offset || frames!=progress_frames) {
+        progress_offset=offset;progress_frames=frames;last_progress=now;
+    }
+    if(!online || now-last_progress<2000 || now<next_diagnostic) return;
+    next_diagnostic=now+5000;
+    u8 state=0,ack=0,result=0,credit=0,grant=0,window_ack=0;
+    if(read8(BR_STATUS,&state) || !(state&BR_STREAM))return;
+    /* Diagnostic reads never alter control state, resend data, or reset a
+     * session. Sequential register samples are not an atomic snapshot. */
+    if(read8(BR_CMD_ACK,&ack) || read8(BR_RESULT,&result) || read8(BR_CREDIT,&credit) ||
+       read8(BR_GRANT,&grant) || read8(BR_WINDOW_ACK,&window_ack))return;
+    xil_printf("@SDIO WAIT phase=%u frame=%u offset=%u session=%08x state=%02x cmd=%u ack=%u result=%u grant=%u last=%u win_ack=%u credit=%u idle_ms=%u\r\n",
+        (unsigned)phase,(unsigned)frame_id,(unsigned)offset,(unsigned)session_id,
+        (unsigned)state,(unsigned)command_seq,(unsigned)ack,(unsigned)result,
+        (unsigned)grant,(unsigned)host.last_grant_seq,(unsigned)window_ack,(unsigned)credit,
+        (unsigned)(now-last_progress));
 }
 #else
 /* USB build: no SDIO DDR frame allocation or SD1 register/DMA access. */

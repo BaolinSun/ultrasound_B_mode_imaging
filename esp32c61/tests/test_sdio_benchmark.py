@@ -12,6 +12,50 @@ import sdio_benchmark as b
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_stream_stall_fails_and_stops_device_even_if_receiver_reports_pass(self):
+        with tempfile.TemporaryDirectory() as folder:
+            log=pathlib.Path(folder)/'stall.jsonl';clock=[0.0];running=[False];calls=[]
+            def request(req,timeout):
+                calls.append(req.full_url)
+                if req.full_url.endswith('/start'):running[0]=True
+                if req.full_url.endswith('/stop'):running[0]=False
+                return io.BytesIO(json.dumps({'busy':False,'sdio':{'running':running[0],
+                    'host_sdio':True,'free_slots':2}}).encode())
+            class Input:
+                def write(self,data):
+                    if data==b'STOP\n':process.returncode=0
+                def flush(self):pass
+            class Process:
+                returncode=None;stdin=Input()
+                def poll(self):return self.returncode
+                def wait(self,timeout):return self.returncode
+            process=Process()
+            def launch(command,stdout,stderr,creationflags,stdin):
+                stdout.write('Listening UBSD fixture\n');stdout.flush()
+                log.write_text(json.dumps({'event':'summary','passed':True})+'\n')
+                return process
+            def sleep(seconds):clock[0]+=seconds
+            with patch.object(sys,'argv',['benchmark','--device-ip','127.0.0.1','--seconds','60','--log',str(log)]), \
+                 patch.object(b.urllib.request,'urlopen',side_effect=request), \
+                 patch.object(b.subprocess,'Popen',side_effect=launch), \
+                 patch.object(b.time,'monotonic',side_effect=lambda:clock[0]), \
+                 patch.object(b.time,'sleep',side_effect=sleep), \
+                 patch.object(b,'print',lambda *a,**k:None,create=True):
+                self.assertEqual(b.main(),1)
+            result=json.loads(log.with_suffix('.device.json').read_text())
+            self.assertTrue(result['upstream_stall'] and result['unexpected_stop'])
+            self.assertTrue(any(url.endswith('/stop') for url in calls))
+            self.assertLess(clock[0],10)
+    def test_stall_timer_resets_for_backpressure_or_active_sender(self):
+        healthy={'busy':False,'sdio':{'running':True,'host_sdio':True,'free_slots':2}}
+        since,stalled=b.stalled_since(healthy,1,None,5)
+        self.assertEqual(since,1);self.assertFalse(stalled)
+        self.assertEqual(b.stalled_since(healthy,6,since,5),(1,True))
+        for key,value in (('free_slots',0),('running',False),('host_sdio',False),('ready',False)):
+            s={'busy':False,'sdio':dict(healthy['sdio'],**{key:value})}
+            self.assertEqual(b.stalled_since(s,6,since,5),(None,False))
+        self.assertEqual(b.stalled_since(dict(healthy,busy=True),6,since,5),(None,False))
+        self.assertEqual(b.stalled_since(healthy,9,None,5),(9,False))
     def test_phase_metrics_deduplicate_and_exclude_history_cancelled_and_other_sessions(self):
         def metric(frame,value=100,result='received_verified',session=7):
             return {'status':{'tcp_metric_frame':frame,'tcp_metric_session':session,

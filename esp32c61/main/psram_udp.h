@@ -19,6 +19,7 @@ typedef struct {
     uint32_t tcp_confirmed_frames, tcp_connect_errors, tcp_ack_errors;
     unsigned tcp_chunks, tcp_waits;
     unsigned tcp_send_buffer_actual; /* Last successfully tuned socket, 0 before first connect. */
+    unsigned tcp_heap_guard_waits;
     int tcp_error;
     int tcp_phase;
     uint32_t tcp_metric_session,tcp_metric_frame;

@@ -149,6 +149,8 @@ static esp_err_t get_status(httpd_req_t *req)
         cJSON_AddNumberToObject(json,"tcp_send_buffer",CONFIG_PSRAM_TCP_SEND_BYTES);
         cJSON_AddNumberToObject(json,"tcp_send_buffer_actual",udp.tcp_send_buffer_actual);
         cJSON_AddNumberToObject(json,"tcp_default_send_buffer",CONFIG_LWIP_TCP_SND_BUF_DEFAULT);
+        cJSON_AddNumberToObject(json,"tcp_heap_guard_waits",udp.tcp_heap_guard_waits);
+        cJSON_AddNumberToObject(json,"tcp_heap_headroom",CONFIG_PSRAM_TCP_HEAP_HEADROOM);
         cJSON_AddNumberToObject(json,"tcp_receive_window",CONFIG_LWIP_TCP_WND_DEFAULT);
         cJSON_AddNumberToObject(json,"tcp_stage_bytes",TCP_STAGE_BYTES);
         cJSON_AddNumberToObject(json,"tcp_metric_session",udp.tcp_metric_session);
@@ -192,6 +194,19 @@ static esp_err_t get_status(httpd_req_t *req)
             cJSON_AddNumberToObject(sdio,"sent_bytes",s.sent_bytes);
             cJSON_AddNumberToObject(sdio,"dropped_frames",s.dropped_frames);
             cJSON_AddNumberToObject(sdio,"free_slots",s.free_slots);
+            cJSON_AddNumberToObject(sdio,"receive_offset",s.receive_offset);
+            cJSON_AddNumberToObject(sdio,"current_frame",s.current_frame);
+            cJSON_AddNumberToObject(sdio,"receiving_slot",s.receiving_slot);
+            cJSON_AddNumberToObject(sdio,"window_blocks",s.window_blocks);
+            cJSON_AddNumberToObject(sdio,"window_received",s.window_received);
+            cJSON_AddNumberToObject(sdio,"grant",s.grant);
+            cJSON_AddNumberToObject(sdio,"window_ack",s.window_ack);
+            cJSON_AddNumberToObject(sdio,"cmd_seq",s.cmd_seq);
+            cJSON_AddNumberToObject(sdio,"cmd_ack",s.cmd_ack);
+            cJSON_AddNumberToObject(sdio,"command",s.command);
+            cJSON_AddNumberToObject(sdio,"result",s.result);
+            cJSON_AddNumberToObject(sdio,"register_status",s.register_status);
+            cJSON_AddNumberToObject(sdio,"progress_idle_us",s.progress_idle_us);
             cJSON_AddNumberToObject(sdio,"last_receive_us",s.last_receive_us);
             cJSON_AddNumberToObject(sdio,"last_crc_us",s.last_crc_us);
             cJSON_AddBoolToObject(sdio,"crc_sram_table",s.crc_sram_table);

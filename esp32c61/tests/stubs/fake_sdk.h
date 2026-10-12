@@ -37,6 +37,7 @@ void *heap_caps_malloc(size_t,unsigned);
 void fake_log(const char*,const char*,...);
 #define ESP_LOGI(...) fake_log(__VA_ARGS__)
 #define ESP_LOGW(...) fake_log(__VA_ARGS__)
+#define ESP_LOGD(...) fake_log(__VA_ARGS__)
 esp_err_t sdio_slave_initialize(sdio_slave_config_t*);
 esp_err_t sdio_slave_start(void);
 void sdio_slave_stop(void);

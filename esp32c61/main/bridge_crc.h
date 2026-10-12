@@ -1,6 +1,6 @@
 #pragma once
 #include "../protocol/bridge_protocol.h"
-/* Initialize once before starting SDIO. Compare the internal-SRAM byte table
+/* Initialize once before starting SDIO. Compare the internal-SRAM slicing table
  * with the IDF ROM implementation on this chip, and keep the faster path.
  * Both retain reflected IEEE/zlib incremental semantics. */
 bool bridge_crc_init(void);

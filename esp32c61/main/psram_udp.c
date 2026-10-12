@@ -14,6 +14,7 @@
 #include "sdkconfig.h"
 #include "tcp_transfer.h"
 #include "tcp_socket_tuning.h"
+#include "tcp_memory_guard.h"
 #include "lwip/tcp.h"
 #include <fcntl.h>
 
@@ -38,7 +39,7 @@ static uint32_t tcp_generation;
 
 typedef struct {
     int socket; uint32_t generation; struct sockaddr_in dest;
-    unsigned fast_ready_count; uint64_t extra_yield_us;
+    unsigned fast_ready_count,heap_waits; uint64_t extra_yield_us;
 } send_ctx_t;
 static uint64_t now_ms(void *ctx) { (void)ctx; return esp_timer_get_time() / 1000ULL; }
 static uint64_t now_us(void *ctx) { (void)ctx; return (uint64_t)esp_timer_get_time(); }
@@ -105,7 +106,14 @@ static int tcp_io_result(send_ctx_t *ctx,int n)
     if(saved==ENOMEM || saved==ENOBUFS)return -3;
     return saved==EAGAIN || saved==EWOULDBLOCK || saved==EINTR ? -2:-1;
 }
-static int tcp_socket_write(void *p,const uint8_t *data,size_t n) { return tcp_io_result(p,send(((send_ctx_t*)p)->socket,data,n,0)); }
+static int tcp_socket_write(void *p,const uint8_t *data,size_t n) {
+    send_ctx_t *ctx=p;
+    if(!tcp_memory_headroom(heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+                            n,CONFIG_PSRAM_TCP_HEAP_HEADROOM)) {
+        ctx->heap_waits++;return -3;
+    }
+    return tcp_io_result(ctx,send(ctx->socket,data,n,0));
+}
 static int tcp_read(void *p,uint8_t *data,size_t n) { return tcp_io_result(p,recv(((send_ctx_t*)p)->socket,data,n,0)); }
 static void tcp_phase(void *ctx,tcp_phase_t phase)
 {
@@ -267,6 +275,7 @@ static void upload_worker(void *arg)
             status.tcp_read_calls=metrics.read_calls;status.tcp_partial_writes=metrics.partial_writes;
             status.tcp_send_waits=metrics.send_waits;status.tcp_ack_waits=metrics.ack_waits;
             status.tcp_resource_waits=metrics.resource_waits;
+            status.tcp_heap_guard_waits=ctx.heap_waits;
             status.tcp_metric_session=frame.session_id;status.tcp_metric_frame=frame.frame_id;
             status.tcp_metric_result=result;status.tcp_metric_bytes=sent;
             if(result==RAW_OK)status.tcp_confirmed_frames++;

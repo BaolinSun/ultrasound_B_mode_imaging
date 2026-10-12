@@ -62,6 +62,15 @@ try {
     } elseif (-not (Select-String -LiteralPath $configFile -Pattern '^CONFIG_IDF_TARGET="esp32c61"$' -Quiet)) {
         throw 'Existing sdkconfig has a different target; select esp32c61 explicitly in an IDF shell.'
     }
+    # Component Kconfig edits are not always detected by an existing Ninja
+    # cache. Refresh generated headers without replacing user's sdkconfig.
+    $generatedHeader = Join-Path $buildDir 'config/sdkconfig.h'
+    $componentKconfig = Join-Path $PSScriptRoot 'main/Kconfig.projbuild'
+    if (-not (Test-Path -LiteralPath $generatedHeader) -or
+        (Get-Item -LiteralPath $componentKconfig).LastWriteTimeUtc -gt (Get-Item -LiteralPath $generatedHeader).LastWriteTimeUtc) {
+        & $idfPython $idfTool @profileArgs reconfigure
+        if ($LASTEXITCODE -ne 0) { throw 'Kconfig refresh failed' }
+    }
     $idfArgs = @($profileArgs)
     if ($Port) { $idfArgs += @('-p', $Port) }
     $idfArgs += $Action

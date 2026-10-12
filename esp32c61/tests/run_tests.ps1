@@ -93,6 +93,15 @@ foreach ($suite in @('framed','tcp_transfer','sdio_bridge','bridge_crc')) {
             if ($LASTEXITCODE -ne 0) { throw 'TCP stage variation test failed' }
         }
     }
+    if ($suite -eq 'bridge_crc') {
+        & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic -DCRC_TEST_ALLOC=1 -DCRC_TEST_ORACLE=1 `
+            '-I' (Join-Path $projectRoot 'main') '-I' (Join-Path $PSScriptRoot 'stubs') `
+            (Join-Path $PSScriptRoot 'test_bridge_crc.c') (Join-Path $projectRoot 'main/bridge_crc.c') `
+            (Join-Path $projectRoot 'main/raw_transfer.c') -o test_crc_alloc.exe
+        if ($LASTEXITCODE -ne 0) { throw 'CRC allocator variation compile failed' }
+        & ./test_crc_alloc.exe
+        if ($LASTEXITCODE -ne 0) { throw 'CRC allocation fallback tests failed' }
+    }
     } finally { Pop-Location }
 }
 Write-Host "C test output and coverage: $testOutput"
