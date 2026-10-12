@@ -54,6 +54,8 @@ set(USER_INCLUDE_DIRECTORIES
 #Example 2: Adding ../../common/helloworld.c will consider the path as relative to this component directory
 #Example 3: Adding ${MY_ENV}/data/helloworld.c are expanded using project-specific environment settings.
 set(USER_COMPILE_SOURCES
+"data_process/compress.c"
+"pus_operation/pus_oper.c"
 "outbyte.c"
 "uart/uart_log.c"
 "data_transfer/sdio_host.c"
@@ -71,14 +73,12 @@ set(USER_COMPILE_SOURCES
 "bram/delay_profile.c"
 "bram/demod_coeffs.c"
 "bram/log_table.c"
-"data_process/compress.c"
 "data_transfer/data_recv.c"
 "eeprom/eeprom.c"
 "iic/iic.c"
 "key/key.c"
 "linux_wifi/linux_wifi.c"
 "main.c"
-"pus_operation/pus_oper.c"
 "system_ctrl/system_ctrl.c"
 "timer/timer.c"
 "tmp/tmp.c"
