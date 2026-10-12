@@ -1,5 +1,7 @@
 # 在 idf.py monitor 中查看 Zynq 日志
 
+2026-10-12 后续 SDIO 握手修复、板测结果及当前固件哈希见 [SDIO 调试记录](SDIO_INIT_DEBUG_20261012.md)。
+
 ## 接线和功能
 
 `Zynq PS UART0 MIO27/TX → ESP32-C61 GPIO10/UART0 RX → ESP32 USB Serial/JTAG → PC`
