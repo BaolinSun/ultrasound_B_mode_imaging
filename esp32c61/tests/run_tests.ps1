@@ -125,7 +125,8 @@ try {
     & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g `
         '-I' (Join-Path $PSScriptRoot 'stubs/zynq_uart') '-I' (Join-Path $psSources 'uart') `
         (Join-Path $PSScriptRoot 'test_zynq_uart.c') (Join-Path $psSources 'uart/uart_log.c') `
-        (Join-Path $psSources 'outbyte.c') -o test_zynq_uart.exe
+        (Join-Path $psSources 'outbyte.c') (Join-Path $PSScriptRoot 'stubs/zynq_uart/bsp_outbyte.c') `
+        '-Wl,--wrap=outbyte' -o test_zynq_uart.exe
     if ($LASTEXITCODE -ne 0) { throw 'Zynq UART log tests compilation failed' }
     & ./test_zynq_uart.exe
     if ($LASTEXITCODE -ne 0) { throw 'Zynq UART log tests failed' }

@@ -14,6 +14,8 @@ import vitis
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+from uart_bsp_compat import configure_uart_bsp
 ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 WORKSPACE = os.path.abspath(
     os.environ.get("ULTRASOUND_VITIS_WORKSPACE", os.path.join(ROOT, "workspace"))
@@ -53,44 +55,6 @@ def newest_file(root, filename):
     if not matches:
         raise RuntimeError(f"{filename} was not produced below {root}")
     return max(matches)[1]
-
-
-def configure_uart_bsp():
-    """Local 2026.1 SDT workaround; never modify the installed toolchain.
-
-    xilstandalone.cmake derives both console bases from stdin in 2026.1,
-    despite exposing separate stdin/stdout settings. uartps also places a
-    strong outbyte in the same object as SendByte. Resolve stdout separately
-    and make only the BSP fallback weak so the application override wins.
-    """
-    libsrc = os.path.join(WORKSPACE, PLATFORM_NAME, "ps7_cortexa9_0",
-                          DOMAIN_NAME, "bsp", "libsrc")
-    cmake_file = os.path.join(libsrc, "standalone", "src", "xilstandalone.cmake")
-    with open(cmake_file, encoding="utf-8") as source:
-        text = source.read()
-    anchor = 'else()\n    set(FREERTOS_UARTCONFIG_INCLUDE "#include \\"FreeRTOSUARTConfig.h\\"")'
-    # Limit the workaround to the standalone console block, not other else clauses.
-    if text.count(anchor) != 1:
-        raise RuntimeError("2026.1 standalone console template changed; review UART BSP workaround")
-    correction = '''# Ultrasound local fix: honour standalone_stdout independently of stdin.
-if (standalone_stdout IN_LIST UARTPS_NUM_DRIVER_INSTANCES)
-    set(index 0)
-    LIST_INDEX(${index} ${standalone_stdout} "${UARTPS_NUM_DRIVER_INSTANCES}")
-    list(GET TOTAL_UARTPS_PROP_LIST ${index} reg)
-    set(STDOUT_BASEADDRESS ${${reg}})
-endif()
-'''
-    with open(cmake_file, "w", encoding="utf-8", newline="\n") as destination:
-        destination.write(text.replace(anchor, correction + anchor, 1))
-    driver_file = os.path.join(libsrc, "uartps", "src", "xuartps_hw.c")
-    with open(driver_file, encoding="utf-8") as source:
-        text = source.read()
-    updated, count = re.subn(r"\bvoid outbyte\s*\(char c\)",
-                             "__attribute__((weak)) void outbyte(char c)", text)
-    if count != 1:
-        raise RuntimeError("2026.1 UART outbyte template changed; review BSP override")
-    with open(driver_file, "w", encoding="utf-8", newline="\n") as destination:
-        destination.write(updated)
 
 
 def remove_readonly(function, path, _excinfo):
@@ -152,6 +116,7 @@ def configure_application_sources(component_source):
     config = set_cmake_list(config, "USER_INCLUDE_DIRECTORIES", sorted(include_dirs))
     config = set_cmake_list(config, "USER_COMPILE_DEFINITIONS",
                             [f"SDIO_RUN_CLOCK_HZ={SDIO_CLOCK_MHZ * 1000000}u"])
+    config = set_cmake_list(config, "USER_LINK_OTHER_FLAGS", ["-Wl,--wrap=outbyte"])
     with open(config_path, "w", encoding="utf-8", newline="\n") as handle:
         handle.write(config)
 
@@ -222,7 +187,7 @@ try:
     domain = platform.get_domain(name=DOMAIN_NAME)
     domain.set_config(option="os", param="standalone_stdout", value="ps7_uart_0")
     domain.set_config(option="os", param="standalone_stdin", value="ps7_uart_1")
-    configure_uart_bsp()
+    configure_uart_bsp(WORKSPACE)
     platform.report()
     platform_result = platform.build()
     print(f"VITIS_MIGRATION: platform build result={platform_result!r}")

@@ -64,3 +64,4 @@ Release/
 /build/channel_map_sim*.log
 /build/output/
 /tools/__pycache__/
+/build/scripts/__pycache__/

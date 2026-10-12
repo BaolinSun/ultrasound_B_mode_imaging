@@ -16,8 +16,9 @@ int XUartPs_SetBaudRate(XUartPs *u,u32 baud) {
     assert(u->Config.BaseAddress==uart0.BaseAddress && baud==115200);return ++call==fail?1:0;
 }
 int XUartPs_SetDataFormat(XUartPs *u,XUartPsFormat *f) {
-    assert(u->Config.BaseAddress==uart0.BaseAddress && f->DataBits==8 &&
-           f->ParityMode==0 && f->StopBits==1);return ++call==fail?1:0;
+    assert(u->Config.BaseAddress==uart0.BaseAddress && f->BaudRate==115200 &&
+           f->DataBits==XUARTPS_FORMAT_8_BITS && f->Parity==XUARTPS_FORMAT_NO_PARITY &&
+           f->StopBits==XUARTPS_FORMAT_1_STOP_BIT);return ++call==fail?1:0;
 }
 void XUartPs_SetOperMode(XUartPs *u,u8 mode) { assert(u->Config.BaseAddress==uart0.BaseAddress && mode==0); }
 void XUartPs_SetInterruptMask(XUartPs *u,u32 mask) { assert(u->Config.BaseAddress==uart0.BaseAddress && mask==0); }

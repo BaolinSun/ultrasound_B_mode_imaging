@@ -1,5 +1,6 @@
 from pathlib import Path
 import json
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -42,6 +43,32 @@ class UartContractTests(unittest.TestCase):
                             ("PCW_UART1_UART1_IO", "MIO 16 .. 17"), ("PCW_SPI1_GRP_SS1_ENABLE", "0"),
                             ("PCW_SPI1_GRP_SS2_ENABLE", "0")):
             self.assertEqual(props[name]["value"], value)
+
+    def test_sdk_format_and_link_wrapper(self):
+        source = (PS / "uart/uart_log.c").read_text(encoding="utf-8")
+        for field in (".BaudRate=ZYNQ_LOG_UART_BAUD", ".DataBits=XUARTPS_FORMAT_8_BITS",
+                      ".Parity=XUARTPS_FORMAT_NO_PARITY", ".StopBits=XUARTPS_FORMAT_1_STOP_BIT"):
+            self.assertIn(field, source)
+        self.assertIn("void __wrap_outbyte(char c)", (PS / "outbyte.c").read_text(encoding="utf-8"))
+        self.assertIn('"-Wl,--wrap=outbyte"',
+                      (ROOT / "workspace/B_mode_focus_imaging/src/UserConfig.cmake").read_text(encoding="utf-8"))
+        self.assertIn('"-Wl,--wrap=outbyte"',
+                      (ROOT / "build/scripts/build_vitis_2026_1.py").read_text(encoding="utf-8"))
+
+    def test_stub_matches_actual_sdk_format(self):
+        sdk = ROOT / "workspace/ubmi_p/export/ubmi_p/sw/standalone_ps7_cortexa9_0/include/xuartps.h"
+        if not sdk.exists():
+            self.skipTest("Real BSP not generated on this host")
+        actual = sdk.read_text(encoding="utf-8")
+        fake = (ROOT / "esp32c61/tests/stubs/zynq_uart/xuartps.h").read_text(encoding="utf-8")
+        definition = re.search(r"typedef struct \{([^{}]+)\} XUartPsFormat;", actual).group(1)
+        self.assertEqual(re.findall(r"(u32|u8)\s+(\w+);", definition),
+                         [("u32", "BaudRate"), ("u32", "DataBits"), ("u32", "Parity"), ("u8", "StopBits")])
+        self.assertIn("u32 BaudRate,DataBits,Parity;u8 StopBits;", fake)
+        for macro, value in (("XUARTPS_FORMAT_8_BITS", "0"), ("XUARTPS_FORMAT_NO_PARITY", "4"),
+                             ("XUARTPS_FORMAT_1_STOP_BIT", "0")):
+            for header in (actual, fake):
+                self.assertRegex(header, rf"#define {macro}\s+{value}U\b")
 
 
 if __name__ == "__main__":

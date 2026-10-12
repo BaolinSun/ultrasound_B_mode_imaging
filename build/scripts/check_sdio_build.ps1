@@ -48,6 +48,9 @@ foreach ($expected in @('XPAR_XSDPS_NUM_INSTANCES 2','XPAR_XSDPS_0_BASEADDR 0xe0
     if (-not $parameters.Contains($expected)) { throw "BSP mismatch: $expected" }
 }
 $bspConfig=Get-Content (Join-Path $Workspace 'ubmi_p/export/ubmi_p/sw/standalone_ps7_cortexa9_0/include/bspconfig.h') -Raw
+if (-not (Select-String -LiteralPath (Join-Path $Workspace 'B_mode_focus_imaging/src/UserConfig.cmake') -SimpleMatch '-Wl,--wrap=outbyte' -Quiet)) {
+    throw 'Application linker must enable --wrap=outbyte; BSP regeneration must not break logging.'
+}
 if ($bspConfig -notmatch '#define STDOUT_BASEADDRESS 0xe0000000' -or
     $bspConfig -notmatch '#define STDIN_BASEADDRESS 0xe0001000') { throw 'BSP console must use UART0 stdout and UART1 stdin.' }
 $tools=if ($env:AMD_DESIGN_TOOLS_2026_1) { $env:AMD_DESIGN_TOOLS_2026_1 } else { 'D:/AMDDesignTools/2026.1' }

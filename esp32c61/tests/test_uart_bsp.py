@@ -1,23 +1,20 @@
 """Self-check the local 2026.1 BSP workaround without starting Vitis."""
 import ast
-import os
 from pathlib import Path
-import re
 import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "build/scripts/build_vitis_2026_1.py"
+SCRIPT = ROOT / "build/scripts/uart_bsp_compat.py"
 
 
 class UartBspTests(unittest.TestCase):
     def load_function(self, workspace):
         tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
         fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "configure_uart_bsp")
-        namespace = dict(os=os, re=re, WORKSPACE=str(workspace), PLATFORM_NAME="ubmi_p",
-                         DOMAIN_NAME="standalone_ps7_cortexa9_0")
+        namespace = dict(Path=Path)
         exec(compile(ast.Module(body=[fn], type_ignores=[]), str(SCRIPT), "exec"), namespace)
-        return namespace[fn.name]
+        return lambda: namespace[fn.name](workspace)
 
     def fixture(self, workspace):
         libsrc = Path(workspace) / "ubmi_p/ps7_cortexa9_0/standalone_ps7_cortexa9_0/bsp/libsrc"
@@ -33,15 +30,31 @@ class UartBspTests(unittest.TestCase):
                           'char inbyte(void) { return XUartPs_RecvByte(STDIN_BASEADDRESS); }\n', encoding="utf-8")
         return cmake, driver
 
-    def test_stdout_resolved_independently_and_fallback_weak(self):
+    def test_stdout_resolved_independently_without_driver_patch(self):
         with tempfile.TemporaryDirectory() as workspace:
             cmake, driver = self.fixture(workspace)
             self.load_function(workspace)()
             corrected = cmake.read_text(encoding="utf-8")
             self.assertIn("LIST_INDEX(${index} ${standalone_stdout}", corrected)
             self.assertLess(corrected.index("set(STDIN_BASEADDRESS"), corrected.index("set(STDOUT_BASEADDRESS ${${reg}})"))
-            self.assertIn("__attribute__((weak)) void outbyte", driver.read_text(encoding="utf-8"))
+            self.assertNotIn("__attribute__((weak))", driver.read_text(encoding="utf-8"))
             self.assertIn("XUartPs_RecvByte(STDIN_BASEADDRESS)", driver.read_text(encoding="utf-8"))
+
+    def test_repair_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as workspace:
+            cmake, _ = self.fixture(workspace)
+            repair = self.load_function(workspace)
+            self.assertTrue(repair())
+            before = cmake.read_text(encoding="utf-8")
+            self.assertFalse(repair())
+            self.assertEqual(before, cmake.read_text(encoding="utf-8"))
+
+    def test_existing_workspace_repair_never_recreates_app(self):
+        source = (ROOT / "build/scripts/repair_vitis_workspace.py").read_text(encoding="utf-8")
+        self.assertNotRegex(source, r"\b(?:rmtree|remove_workspace|create_platform_component|import_files|create_app_component)\s*\(")
+        self.assertNotIn("vitis.create_client", source)
+        self.assertIn('"--target", "clean"', source)
+        self.assertIn('"build_app", "-s", app / "src", "-b", app / "build"', source)
 
     def test_unknown_template_rejected(self):
         with tempfile.TemporaryDirectory() as workspace:
