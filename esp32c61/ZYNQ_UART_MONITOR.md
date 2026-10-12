@@ -61,9 +61,11 @@ ESP 接收任务启动前的日志无法补录；同上电顺序可能漏掉最�
 .\build\scripts\check_sdio_build.ps1
 ```
 
-本次需要新的硬件 XSA 和 FSBL，不能只重编译应用后混用旧 UART0 未启用的硬件。规范源与当前 IDE 应用源已同步；离线构建使用独立 `build/sdio_vitis_*`，不会删除用户当前 workspace。需要在 IDE 继续开发时请使用本次生成的新工作区/平台，不要把新应用直接链接到旧平台。
+本次需要启用 UART0 的硬件 XSA 和 FSBL，不能只重编译应用后混用旧 UART0 未启用的硬件。2026-10-12 已修复并验证现有 `workspace/ubmi_p` 与 `workspace/B_mode_focus_imaging`，平时直接在原 Vitis 工作区 Clean、Build、Download 即可，无需换到 `build/sdio_vitis_*`。本次未实际 Download/运行设备。
 
-Vitis 2026.1 的本地 BSP 源存在两个兼容问题：`xilstandalone.cmake` 实际用 stdin 推导 stdout，UART 驱动又在包含 `SendByte` 的同一目标文件里提供了强符号 `outbyte`。构建脚本只修改新工作区的生成源：单独解析 UART0 stdout，并将 BSP 的默认 `outbyte` 标记为 weak，由应用版本覆盖；不修改安装目录。若在 IDE 中重新生成 BSP，请重新运行工程构建脚本以应用修正。构建器还要求本次成功标记，避免 Vitis 启动器返回 0 但 Python 构建失败时打包旧 ELF。
+重定向使用应用的 `__wrap_outbyte()` 与 `UserConfig.cmake` 中的 `-Wl,--wrap=outbyte`，不再依赖将 BSP 的 `outbyte` 改成 weak；SDK/BSP 保留强符号也能正常链接，普通平台/BSP 重建不会重新产生重复定义。不要删除这个链接选项。
+
+Vitis 2026.1 的 `xilstandalone.cmake` 实际用 stdin 推导 stdout。当前 BSP 已独立解析 stdout，配置为 UART0 stdout/UART1 stdin。若重新生成整个 BSP，该元数据修正可能被 SDK 覆盖，但应用的字符包装仍固定输出 UART0，UART1 参数处理也不受影响。需要恢复平台元数据时，从成像工程根目录执行 `.\build\scripts\repair_vitis_workspace.ps1`；它只修复和构建现有 BSP/应用，不删除工作区、不改安装目录、不下载设备。运行期间不要同时点击 IDE Build。界面属性未刷新时可重开工作区。
 
 BOOT 打包输入（绝对路径，按顺序）：
 
@@ -75,4 +77,4 @@ BOOT 打包输入（绝对路径，按顺序）：
 
 ESP 固件：`esp32c61/build/ultrasound_psram_udp.bin`、`esp32c61/build-throughput/ultrasound_psram_udp.bin`，烧录需包含相应 bootloader/分区表并使用各构建目录的 flash_args，不能仅拿应用 bin 代替完整烧录配置。
 
-输入清单及哈希为 `build/output/boot_inputs.sha256`；本次离线结果和未关闭的风险见 `UART_BRIDGE_VERIFICATION.md`。烧录及实机验收必须另行确认设备，不沿用此前 COM3 授权。
+输入清单及哈希为 `build/output/boot_inputs.sha256`；最新 IDE 构建与修复记录见 [VITIS_IDE_UART_FIX.md](VITIS_IDE_UART_FIX.md)。原 `UART_BRIDGE_VERIFICATION.md` 为已注明缺陷的历史记录。烧录及实机验收必须另行确认设备，不沿用此前 COM3 授权。
