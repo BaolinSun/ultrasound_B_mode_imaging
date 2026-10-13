@@ -63,12 +63,14 @@ int main() {
 
 	usb_init();
 	sdio_bridge_init();
+	temperature_service_init();
 	xil_printf("@READY CONFIG\r\n");
 	xil_printf("Beamform ready; STOP.\r\n");
 	XGpioPs_WritePin(&gpiops, LED_2_EMIO_PIN, 1);
 	led_blink(5,250000);
 
 	while (1) {
+		temperature_service_poll();
 		uart_process_commands();
 		usb_process_commands();
 #if DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO

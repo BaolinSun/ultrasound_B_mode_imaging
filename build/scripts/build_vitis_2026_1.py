@@ -88,7 +88,7 @@ def set_cmake_list(text, variable, values):
 
 def configure_application_sources(component_source):
     sources = []
-    include_dirs = {"."}
+    include_dirs = {".", os.path.join(ROOT, "common").replace("\\", "/")}
     for directory, subdirs, files in os.walk(component_source):
         # Source cleanup is canonical in build/src/ps. Do not reimport editor
         # caches or advertise empty directories left by removed modules.

@@ -41,34 +41,36 @@ int main() {
 	if (zynq_uart_log_init() != XST_SUCCESS) return XST_FAILURE;
 	xil_printf("@UART_LOG UART0 MIO27/TX -> ESP32 GPIO10/RX 115200 8N1\r\n");
 	Xil_DCacheDisable();
-	// �жϳ�ʼ��
+
 	intr_init();
 	sleep(1);
-	DEBUG_PRINT("---------------cpu1 start----------\r\n");
+
 	system_ctrl_init();
-	gpio_init(); //ok
-	uart_init(); //
-	IIC_Init(); 	//OK
-	hv_init();  //OK
-	/* Board clocks are hardware-generated; no software clock-chip setup. */
+	gpio_init();
+	uart_init();
+	IIC_Init();
+	hv_init();
+
 	sleep(1);
-//	Pl_Reset();
+
 	AFE5832_init();
 	/* Keep the former wrapper's 1 s + main's 1 s settling delay. */
 	sleep(2);
-	led_init();	// OK
+	led_init();
 
 	sleep(0.2);
 	para_down();
 
 	usb_init();
 	sdio_bridge_init();
+	temperature_service_init();
 	xil_printf("@READY CONFIG\r\n");
 	xil_printf("Beamform ready; STOP.\r\n");
 	XGpioPs_WritePin(&gpiops, LED_2_EMIO_PIN, 1);
 	led_blink(5,250000);
 
 	while (1) {
+		temperature_service_poll();
 		uart_process_commands();
 		usb_process_commands();
 #if DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO

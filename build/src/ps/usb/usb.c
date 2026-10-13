@@ -6,6 +6,7 @@
 #include "stdlib.h"
 #include "../imaging_config.h"
 #include "../uart/uart.h"
+#include "../system_ctrl/temp.h"
 #include <string.h>
 #define USB_PACK_HEADER 0xef
 #define USB_CFG_REQ_TYPE 0xC0
@@ -100,6 +101,7 @@ void usb_send_adc_data(u8* buffer_ptr, u32 nums, u32 package_of) {
 	u8 chip = 0;
 	// 等主机消息
 	while (recv_new_data != 1) {
+		temperature_service_poll();
 		uart_process_commands();
 		usb_process_commands();
 	}
@@ -117,6 +119,7 @@ void usb_send_adc_data(u8* buffer_ptr, u32 nums, u32 package_of) {
 //		xusb_COMMS_send_data(&UsbInstance, data_ptr_1, 8192*25);
 		for (u32 i = 0; i < 1000U; i++)
 		{
+			temperature_service_poll();
 			xusb_COMMS_send_data(&UsbInstance, data_ptr + (i * 1024U), 1024U);
 		}
 

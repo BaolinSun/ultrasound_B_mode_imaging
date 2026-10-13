@@ -27,6 +27,7 @@ set(USER_UNDEFINED_SYMBOLS
 # Example 3: Adding ${CMAKE_SOURCE_DIR}/data/include to add data/include from this project.
 
 set(USER_INCLUDE_DIRECTORIES
+"../../../common"
 "."
 ".compile_commands"
 "AFE5832"
@@ -63,6 +64,7 @@ set(USER_COMPILE_SOURCES
 "main.c"
 "system_ctrl/system_ctrl.c"
 "system_ctrl/temp.c"
+"system_ctrl/temp_hw.c"
 "uart/uart.c"
 "usb/usb.c"
 "usb/xusbps_COMMS.c"

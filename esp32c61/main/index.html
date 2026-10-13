@@ -23,6 +23,11 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <label><input id="open-network" type="checkbox"> 使用开放 Wi-Fi（清空已保存密码）</label>
 <button id="save" type="submit">保存并应用</button><small>目标地址下一次上传生效。修改 Wi-Fi 后会重新连接；连接成功 15 秒后关闭配置热点。</small>
 </form></section>
+<section class="card"><h2>温度监测</h2><dl>
+<dt>Zynq 芯片</dt><dd id="temp-zynq">等待温度数据</dd>
+<dt>电源</dt><dd id="temp-power">等待温度数据</dd>
+<dt>AFE 区域</dt><dd id="temp-afe">等待温度数据</dd>
+</dl><p id="temp-age" class="muted">每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。</p></section>
 <section class="card"><h2>设备与传输状态</h2><dl>
 <dt>网络状态</dt><dd id="network">—</dd><dt>局域网页面</dt><dd><a id="sta-link">—</a></dd>
 <dt>配置热点</dt><dd id="ap">—</dd><dt>PSRAM</dt><dd id="memory">—</dd>
@@ -46,7 +51,20 @@ function notify(text,error=false){el('message').textContent=text;el('message').c
 async function api(path,options={}){const r=await fetch(path,{cache:'no-store',...options});const j=await r.json();if(!r.ok)throw Error(j.message||`HTTP ${r.status}`);return j}
 async function loadConfig(){const c=await api('/api/config');el('ssid').value=c.ssid;el('target-ip').value=c.target_ip;el('target-port').value=c.target_port;targetConfigured=!!c.target_ip;configLoaded=true}
 const results={sent_local:'本地发送完成（请核对接收端）',invalid:'参数无效',busy:'正在发送',not_ready:'等待配置 / 尚未上传',cancelled:'已停止',link_down:'网络中断',timeout:'上传超时',send_error:'发送失败'};
+function renderTemperatures(t,disconnected=false){
+ const labels={waiting:'等待温度数据',read_error:'读取失败',stale:'数据已过期'};
+ for(const name of ['zynq','power','afe']){
+  const c=t?.[name];
+  const state=t?.age_ms>30000?'stale':c?.status||'waiting';
+  el('temp-'+name).textContent=disconnected?'网页连接已断开':
+   state==='ok'&&Number.isFinite(c?.celsius)?c.celsius.toFixed(2)+' °C':labels[state]||'等待温度数据';
+ }
+ el('temp-age').textContent=disconnected?'无法获取最新温度，请等待设备连接恢复。':
+  t?.seq!=null&&Number.isFinite(t?.age_ms)?`每 10 秒采样；采样序号 ${t.seq}，${(t.age_ms/1000).toFixed(1)} 秒前收到。`:
+  '每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。';
+}
 function render(s){
+ renderTemperatures(s.temperatures);
  el('network').textContent=s.reconfiguring?'正在重新配网':s.connected?'已连接路由器':'未连接路由器';
  el('sta-link').textContent=s.sta_ip?`http://${s.sta_ip}/`:'等待分配 IP';if(s.sta_ip)el('sta-link').href=`http://${s.sta_ip}/`;else el('sta-link').removeAttribute('href');
  el('ap').textContent=s.ap_active?`${s.ap_ssid} · 192.168.4.1`:'已关闭';
@@ -77,7 +95,7 @@ function render(s){
  el('sdio-gate').textContent=canStart?'可启动：SDIO 握手与上传条件均已满足':'不可启动：'+reasons.join('；');
  if(d.running||d.raw_busy||d.free_slots<2)el('upload').disabled=true;
 }
-async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;el('upload').disabled=true;el('stop').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false}}
+async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;renderTemperatures(null,true);el('upload').disabled=true;el('stop').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false}}
 el('config-form').addEventListener('submit',async event=>{event.preventDefault();saving=true;el('save').disabled=true;el('upload').disabled=true;const c={ssid:el('ssid').value,target_ip:el('target-ip').value.trim(),target_port:Number(el('target-port').value)};
  if(el('open-network').checked)c.password='';else if(el('password').value)c.password=el('password').value;
  try{const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});targetConfigured=!!c.target_ip;configLoaded=true;el('password').value='';el('open-network').checked=false;notify(r.message)}catch(e){notify(e.message,true)}finally{saving=false;el('save').disabled=false;await refresh()}});

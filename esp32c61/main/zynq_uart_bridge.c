@@ -1,6 +1,7 @@
 #include "zynq_uart_bridge.h"
 #include "sdkconfig.h"
 #include "esp_log.h"
+#include "temperature_cache.h"
 
 #if CONFIG_ZYNQ_UART_BRIDGE_ENABLE
 #if !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
@@ -73,14 +74,16 @@ static void receive_task(void *ctx)
                 (void)uart_flush_input(UART_NUM_0);
                 (void)xQueueReset(events);
                 uart_log_framer_reset(&framer); /* Never join text across lost data. */
+                temperature_cache_uart_lost();
             }
         }
         for(unsigned batch=0;batch<4;batch++) {
             int count=uart_read_bytes(UART_NUM_0,bytes,sizeof(bytes),0);
-            if(count<0) { errors++; uart_log_framer_reset(&framer); break; }
+            if(count<0) { errors++; uart_log_framer_reset(&framer); temperature_cache_uart_lost(); break; }
             if(!count) break;
+            temperature_cache_feed(bytes,(size_t)count,milliseconds());
             uart_log_framer_feed(&framer,bytes,(size_t)count,milliseconds(),print_line,NULL);
-            vTaskDelay(1); /* Lower priority than the SDIO task; no payload/control parsing. */
+            vTaskDelay(1); /* Read-only telemetry, still lower priority than SDIO. */
         }
         uint64_t now=milliseconds();
         uart_log_framer_idle(&framer,now,print_line,NULL);

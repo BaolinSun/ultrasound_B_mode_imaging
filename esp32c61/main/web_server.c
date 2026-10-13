@@ -4,6 +4,9 @@
 #include "tcp_transfer.h"
 #include "selftest.h"
 #include "sdio_bridge.h"
+#include "temperature_cache.h"
+#include "temperature_protocol.h"
+#include "esp_timer.h"
 #include "wifi_manager.h"
 #include <stdlib.h>
 #include <string.h>
@@ -117,6 +120,28 @@ static esp_err_t get_status(httpd_req_t *req)
     config_store_get(&config);
     cJSON *json = cJSON_CreateObject();
     if (json) {
+        temperature_status_t t;
+        temperature_cache_get(&t,(uint64_t)esp_timer_get_time()/1000U);
+        cJSON *temperatures=cJSON_AddObjectToObject(json,"temperatures");
+        if(temperatures) {
+            cJSON_AddNumberToObject(temperatures,"period_ms",TEMP_PERIOD_MS);
+            if(t.has_sample) {
+                cJSON_AddNumberToObject(temperatures,"seq",t.seq);
+                cJSON_AddNumberToObject(temperatures,"age_ms",(double)t.age_ms);
+            } else {
+                cJSON_AddNullToObject(temperatures,"seq");
+                cJSON_AddNullToObject(temperatures,"age_ms");
+            }
+            const char *names[]={"zynq","power","afe"};
+            for(unsigned i=0;i<3;i++) {
+                cJSON *channel=cJSON_AddObjectToObject(temperatures,names[i]);
+                if(!channel) continue;
+                const char *state=temperature_channel_status(&t,i);
+                cJSON_AddStringToObject(channel,"status",state);
+                if(!strcmp(state,"ok")) cJSON_AddNumberToObject(channel,"celsius",t.mc[i]/1000.0);
+                else cJSON_AddNullToObject(channel,"celsius");
+            }
+        }
         cJSON_AddBoolToObject(json, "connected", wifi.connected);
         cJSON_AddBoolToObject(json, "upload_ready", udp.connected && config.target_ip[0] != 0);
         cJSON_AddBoolToObject(json, "ap_active", wifi.ap_active);

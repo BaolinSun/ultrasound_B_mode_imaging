@@ -66,6 +66,30 @@ function setup() {
 }
 const submit = env => env.elements['config-form'].listeners.submit({preventDefault(){}});
 
+test('temperature card is independent of upload and shows errors, zero, negative, stale and disconnect',async()=>{
+  const e=setup();await e.settle();
+  assert.match(e.elements['temp-zynq'].textContent,/等待/);
+  e.backend.status.temperatures={seq:0,age_ms:0,period_ms:10000,
+    zynq:{status:'ok',celsius:35.123},power:{status:'ok',celsius:0},afe:{status:'ok',celsius:-10.125}};
+  await e.context.refresh();
+  assert.equal(e.elements['temp-zynq'].textContent,'35.12 °C');
+  assert.equal(e.elements['temp-power'].textContent,'0.00 °C');
+  assert.equal(e.elements['temp-afe'].textContent,'-10.13 °C');
+  assert.equal(e.elements.upload.disabled,true);
+  assert.match(e.elements['temp-age'].textContent,/序号 0/);
+  e.backend.status.temperatures.power={status:'read_error',celsius:null};
+  await e.context.refresh();assert.match(e.elements['temp-power'].textContent,/读取失败/);
+  assert.equal(e.elements['temp-zynq'].textContent,'35.12 °C');
+  e.backend.status.temperatures.age_ms=30001;
+  await e.context.refresh();assert.match(e.elements['temp-zynq'].textContent,/过期/);
+  e.backend.offline=true;await e.context.refresh();
+  assert.match(e.elements['temp-afe'].textContent,/断开/);
+  e.backend.offline=false;e.backend.status.temperatures=undefined;await e.context.refresh();
+  assert.match(e.elements['temp-zynq'].textContent,/等待/);
+  assert.ok(html.indexOf('温度监测')>html.indexOf('连接与目标地址'));
+  assert.ok(html.indexOf('温度监测')<html.indexOf('设备与传输状态'));
+});
+
 test('TCP verified ACK differs from UDP local completion and exposes protocol',async()=>{
   const e=setup();await e.settle();
   Object.assign(e.backend.status,{sdio_transport:'tcp',active_transport:'tcp',result:'received_verified',

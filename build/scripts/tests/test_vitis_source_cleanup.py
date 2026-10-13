@@ -37,7 +37,7 @@ def source_configurator():
     functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
                  and node.name in ("set_cmake_list", "configure_application_sources")]
     assert len(functions) == 2
-    namespace = {"os": os, "re": re, "SDIO_CLOCK_MHZ": 25}
+    namespace = {"os": os, "re": re, "SDIO_CLOCK_MHZ": 25, "ROOT": str(ROOT)}
     exec(compile(ast.Module(body=functions, type_ignores=[]), "source_helpers", "exec"), namespace)
     return namespace["configure_application_sources"]
 
@@ -64,7 +64,8 @@ class CleanupTests(unittest.TestCase):
         for root in (CANONICAL, APP):
             temperature = (root / "system_ctrl/temp.c").read_text(encoding="utf-8")
             self.assertRegex(temperature, r"\bfloat\s+read_temp\s*\(")
-            self.assertIn("IIC_polled_read", temperature)
+            self.assertIn("temp_hw_sensor_raw", temperature)
+            self.assertIn("temperature_service_poll", temperature)
 
     def test_no_deleted_includes_or_empty_receive_call(self):
         deleted_headers = {Path(path).name for path in REMOVED if path.endswith(".h")}
@@ -109,7 +110,8 @@ class CleanupTests(unittest.TestCase):
             self.assertEqual(once, (root / "UserConfig.cmake").read_text(encoding="utf-8"))
             self.assertEqual(cmake_list(once, "USER_COMPILE_SOURCES"),
                              ["data_transfer/sdio_bridge.c", "main.c", "outbyte.c", "system_ctrl/temp.c"])
-            self.assertEqual(cmake_list(once, "USER_INCLUDE_DIRECTORIES"), [".", "data_transfer", "system_ctrl"])
+            self.assertEqual(cmake_list(once, "USER_INCLUDE_DIRECTORIES"),
+                             sorted([".", str(ROOT / "common").replace("\\", "/"), "data_transfer", "system_ctrl"]))
             self.assertIn("SDIO_RUN_CLOCK_HZ=25000000u", once)
             self.assertIn("-Wl,--wrap=outbyte", once)
 
@@ -123,7 +125,7 @@ class CleanupTests(unittest.TestCase):
             temperature = (root / "system_ctrl/temp.c").read_text(encoding="utf-8")
             self.assertIn('#include "temp.h"', temperature)
             header = (root / "system_ctrl/temp.h").read_text(encoding="utf-8")
-            self.assertIn("#ifndef __TEMP_H", header)
+            self.assertIn("#ifndef SYSTEM_CTRL_TEMP_H", header)
             self.assertNotIn("__TMP_H", header)
             main = (root / "main.c").read_text(encoding="utf-8")
             self.assertIn('#include "system_ctrl/temp.h"', main)
