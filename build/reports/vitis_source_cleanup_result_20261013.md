@@ -1,5 +1,7 @@
 # Vitis 2026.1 源码清理结果（2026-10-13）
 
+本文件记录第一次清理。当时保留的 CLOCK 模块随后按用户确认删除；当前工作区 ELF 与最新构建记录见[时钟模块删除结果](D:/MyProjects/zynq_prj/ultrasound_B_mode_imaging/build/reports/vitis_clock_removal_20261013.md)。下表 ELF 哈希和容量为第一次清理结果，不是当前最新文件。
+
 ## 完成范围
 
 按用户确认，保留温度模块 `tmp/tmp.c`、`tmp/tmp.h`，删除其余已审阅候选。规范源 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\build\src\ps` 与 Vitis 应用 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\workspace\B_mode_focus_imaging\src` 各删除 18 个文件，共 **36 个文件路径**；同时精确移除 12 个已空目录，没有递归删除其他目录。

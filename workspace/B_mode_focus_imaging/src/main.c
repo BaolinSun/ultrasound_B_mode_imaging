@@ -20,7 +20,6 @@
 #include "HV/hv.h"
 #include "iic/iic.h"
 #include "GPIO/gpio.h"
-#include "CLOCK/system_clk.h"
 #include "AFE5832/afe5832.h"
 //#include "ps_2_pl_ctrl.h"
 #include "usb/usb.h"
@@ -51,9 +50,8 @@ int main() {
 	gpio_init(); //ok
 	uart_init(); //
 	IIC_Init(); 	//OK
-	hw_spi_init();
 	hv_init();  //OK
-	sys_clk_init();
+	/* Board clocks are hardware-generated; no software clock-chip setup. */
 	sleep(1);
 //	Pl_Reset();
 	pus_init();		// ����ϵͳ��ʼ��
