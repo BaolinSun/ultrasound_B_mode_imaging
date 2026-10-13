@@ -2,12 +2,6 @@
 #include "../iic/iic.h"
 
 
-
-
-u32 temp_init()
-{
-
-}
 float read_temp(u32 addr)
 {
 	u8 data[2];
