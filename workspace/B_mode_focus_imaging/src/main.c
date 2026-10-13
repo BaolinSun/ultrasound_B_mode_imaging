@@ -22,14 +22,9 @@
 #include "GPIO/gpio.h"
 #include "CLOCK/system_clk.h"
 #include "AFE5832/afe5832.h"
-#include "TX7332/tx7332.h"
-#include "key/key.h"
 //#include "ps_2_pl_ctrl.h"
 #include "usb/usb.h"
 #include "xiltimer.h"
-#include "data_transfer/data_recv.h"
-#include "timer/timer.h"
-#include "linux_wifi/linux_wifi.h"
 #include "tmp/tmp.h"
 #include "pus_operation/pus_oper.h"
 #include "bram/bram.h"
@@ -43,11 +38,7 @@ void led_blink(u8 times,u32 time);
 
 
 int main() {
-	u32 pre_buffer_cnt = 50;
-	u32 now_buffer_cnt = 0;
 	u32 cnt = 0;
-	XTime begin;
-	XTime end;
 
 	if (zynq_uart_log_init() != XST_SUCCESS) return XST_FAILURE;
 	xil_printf("@UART_LOG UART0 MIO27/TX -> ESP32 GPIO10/RX 115200 8N1\r\n");
@@ -58,7 +49,6 @@ int main() {
 	DEBUG_PRINT("---------------cpu1 start----------\r\n");
 	system_ctrl_init();
 	gpio_init(); //ok
-//	wifi_mem_init();
 	uart_init(); //
 	IIC_Init(); 	//OK
 	hw_spi_init();
@@ -66,8 +56,6 @@ int main() {
 	sys_clk_init();
 	sleep(1);
 //	Pl_Reset();
-	data_recv_init();
-//	key_init();	// ok
 	pus_init();		// ����ϵͳ��ʼ��
 	sleep(1);
 	led_init();	// OK
@@ -85,7 +73,6 @@ int main() {
 	while (1) {
 		uart_process_commands();
 		usb_process_commands();
-//		data_recv(MEM_BASE_ADDR,SAMPLE_LENGTH, 1,PLANE_WAVE_ANGLE_NUMS);
 #if DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO
 		sdio_bridge_poll();
 #else

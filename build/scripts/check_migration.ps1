@@ -241,9 +241,16 @@ finally {
     $XsaArchive.Dispose()
 }
 
-$DataRecv = Get-Content (Join-Path $NewApp 'data_transfer\data_recv.c') -Raw
-if ($DataRecv -match 'XScuGic|43C10000|DATA_RECV_TX_INTR') {
-    throw 'The migrated data receive shim still depends on a PL interrupt or unmapped control register.'
+# The empty receive shim and unsupported legacy DMA were removed in the
+# approved source cleanup. Check absence, not the contents of deleted files.
+foreach ($RemovedReceiveSource in @('data_transfer\data_recv.c', 'data_transfer\data_recv.h',
+                                    'data_transfer\axidma.c', 'data_transfer\axidma.h')) {
+    if (Test-Path -LiteralPath (Join-Path $NewApp $RemovedReceiveSource)) {
+        throw "Removed legacy receive source was reintroduced: $RemovedReceiveSource"
+    }
+}
+if ($MainSource -match '\bdata_recv_init\s*\(') {
+    throw 'Main still calls the removed empty receive shim.'
 }
 $AfeHeader = Get-Content (Join-Path $NewApp 'AFE5832\afe5832.h') -Raw
 if ($AfeHeader -match 'ADC_CALI_FINISH_INTR_ID|\b62U\b') {
@@ -254,9 +261,7 @@ if ($AfeSource -match 'XScuGic_Connect|XScuGic_Enable|ADC_CALI_FINISH_INTR_ID') 
     throw 'The migrated AFE source still registers the absent PL calibration interrupt.'
 }
 foreach ($InterruptSource in @(
-    'key\key.c',
     'uart\uart.c',
-    'timer\timer.c',
     'usb\usb.c'
 )) {
     $InterruptText = Get-Content (Join-Path $NewApp $InterruptSource) -Raw

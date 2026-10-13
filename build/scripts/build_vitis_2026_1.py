@@ -89,24 +89,20 @@ def set_cmake_list(text, variable, values):
 def configure_application_sources(component_source):
     sources = []
     include_dirs = {"."}
-    excluded_sources = {
-        # pus_ctrl_system has no AXI DMA and IRQ_F2P is tied low.  Preserve
-        # the legacy source for reference, but do not compile dead hardware
-        # paths against non-existent SDT macros.
-        "data_transfer/axidma.c",
-    }
-    for directory, _, files in os.walk(component_source):
+    for directory, subdirs, files in os.walk(component_source):
+        # Source cleanup is canonical in build/src/ps. Do not reimport editor
+        # caches or advertise empty directories left by removed modules.
+        subdirs[:] = [name for name in subdirs if not name.startswith(".")]
         relative_directory = os.path.relpath(directory, component_source).replace("\\", "/")
-        if relative_directory != ".":
+        if relative_directory != "." and any(
+            filename.lower().endswith((".c", ".s", ".h", ".hpp")) for filename in files
+        ):
             include_dirs.add(relative_directory)
         for filename in files:
             if filename.lower().endswith((".c", ".s", ".S")):
                 relative = os.path.relpath(
                     os.path.join(directory, filename), component_source
                 ).replace("\\", "/")
-                if relative in excluded_sources:
-                    print(f"VITIS_MIGRATION: excluding unsupported source {relative}")
-                    continue
                 sources.append(relative)
 
     config_path = os.path.join(component_source, "UserConfig.cmake")

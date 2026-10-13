@@ -1,7 +1,6 @@
 #include "usb.h"
 #include "xusbps_COMMS.h"
 #include "xinterrupt_wrap.h"
-#include "../TX7332/tx7332.h"
 #include "../GPIO/gpio.h"
 #include "sleep.h"
 #include "stdlib.h"
