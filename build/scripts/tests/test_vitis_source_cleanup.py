@@ -50,7 +50,7 @@ class CleanupTests(unittest.TestCase):
                 self.assertFalse((root / relative).exists(), str(root / relative))
 
     def test_temperature_preserved_and_core_sources_synced(self):
-        for relative in ("system_ctrl/tmp.h", "usb/usb.c",
+        for relative in ("system_ctrl/temp.h", "usb/usb.c",
                          "data_transfer/sdio_bridge.c",
                          "data_transfer/output_config.h", "outbyte.c"):
             a = (CANONICAL / relative).read_bytes().replace(b"\r\n", b"\n")
@@ -62,7 +62,7 @@ class CleanupTests(unittest.TestCase):
         # cleaned main.c during the task. Preserve those divergences rather
         # than overwriting user edits to force identical file contents.
         for root in (CANONICAL, APP):
-            temperature = (root / "system_ctrl/tmp.c").read_text(encoding="utf-8")
+            temperature = (root / "system_ctrl/temp.c").read_text(encoding="utf-8")
             self.assertRegex(temperature, r"\bfloat\s+read_temp\s*\(")
             self.assertIn("IIC_polled_read", temperature)
 
@@ -85,7 +85,7 @@ class CleanupTests(unittest.TestCase):
         expected = {p.relative_to(APP).as_posix() for p in APP.rglob("*.c")}
         self.assertEqual(set(sources), expected)
         self.assertEqual(len(sources), len(set(sources)))
-        self.assertIn("system_ctrl/tmp.c", sources)
+        self.assertIn("system_ctrl/temp.c", sources)
         self.assertIn("system_ctrl", cmake_list(text, "USER_INCLUDE_DIRECTORIES"))
         self.assertNotIn("tmp", cmake_list(text, "USER_INCLUDE_DIRECTORIES"))
         self.assertIn("-Wl,--wrap=outbyte", text)
@@ -95,7 +95,7 @@ class CleanupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="vitis_cleanup_test_") as tmp:
             root = Path(tmp)
             (root / "UserConfig.cmake").write_text((APP / "UserConfig.cmake").read_text(encoding="utf-8"), encoding="utf-8")
-            for relative in ("main.c", "outbyte.c", "system_ctrl/tmp.c", "system_ctrl/tmp.h",
+            for relative in ("main.c", "outbyte.c", "system_ctrl/temp.c", "system_ctrl/temp.h",
                              "data_transfer/sdio_bridge.c", "data_transfer/output_config.h"):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -108,7 +108,7 @@ class CleanupTests(unittest.TestCase):
             configure(str(root))
             self.assertEqual(once, (root / "UserConfig.cmake").read_text(encoding="utf-8"))
             self.assertEqual(cmake_list(once, "USER_COMPILE_SOURCES"),
-                             ["data_transfer/sdio_bridge.c", "main.c", "outbyte.c", "system_ctrl/tmp.c"])
+                             ["data_transfer/sdio_bridge.c", "main.c", "outbyte.c", "system_ctrl/temp.c"])
             self.assertEqual(cmake_list(once, "USER_INCLUDE_DIRECTORIES"), [".", "data_transfer", "system_ctrl"])
             self.assertIn("SDIO_RUN_CLOCK_HZ=25000000u", once)
             self.assertIn("-Wl,--wrap=outbyte", once)
@@ -116,10 +116,18 @@ class CleanupTests(unittest.TestCase):
     def test_temperature_relocated_without_old_directory(self):
         for root in (CANONICAL, APP):
             self.assertFalse((root / "tmp").exists())
-            for name in ("tmp.c", "tmp.h"):
+            for name in ("temp.c", "temp.h"):
                 self.assertTrue((root / "system_ctrl" / name).is_file())
+            for old_name in ("tmp.c", "tmp.h"):
+                self.assertFalse((root / "system_ctrl" / old_name).exists())
+            temperature = (root / "system_ctrl/temp.c").read_text(encoding="utf-8")
+            self.assertIn('#include "temp.h"', temperature)
+            header = (root / "system_ctrl/temp.h").read_text(encoding="utf-8")
+            self.assertIn("#ifndef __TEMP_H", header)
+            self.assertNotIn("__TMP_H", header)
             main = (root / "main.c").read_text(encoding="utf-8")
-            self.assertIn('#include "system_ctrl/tmp.h"', main)
+            self.assertIn('#include "system_ctrl/temp.h"', main)
+            self.assertNotIn("system_ctrl/tmp.h", main)
             self.assertNotIn("tmp/tmp.h", main)
 
     def test_afe_initialized_directly_once_in_original_order_with_settling(self):

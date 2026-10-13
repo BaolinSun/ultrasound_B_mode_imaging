@@ -1,5 +1,7 @@
 # 温度模块移动记录（2026-10-13）
 
+后续已按用户要求将文件名由 tmp.c/tmp.h 改为 temp.c/temp.h；下面最初移动的路径与 ELF 哈希为历史记录，最新重命名结果见文末。
+
 将规范源和当前 Vitis 工作区的 tmp/tmp.c、tmp/tmp.h 分别原样移动至 system_ctrl/tmp.c、system_ctrl/tmp.h；删除各自空 tmp 目录。只改路径、引用、编译列表和自检查，不调整温度算法或接口，不下载硬件。
 
 - 规范源：`D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\build\src\ps`
@@ -33,3 +35,11 @@
 | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\build\tcp_pipeline_usb\B_mode_focus_imaging.elf`（USB 构建验证） | 0AFD41905AEC914DB613014C21235EC32525CF6A89318BDD9B4D344A758E7EC4 |
 
 本地构建日志：build/reports/vitis_temperature_move_sdio_20261013.log、vitis_temperature_move_usb_20261013.log。编译通过不代表零历史告警。此次不执行板测、不修改 RTL/CDC/时序约束，BOOT.BIN、bit/XSA、ESP32 固件以及 build/output 中旧 ELF 均不更新。
+
+## 后续重命名为 temp.c / temp.h
+
+两份源码的 system_ctrl/tmp.c、tmp.h 均改名为 system_ctrl/temp.c、temp.h；C 文件 include 改为 temp.h，头文件保护宏 __TMP_H 改为 __TEMP_H，main 引用和 UserConfig.cmake 编译路径同步更新。不存在旧 tmp 文件或失效引用，温度功能/接口不改，保留两份源码既有的 temp_init 差异。移动前备份位于 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\build\workspace_backups\temperature_rename_before_20261013`（8 个原文件逐一校验），可恢复原命名及内容。
+
+9 项自检查、Vitis 2026.1 IDE 后端 SDIO 构建及隔离 USB 构建均通过。构建源仅包含一次 system_ctrl/temp.c，去除了 Vitis 自动加入的重复条目。温度读取实现仅修改头文件名；头文件仅修改保护宏，未统一或覆盖用户的源码编辑。USB/SDIO 的 text/data/bss 分别保持 150231/140588/160400 B 与 155063/140588/948816 B。
+
+本次构建日志为 build/reports/vitis_temp_rename_sdio_20261013.log、vitis_temp_rename_usb_20261013.log。不烧录硬件、不更新 BOOT.BIN。工作区用户其他 main.c 编辑和历史 ESP32 文档/日志删除不混入提交。

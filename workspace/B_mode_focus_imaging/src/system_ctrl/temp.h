@@ -1,5 +1,5 @@
-#ifndef __TMP_H
-#define __TMP_H
+#ifndef __TEMP_H
+#define __TEMP_H
 
 #include "../main.h"
 #include "../iic/iic.h"
