@@ -23,6 +23,15 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'TCP socket adapter self-check failed' }
     & (Join-Path (Split-Path $Compiler -Parent) 'gcov.exe') -b -c tcp_socket_tuning.gcno
     if ($LASTEXITCODE -ne 0) { throw 'TCP socket adapter coverage failed' }
+    foreach ($queueLimit in @(128,160)) {
+        & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic "-DTCP_SND_QUEUELEN=$queueLimit" `
+            '-I' (Join-Path $projectRoot 'main') '-I' (Join-Path $PSScriptRoot 'socket_stubs') `
+            (Join-Path $PSScriptRoot 'test_tcp_socket_tuning.c') (Join-Path $projectRoot 'main/tcp_socket_tuning.c') `
+            -o "test_socket_$queueLimit.exe"
+        if ($LASTEXITCODE -ne 0) { throw 'Large TCP queue compilation failed' }
+        & "./test_socket_$queueLimit.exe"
+        if ($LASTEXITCODE -ne 0) { throw 'Large TCP queue self-check failed' }
+    }
 } finally { Pop-Location }
 $executable = Join-Path $testOutput 'test_core.exe'
 Push-Location $testOutput

@@ -30,7 +30,7 @@ Set-Location 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61'
 
 `throughput` 按用户速度优先选择，默认使用 TCP 高档：独立 `build-throughput-fast-socket/` 目录及 sdkconfig，仅上传 socket 发送缓冲 23040 B，其他 TCP/网页默认 5760 B，staging 5760 B，保留原 RX 窗口。合并基础、Wi-Fi 性能和 TCP 分档 defaults，不覆盖原有 `sdkconfig`、`build/` 或旧性能构建目录。TX BA 窗口仍为 32，保留 lwIP IRAM 优化、看门狗和 PHY 设置。配置生成后保留，可用相同参数的 `-Action menuconfig` 调整。
 
-指定 `-TcpTuning baseline/mid/fast/faster` 选择 5760/11520/23040/28800 B 上传专用 TCP 发送缓冲，各自独立 `*-socket` 目录。28800 B 是实验档，不默认启用；最终板测堆低水位约 10.2 KiB，出现既有上游停帧，尚不能确认持续提速。高档默认优先速度，中档作为内存余量更大的回退选项；短测不代表长期稳定。原始 UDP 与 SDIO TCP/UDP 宏选择保持不变。当前实现及结果见 [上传连接专用缓冲](TCP_SOCKET_TUNING.md)，此前全局缓冲分级数据见 [历史 TCP 优化板测](TCP_OPTIMIZATION.md)。
+指定 `-TcpTuning baseline/mid/fast/faster/large/xlarge` 选择 5760/11520/23040/28800/46080/57600 B 上传专用 TCP 发送缓冲，各自独立 `*-socket` 目录。默认仍为 fast（23040 B）；large/xlarge 为显式实验档，保持 16384 B 内部堆发送背压、5760 B staging 和普通 TCP 默认容量。大缓冲对比见 [大容量 TCP 实验](TCP_LARGE_BUFFER_TEST.md)。28800 B 的历史板测发生既有上游停帧，不应作为持续提速证据。短测不代表长期稳定。原始 UDP 与 SDIO TCP/UDP 宏选择保持不变。历史实现及结果见 [上传连接专用缓冲](TCP_SOCKET_TUNING.md)和[历史 TCP 优化板测](TCP_OPTIMIZATION.md)。
 
 ```powershell
 # 如需更大内部 heap 余量，显式回退中档

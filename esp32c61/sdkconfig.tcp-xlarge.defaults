@@ -1,0 +1,4 @@
+# Experimental upload-only capacity: 40 MSS, 2.5 times fast. Not the default.
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=5760
+CONFIG_PSRAM_TCP_SEND_BYTES=57600
+CONFIG_PSRAM_TCP_STAGE_BYTES=5760

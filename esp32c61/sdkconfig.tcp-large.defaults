@@ -1,0 +1,4 @@
+# Experimental upload-only capacity: 32 MSS, twice fast. Keep heap guard enabled.
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=5760
+CONFIG_PSRAM_TCP_SEND_BYTES=46080
+CONFIG_PSRAM_TCP_STAGE_BYTES=5760

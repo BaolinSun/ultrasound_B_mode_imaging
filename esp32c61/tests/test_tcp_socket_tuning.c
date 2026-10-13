@@ -41,13 +41,20 @@ int main(void) {
     reset();upload.unacked=&conn;assert(tcp_upload_set_send_buffer(3,28800,&actual)==EBUSY);
     reset();upload.snd_queuelen=1;assert(tcp_upload_set_send_buffer(3,28800,&actual)==EBUSY);
     reset();upload.snd_buf--;assert(tcp_upload_set_send_buffer(3,28800,&actual)==EBUSY);
-    reset();assert(tcp_upload_set_send_buffer(3,34560,&actual)==EINVAL); /* Queue too small. */
+    /* Every queue grade must reject a capacity that exceeds its own ceiling. */
+    reset();assert(tcp_upload_set_send_buffer(3,(TCP_SND_QUEUELEN/4U+1U)*TCP_MSS,&actual)==EINVAL);
     assert(upload.snd_buf==TCP_SND_BUF && actual==0);
     reset();fail_call=true;assert(tcp_upload_set_send_buffer(3,28800,&actual)==EIO);
     assert(upload.snd_buf==TCP_SND_BUF && actual==0);
-    const unsigned sizes[]={5760,11520,23040,28800};
+    const unsigned sizes[]={5760,11520,23040,28800,46080,57600};
     for(unsigned i=0;i<sizeof(sizes)/sizeof(sizes[0]);i++) {
-        reset();assert(tcp_upload_set_send_buffer(3,sizes[i],&actual)==0);
+        reset();
+        if (TCP_SND_QUEUELEN < (4U*sizes[i]+TCP_MSS-1U)/TCP_MSS) {
+            assert(tcp_upload_set_send_buffer(3,sizes[i],&actual)==EINVAL);
+            assert(actual==0 && upload.snd_buf==TCP_SND_BUF && http.snd_buf==TCP_SND_BUF);
+            continue;
+        }
+        assert(tcp_upload_set_send_buffer(3,sizes[i],&actual)==0);
         assert(actual==sizes[i] && upload.snd_buf==sizes[i]);
         assert(upload.ssthresh==sizes[i]);
         assert(http.snd_buf==5760 && http.ssthresh==5760); /* No other PCB mutation. */

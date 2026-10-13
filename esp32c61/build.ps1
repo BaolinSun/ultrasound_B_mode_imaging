@@ -6,7 +6,7 @@ param(
     [string]$Profile = 'default',
     [ValidateSet('auto', 'tcp', 'udp')]
     [string]$Transport = 'auto',
-    [ValidateSet('auto', 'baseline', 'mid', 'fast', 'faster')]
+    [ValidateSet('auto', 'baseline', 'mid', 'fast', 'faster', 'large', 'xlarge')]
     [string]$TcpTuning = 'auto',
     [string]$IdfPath = 'D:\Program Files\esp\v6.1\esp-idf',
     [string]$ActivationScript = 'C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1'
