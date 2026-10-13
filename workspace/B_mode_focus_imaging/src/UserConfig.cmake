@@ -37,7 +37,6 @@ set(USER_INCLUDE_DIRECTORIES
 "iic"
 "pus_operation"
 "system_ctrl"
-"tmp"
 "uart"
 "usb"
 )
@@ -65,7 +64,7 @@ set(USER_COMPILE_SOURCES
 "iic/iic.c"
 "main.c"
 "system_ctrl/system_ctrl.c"
-"tmp/tmp.c"
+"system_ctrl/tmp.c"
 "uart/uart.c"
 "usb/usb.c"
 "usb/xusbps_COMMS.c"

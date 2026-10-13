@@ -24,7 +24,7 @@
 //#include "ps_2_pl_ctrl.h"
 #include "usb/usb.h"
 #include "xiltimer.h"
-#include "tmp/tmp.h"
+#include "system_ctrl/tmp.h"
 #include "pus_operation/pus_oper.h"
 #include "bram/bram.h"
 #include "data_transfer/sdio_bridge.h"

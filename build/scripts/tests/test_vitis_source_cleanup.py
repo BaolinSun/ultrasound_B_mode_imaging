@@ -49,7 +49,7 @@ class CleanupTests(unittest.TestCase):
                 self.assertFalse((root / relative).exists(), str(root / relative))
 
     def test_temperature_preserved_and_core_sources_synced(self):
-        for relative in ("tmp/tmp.c", "tmp/tmp.h", "main.c", "usb/usb.c",
+        for relative in ("system_ctrl/tmp.h", "usb/usb.c",
                          "pus_operation/pus_oper.c", "data_transfer/sdio_bridge.c",
                          "data_transfer/output_config.h", "outbyte.c"):
             a = (CANONICAL / relative).read_bytes().replace(b"\r\n", b"\n")
@@ -57,9 +57,13 @@ class CleanupTests(unittest.TestCase):
             self.assertEqual(a, b, relative)
         # Keep temperature APIs, without freezing future legitimate driver edits
         # to the cleanup-day hashes (the delivery report records those hashes).
-        temperature = (APP / "tmp/tmp.c").read_text(encoding="utf-8")
-        self.assertRegex(temperature, r"\bu32\s+temp_init\s*\(")
-        self.assertRegex(temperature, r"\bfloat\s+read_temp\s*\(")
+        # The workspace user removed empty temp_init before relocation and
+        # cleaned main.c during the task. Preserve those divergences rather
+        # than overwriting user edits to force identical file contents.
+        for root in (CANONICAL, APP):
+            temperature = (root / "system_ctrl/tmp.c").read_text(encoding="utf-8")
+            self.assertRegex(temperature, r"\bfloat\s+read_temp\s*\(")
+            self.assertIn("IIC_polled_read", temperature)
 
     def test_no_deleted_includes_or_empty_receive_call(self):
         deleted_headers = {Path(path).name for path in REMOVED if path.endswith(".h")}
@@ -80,8 +84,9 @@ class CleanupTests(unittest.TestCase):
         expected = {p.relative_to(APP).as_posix() for p in APP.rglob("*.c")}
         self.assertEqual(set(sources), expected)
         self.assertEqual(len(sources), len(set(sources)))
-        self.assertIn("tmp/tmp.c", sources)
-        self.assertIn("tmp", cmake_list(text, "USER_INCLUDE_DIRECTORIES"))
+        self.assertIn("system_ctrl/tmp.c", sources)
+        self.assertIn("system_ctrl", cmake_list(text, "USER_INCLUDE_DIRECTORIES"))
+        self.assertNotIn("tmp", cmake_list(text, "USER_INCLUDE_DIRECTORIES"))
         self.assertIn("-Wl,--wrap=outbyte", text)
 
     def test_regenerator_ignores_deleted_empty_dirs_and_editor_cache(self):
@@ -89,12 +94,12 @@ class CleanupTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="vitis_cleanup_test_") as tmp:
             root = Path(tmp)
             (root / "UserConfig.cmake").write_text((APP / "UserConfig.cmake").read_text(encoding="utf-8"), encoding="utf-8")
-            for relative in ("main.c", "outbyte.c", "tmp/tmp.c", "tmp/tmp.h",
+            for relative in ("main.c", "outbyte.c", "system_ctrl/tmp.c", "system_ctrl/tmp.h",
                              "data_transfer/sdio_bridge.c", "data_transfer/output_config.h"):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("/* fixture */\n")
-            for directory in ("TX7332", "linux_wifi", "key", "eeprom", "timer", "data_process", "CLOCK", ".cache"):
+            for directory in ("TX7332", "linux_wifi", "key", "eeprom", "timer", "data_process", "CLOCK", "tmp", ".cache"):
                 (root / directory).mkdir()
             (root / ".cache/not_a_source.c").write_text("/* never imported */\n")
             configure(str(root))
@@ -102,10 +107,19 @@ class CleanupTests(unittest.TestCase):
             configure(str(root))
             self.assertEqual(once, (root / "UserConfig.cmake").read_text(encoding="utf-8"))
             self.assertEqual(cmake_list(once, "USER_COMPILE_SOURCES"),
-                             ["data_transfer/sdio_bridge.c", "main.c", "outbyte.c", "tmp/tmp.c"])
-            self.assertEqual(cmake_list(once, "USER_INCLUDE_DIRECTORIES"), [".", "data_transfer", "tmp"])
+                             ["data_transfer/sdio_bridge.c", "main.c", "outbyte.c", "system_ctrl/tmp.c"])
+            self.assertEqual(cmake_list(once, "USER_INCLUDE_DIRECTORIES"), [".", "data_transfer", "system_ctrl"])
             self.assertIn("SDIO_RUN_CLOCK_HZ=25000000u", once)
             self.assertIn("-Wl,--wrap=outbyte", once)
+
+    def test_temperature_relocated_without_old_directory(self):
+        for root in (CANONICAL, APP):
+            self.assertFalse((root / "tmp").exists())
+            for name in ("tmp.c", "tmp.h"):
+                self.assertTrue((root / "system_ctrl" / name).is_file())
+            main = (root / "main.c").read_text(encoding="utf-8")
+            self.assertIn('#include "system_ctrl/tmp.h"', main)
+            self.assertNotIn("tmp/tmp.h", main)
 
     def test_hardware_clock_does_not_depend_on_removed_chip_setup(self):
         for root in (CANONICAL, APP):
