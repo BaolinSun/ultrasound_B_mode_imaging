@@ -19,6 +19,7 @@ REMOVED = (
     "key/key.c", "key/key.h", "timer/timer.c", "timer/timer.h",
     "data_transfer/data_recv.c", "data_transfer/data_recv.h",
     "CLOCK/AD9512.c", "CLOCK/AD9512.h", "CLOCK/system_clk.c", "CLOCK/system_clk.h",
+    "pus_operation/pus_oper.c", "pus_operation/pus_oper.h",
 )
 
 
@@ -43,14 +44,14 @@ def source_configurator():
 
 class CleanupTests(unittest.TestCase):
     def test_approved_files_removed_from_both_trees(self):
-        self.assertEqual(len(REMOVED), 22)
+        self.assertEqual(len(REMOVED), 24)
         for root in (CANONICAL, APP):
             for relative in REMOVED:
                 self.assertFalse((root / relative).exists(), str(root / relative))
 
     def test_temperature_preserved_and_core_sources_synced(self):
         for relative in ("system_ctrl/tmp.h", "usb/usb.c",
-                         "pus_operation/pus_oper.c", "data_transfer/sdio_bridge.c",
+                         "data_transfer/sdio_bridge.c",
                          "data_transfer/output_config.h", "outbyte.c"):
             a = (CANONICAL / relative).read_bytes().replace(b"\r\n", b"\n")
             b = (APP / relative).read_bytes().replace(b"\r\n", b"\n")
@@ -99,7 +100,7 @@ class CleanupTests(unittest.TestCase):
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text("/* fixture */\n")
-            for directory in ("TX7332", "linux_wifi", "key", "eeprom", "timer", "data_process", "CLOCK", "tmp", ".cache"):
+            for directory in ("TX7332", "linux_wifi", "key", "eeprom", "timer", "data_process", "CLOCK", "tmp", "pus_operation", ".cache"):
                 (root / directory).mkdir()
             (root / ".cache/not_a_source.c").write_text("/* never imported */\n")
             configure(str(root))
@@ -120,6 +121,25 @@ class CleanupTests(unittest.TestCase):
             main = (root / "main.c").read_text(encoding="utf-8")
             self.assertIn('#include "system_ctrl/tmp.h"', main)
             self.assertNotIn("tmp/tmp.h", main)
+
+    def test_afe_initialized_directly_once_in_original_order_with_settling(self):
+        for root in (CANONICAL, APP):
+            self.assertFalse((root / "pus_operation").exists())
+            main = (root / "main.c").read_text(encoding="utf-8")
+            main = re.sub(r"/\*.*?\*/|//[^\n]*", "", main, flags=re.S)
+            self.assertEqual(len(re.findall(r"\bAFE5832_init\s*\(\s*\)", main)), 1)
+            self.assertRegex(main, r"\bAFE5832_init\(\);\s*sleep\(2\);\s*led_init\(\);")
+            self.assertNotRegex(main, r"\b(pus_init|pus_chip_init)\s*\(")
+            self.assertIn('#include "AFE5832/afe5832.h"', main)
+            for before, after in (("gpio_init();", "AFE5832_init();"),
+                                  ("IIC_Init();", "AFE5832_init();"),
+                                  ("hv_init();", "AFE5832_init();"),
+                                  ("AFE5832_init();", "para_down();"),
+                                  ("para_down();", "usb_init();"),
+                                  ("usb_init();", "sdio_bridge_init();")):
+                self.assertLess(main.index(before), main.index(after))
+        text = (APP / "UserConfig.cmake").read_text(encoding="utf-8")
+        self.assertNotIn("pus_operation", cmake_list(text, "USER_INCLUDE_DIRECTORIES"))
 
     def test_hardware_clock_does_not_depend_on_removed_chip_setup(self):
         for root in (CANONICAL, APP):

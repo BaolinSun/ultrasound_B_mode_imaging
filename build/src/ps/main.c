@@ -25,7 +25,6 @@
 #include "usb/usb.h"
 #include "xiltimer.h"
 #include "system_ctrl/tmp.h"
-#include "pus_operation/pus_oper.h"
 #include "bram/bram.h"
 #include "data_transfer/sdio_bridge.h"
 #include "uart/uart_log.h"
@@ -54,8 +53,9 @@ int main() {
 	/* Board clocks are hardware-generated; no software clock-chip setup. */
 	sleep(1);
 //	Pl_Reset();
-	pus_init();		// ����ϵͳ��ʼ��
-	sleep(1);
+	AFE5832_init();
+	/* Keep the former wrapper's 1 s + main's 1 s settling delay. */
+	sleep(2);
 	led_init();	// OK
 
 	sleep(0.2);

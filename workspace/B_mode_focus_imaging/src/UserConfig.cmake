@@ -35,7 +35,6 @@ set(USER_INCLUDE_DIRECTORIES
 "bram"
 "data_transfer"
 "iic"
-"pus_operation"
 "system_ctrl"
 "uart"
 "usb"
@@ -46,7 +45,6 @@ set(USER_INCLUDE_DIRECTORIES
 #Example 2: Adding ../../common/helloworld.c will consider the path as relative to this component directory
 #Example 3: Adding ${MY_ENV}/data/helloworld.c are expanded using project-specific environment settings.
 set(USER_COMPILE_SOURCES
-"pus_operation/pus_oper.c"
 "outbyte.c"
 "uart/uart_log.c"
 "data_transfer/sdio_host.c"
