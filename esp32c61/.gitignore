@@ -11,3 +11,41 @@ __pycache__/
 /tcp_capture/
 /sdio_capture/
 /captures/
+
+# Runtime reports/logs are local artifacts, not project inputs.
+/logs/
+*.json
+*.jsonl
+*.log
+# Keep the existing reproducible IDE configuration in source control.
+!/.vscode/settings.json
+
+# Python environments, caches and test/coverage output.
+*.py[cod]
+.venv/
+venv/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Compiler output and editor/interrupted-run temporary files.
+*.o
+*.obj
+*.d
+*.elf
+*.map
+*.exe
+*.gcda
+*.gcno
+*.gcov
+*.stackdump
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+*~
