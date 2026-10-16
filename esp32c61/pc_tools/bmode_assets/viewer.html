@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>超声 B-mode · Wi-Fi 实时显示</title>
+<style>
+:root{color-scheme:light;font:16px/1.6 system-ui,sans-serif;color:#172b42;background:#eef2f6}*{box-sizing:border-box}
+body{margin:0}main{max-width:1160px;margin:24px auto;padding:0 20px}h1{font-size:27px;margin:0}h2{font-size:18px;margin:0 0 12px}
+.muted{color:#53657a}.top{display:flex;justify-content:space-between;align-items:center;gap:12px}.badge{background:#dceee9;color:#17634f;padding:5px 12px;border-radius:20px}
+.card{background:white;border:1px solid #d6dee7;border-radius:12px;padding:20px;margin:18px 0}.notice{padding:10px 14px;border-left:4px solid #b88b39;background:#fff4dc}
+.controls{display:flex;gap:10px;flex-wrap:wrap}button{font:inherit;font-weight:600;border:0;border-radius:8px;background:#126f78;color:white;padding:9px 18px;cursor:pointer}
+button.secondary{color:#263e56;background:#e4eaf1}button:disabled{opacity:.45;cursor:not-allowed}button:focus{outline:3px solid #77c3cd}
+.image-row{display:flex;gap:8px;background:#080d14;padding:18px 10px 8px;border-radius:8px;color:#b7c7d9}.viewport{position:relative;aspect-ratio:883/624;flex:1;min-width:0;overflow:hidden}
+#image{width:100%;height:100%;object-fit:contain;display:block}#image[hidden]{display:none}#empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:#94a8ba;padding:12px}
+#empty[hidden]{display:none}.axis{position:relative;width:52px;font-size:12px;margin-bottom:0}.axis span{position:absolute;right:0;transform:translateY(-50%)}
+.legend{display:flex;justify-content:space-between;padding:4px 60px 0 10px;font-size:12px;color:#53657a}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.value{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}.error{color:#a92727;white-space:pre-wrap;overflow-wrap:anywhere}#image.stale{opacity:.55}
+@media(max-width:720px){main{padding:0 12px}.top{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:repeat(2,1fr)}.card{padding:14px}.axis{width:38px}}
+</style><script src="/viewer.js" defer></script></head>
+<body><main>
+<header class="top"><div><p class="muted" style="margin:0">Wi-Fi / SDIO · B-mode</p><h1>超声图像实时显示</h1></div><span id="state" class="badge">等待服务</span></header>
+<p class="notice">按行滚动显示，当前 DDR 无完整帧冻结保证。网络 CRC 正确不等于图像来自同一次采集。</p>
+<section class="card"><div class="controls"><button id="start">开始接收</button><button id="stop" class="secondary" disabled>停止接收</button><button id="freeze" class="secondary">冻结画面</button></div>
+<p id="connection" class="muted">读取连接信息…</p><p class="muted">开始接收只启动连续 SDIO 上传，不会启动扫描或开启高压。成像需通过现有入口启动；停止接收也不负责关闭扫描或高压。</p><p id="error" class="error" role="alert"></p></section>
+<section class="card"><h2>B-mode · ±45° / 120 mm</h2><div class="image-row"><div class="viewport"><img id="image" alt="实时超声扇形图像" hidden><div id="empty">等待完整的 64 条合法图像线</div></div><div class="axis"><span style="top:0">0 mm</span><span style="top:25%">30</span><span style="top:50%">60</span><span style="top:75%">90</span><span style="top:100%">120</span></div></div>
+<div class="legend"><span>−84.9 mm</span><span>0</span><span>+84.9 mm</span></div><p id="image-note" class="muted" role="status">尚无有效图像</p>
+<small class="muted">固定：25 MHz · 6144 点 × 64 线 · Q2.14 · 双线性扫描转换 · TGC 开启 · DR 45 dB · 亮度 +3 dB · 参考灰度 LUT</small></section>
+<section class="card"><h2>接收与显示状态</h2><div class="stats">
+<div><span class="muted">接收帧率</span><div id="receive-fps" class="value">0.00 FPS</div></div><div><span class="muted">图像发布帧率</span><div id="display-fps" class="value">0.00 FPS</div></div>
+<div><span class="muted">有效吞吐</span><div id="throughput" class="value">0.00 Mbit/s</div></div><div><span class="muted">有效行覆盖</span><div id="coverage" class="value">0 / 64</div></div>
+</div><p id="counters" class="muted">尚未接收</p><p class="muted">图像最多发布 10 FPS；冻结只影响本页面。显示落后时丢弃旧待处理载荷，不阻塞 TCP 回执。默认不保存原始数据或图片。</p></section>
+</main></body></html>

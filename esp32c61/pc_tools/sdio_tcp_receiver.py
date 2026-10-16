@@ -51,8 +51,11 @@ def read_exact(sock, length, deadline, stop):
     return data
 
 class TCPReceiver:
-    def __init__(self, args, writer):
+    def __init__(self, args, writer, on_frame=None, stop_on_error=False):
         self.args, self.writer = args, writer
+        # Optional live consumer: called AFTER the successful CRC ACK. It must
+        # only enqueue bounded work, never render, write a file or block.
+        self.on_frame, self.stop_on_error = on_frame, stop_on_error
         self.stop = threading.Event()
         self.quiescing = threading.Event()  # Expect device cancellation; keep socket open until STOP.
         self.expected = test_pattern(args.length) if args.test_pattern else None
@@ -70,6 +73,12 @@ class TCPReceiver:
     def emit(self, event, complete=None):
         event['run_id'] = self.run_id
         self.writer.submit(event, complete)
+
+    def fail_live(self, reason):
+        if self.stop_on_error and not self.quiescing.is_set() and not self.stop.is_set():
+            self.error = reason
+            self.reason = reason
+            self.stop.set()
 
     def serve(self, listener):
         last_activity = time.monotonic()
@@ -101,6 +110,7 @@ class TCPReceiver:
                         except ValueError as exc:
                             self.invalid_headers += 1
                             self.emit({'event': 'protocol_error', 'error': str(exc)})
+                            self.fail_live(str(exc))
                             break  # No scanning payload bytes for another magic.
                         except ReadFailure as exc:
                             if meta or exc.received:
@@ -112,6 +122,7 @@ class TCPReceiver:
                                            'reason': 'planned device stop: '+exc.reason if self.quiescing.is_set() else exc.reason,
                                            'received_bytes': exc.received, 'expected_bytes': meta[2] if meta else HEADER.size})
                             if self.stop.is_set(): self.reason = 'receiver stopped'
+                            self.fail_live(exc.reason)
                             break
                         last_activity = time.monotonic()
                         self.received_bytes += length
@@ -138,8 +149,13 @@ class TCPReceiver:
                         except OSError as exc:
                             if not self.quiescing.is_set(): self.ack_errors += 1
                             self.emit({'event': 'ack_error', 'session': session, 'frame': frame, 'error': str(exc)})
+                            self.fail_live('ACK send failed: '+str(exc))
                             break
-                        if status: break
+                        if status:
+                            self.fail_live('frame validation failed')
+                            break
+                        if self.on_frame is not None:
+                            self.on_frame(session, frame, data)
                         if self.args.frames and self.valid_frames >= self.args.frames:
                             return
                 if self.stop.is_set(): break

@@ -268,3 +268,5 @@ if(Test-Path (Join-Path $cjson 'cJSON.c')) {
 if ($LASTEXITCODE -ne 0) { throw 'Python tests failed' }
 & $Node --test (Join-Path $PSScriptRoot 'test_web.mjs')
 if ($LASTEXITCODE -ne 0) { throw 'Web interaction tests failed' }
+& $Node --test (Join-Path $PSScriptRoot 'test_bmode_web.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'B-mode viewer interaction tests failed' }

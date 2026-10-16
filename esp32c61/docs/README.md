@@ -5,6 +5,7 @@
 工程说明统一放在 `esp32c61/docs/`。除非另有说明，本文及同目录文档中的 PC 接收、ESP32 构建命令仍在 `esp32c61` 目录执行，不是在 `docs` 目录执行；明确要求在成像工程根目录执行的命令保持原要求。代码、脚本、固件和图像文件均未移动。
 
 - [build.ps1 命令使用说明](BUILD_COMMANDS.md)
+- [Wi-Fi 超声图像实时网页显示](WIFI_IMAGE_VIEWER.md)
 - [Wi-Fi 下发全部 Zynq 命令](WIFI_COMMANDS.md)
 - [扫描 run 状态读回修复与板测](SCAN_RUN_STATUS_FIX.md)
 - [运行日志与报告目录](LOGS.md)
