@@ -9,6 +9,12 @@ python .\pc_tools\bmode_web_viewer.py --device-ip 192.168.3.27
 ```
 
 打开 **http://127.0.0.1:8080/**，点击“开始接收”。运行程序或打开页面本身不会上传。
+
+也可在同一台 PC 打开 **http://192.168.3.27/**，点击页面顶部“实时超声图像”卡片的“打开实时图像显示”，会在新标签页打开上述 PC 图像页，原 ESP32 配置页保留。先运行 Python，再点击入口；随后在图像页点击“开始接收”，不需另按 ESP32 页的 SDIO 单帧或连续测试。
+
+该入口仅提供跳转，不把图像服务移到 ESP32，也不自动运行 PC 程序、开启高压或启动扫描。`127.0.0.1` 是浏览器所在电脑，不能用手机或其他电脑通过此入口查看接收电脑。自定义 `--http-port` 时直接使用 Python 打印的地址。
+
+新增入口需要编译并更新 ESP32 固件；Zynq、bit、XSA、BOOT.BIN 及图像协议无需改变。仅重启 PC Python 不会更新 ESP32 的内嵌网页。
 网页由 PC 提供，不是 ESP32 的 `192.168.3.27` 配置页，默认仅本机浏览器可访问。
 电池供电时正常使用，不需要 USB、monitor 或控制口令。
 
@@ -19,7 +25,7 @@ python -m pip install -r .\pc_tools\requirements-viewer.txt
 ```
 
 仅依赖 NumPy、Pillow 和 Python 标准库；不需要 Qt、OpenCV、USB 驱动或参考工程。
-无需重新构建或烧录 Zynq/ESP32 固件，不生成新 bit、XSA 或 BOOT.BIN。
+PC 显示服务本身不要求修改固件；若要使用新增的 ESP32 页面入口，需要更新 ESP32 固件。不需要更新 Zynq，也不生成新 bit、XSA 或 BOOT.BIN。
 
 ## 操作流程
 

@@ -71,6 +71,22 @@ function setup() {
 }
 const submit = env => env.elements['config-form'].listeners.submit({preventDefault(){}});
 
+test('ESP page links to the local viewer without starting receive, scan or HV',async()=>{
+  const link=html.match(/<a\b[^>]*\bid="image-viewer-link"[^>]*>/)?.[0];
+  assert.ok(link);
+  assert.match(link,/href="http:\/\/127\.0\.0\.1:8080\/"/);
+  assert.match(link,/target="_blank"/);
+  assert.match(link,/rel="noopener noreferrer"/);
+  assert.doesNotMatch(link,/onclick|disabled/);
+  assert.ok(html.indexOf('id="viewer-title"')<html.indexOf('连接与目标地址'));
+  assert.match(html,/同一台电脑/);
+  assert.match(html,/bmode_web_viewer\.py --device-ip 192\.168\.3\.27/);
+  const e=setup();await e.settle();
+  assert.ok(e.backend.calls.every(call=>!call.options.method||call.options.method==='GET'));
+  assert.equal(e.elements['image-viewer-link'].listeners.click,undefined);
+  assert.equal(e.elements['image-viewer-link'].disabled,false);
+});
+
 test('temperature card is independent of upload and shows errors, zero, negative, stale and disconnect',async()=>{
   const e=setup();await e.settle();
   assert.match(e.elements['temp-zynq'].textContent,/等待/);

@@ -7,7 +7,8 @@ main{max-width:840px;margin:36px auto;padding:0 18px}h1{font-size:28px;margin-bo
 .muted{color:#53657a}.card{background:white;border:1px solid #d6dee7;border-radius:14px;padding:24px;margin:20px 0}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}label{display:block;font-weight:600}input:not([type=checkbox]){width:100%;font:inherit;border:1px solid #aab7c6;border-radius:7px;padding:9px;margin:6px 0}
 small{display:block;font-weight:400;color:#53657a}button{font:inherit;font-weight:600;border:0;border-radius:8px;padding:10px 18px;background:#126f78;color:white;cursor:pointer;margin:16px 10px 0 0}
-button.secondary{background:#e4eaf1;color:#263e56}button:disabled{opacity:.5;cursor:not-allowed}input:focus,button:focus{outline:3px solid #77c3cd}
+button.secondary{background:#e4eaf1;color:#263e56}button:disabled{opacity:.5;cursor:not-allowed}input:focus,button:focus,a.viewer-link:focus{outline:3px solid #77c3cd}
+.viewer-link{display:inline-block;font-weight:600;border-radius:8px;padding:10px 18px;background:#126f78;color:white;text-decoration:none;margin:12px 0}
 dl{display:grid;grid-template-columns:130px 1fr;gap:8px;margin:0}dt{color:#53657a}dd{margin:0;overflow-wrap:anywhere}
 progress{width:100%;height:18px;margin-top:18px}.notice{padding:12px 16px;border-left:4px solid #126f78;background:#e0f2f1;white-space:pre-wrap}.error{border-color:#bc3939;background:#ffeceb}
 a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template-columns:1fr}.card{padding:18px}dl{grid-template-columns:100px 1fr}}
@@ -15,6 +16,13 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <p class="muted">ESP32-C61 / B-mode imaging</p><h1>PSRAM 数据上传</h1>
 <p class="muted">配置 Wi-Fi 与上位机地址。PSRAM 自测使用原始 UDP；SDIO 帧使用编译选择的 TCP/UDP。</p>
 <div id="message" class="notice" role="status" aria-live="polite">正在读取设备配置…</div>
+<section class="card" aria-labelledby="viewer-title"><h2 id="viewer-title">实时超声图像</h2>
+<p class="muted">先在接收电脑启动图像服务，再从同一台电脑打开本页并点击下方入口。图像在新标签页显示，当前配置页保留。</p>
+<code style="display:block;overflow-wrap:anywhere">python .\pc_tools\bmode_web_viewer.py --device-ip 192.168.3.27</code>
+<a id="image-viewer-link" class="viewer-link" href="http://127.0.0.1:8080/" target="_blank" rel="noopener noreferrer">打开实时图像显示 ↗</a>
+<small>在 esp32c61 目录运行上述命令。打开图像页后点击“开始接收”；无需再点击本页的 SDIO 单帧或连续测试。此入口不会开启高压或启动扫描。</small>
+<small>127.0.0.1 指浏览器所在电脑；手机或其他电脑不能通过此入口访问接收电脑。使用自定义 HTTP 端口时，请直接打开 Python 提示的地址。无法打开通常表示本机图像服务尚未启动。</small>
+</section>
 <section class="card"><h2>连接与目标地址</h2><form id="config-form">
 <div class="grid"><label>路由器 SSID<input id="ssid" maxlength="32" autocomplete="off"><small>为空时保留配置热点；长度按 UTF-8 字节计算。</small></label>
 <label>Wi-Fi 密码<input id="password" type="password" maxlength="64" autocomplete="new-password"><small>留空保留已有密码；开放网络请勾选下方选项。</small></label>
