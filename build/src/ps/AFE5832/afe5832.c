@@ -39,7 +39,8 @@ u32 AFE5832_WriteRegMap(u32 map, u32 addr, u32 data)
 
 	status = afe5832_spi_write_byte(addr, data);
 	if (map == AFE5832_REG_MAP_DTGC) {
-		AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
+		u32 restore=AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
+		if(status==XST_SUCCESS) status=restore;
 	}
 	return status;
 }
@@ -51,11 +52,10 @@ u32 AFE5832_ReadRegMap(u32 map, u32 addr, u32 *data)
 	}
 
 	/* Register 0 controls both DTGC map selection and readback enable. */
-	afe5832_spi_write_byte(REGISTER_0H,
-			AFE5832_MapReg0Value(map) | REG_READ_EN_BIT_MASK);
-	afe5832_spi_read_byte(addr, data);
-	AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
-	return XST_SUCCESS;
+	u32 status=afe5832_spi_write_byte(REGISTER_0H,AFE5832_MapReg0Value(map) | REG_READ_EN_BIT_MASK);
+	if(status==XST_SUCCESS) status=afe5832_spi_read_byte(addr,data);
+	u32 restore=AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
+	return status==XST_SUCCESS?restore:status;
 }
 void setup_cali_intr_system(void) {
 	/*

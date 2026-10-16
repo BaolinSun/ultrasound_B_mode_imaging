@@ -1,4 +1,14 @@
 #include "afe5832_spi.h"
+#include "xiltimer.h"
+static int afe_wait(u32 offset,u32 mask) {
+    XTime start,now; XTime_GetTime(&start);
+    unsigned polls=0;
+    while(!(AFE5832_CTRL_PS_mReadReg(BASE_ADDRESS,offset)&mask)) {
+        XTime_GetTime(&now);
+        if(now-start>COUNTS_PER_SECOND/50U || ++polls>=1000000U) return XST_FAILURE;
+    }
+    return XST_SUCCESS;
+}
 
 u32 afe5832_spi_write_byte(u32 addr, u32 data) {
 	u32 data_temp = 0;
@@ -12,14 +22,11 @@ u32 afe5832_spi_write_byte(u32 addr, u32 data) {
 	AFE5832_CTRL_PS_mWriteReg(BASE_ADDRESS,
 			AFE5832_CTRL_PS_S00_AXI_SLV_REG1_OFFSET, data_temp);
 	// 判断是否写完
-	while ((AFE5832_CTRL_PS_mReadReg(BASE_ADDRESS,
-			AFE5832_CTRL_PS_S00_AXI_SLV_REG1_OFFSET) & 0x00000800) == 0x00) {
-		;
-	}
-	return XST_SUCCESS;
+	return afe_wait(AFE5832_CTRL_PS_S00_AXI_SLV_REG1_OFFSET,0x00000800);
 }
 
 u32 afe5832_spi_read_byte(u32 addr, u32* data) {
+	if(!data) return XST_INVALID_PARAM;
 
 	u32 data_temp = 0;
 	u32 read_data = 0;
@@ -33,16 +40,11 @@ u32 afe5832_spi_read_byte(u32 addr, u32* data) {
 			AFE5832_CTRL_PS_S00_AXI_SLV_REG3_OFFSET, data_temp);
 
 	// 判断是否读完
-	while ((AFE5832_CTRL_PS_mReadReg(BASE_ADDRESS,
-			AFE5832_CTRL_PS_S00_AXI_SLV_REG3_OFFSET) & 0x00400000) == 0x00) {
-//		xil_printf("wait for read finish\r\n");
-		;
-	}
+	if(afe_wait(AFE5832_CTRL_PS_S00_AXI_SLV_REG3_OFFSET,0x00400000)!=XST_SUCCESS) return XST_FAILURE;
 	read_data = AFE5832_CTRL_PS_mReadReg(BASE_ADDRESS,
 			AFE5832_CTRL_PS_S00_AXI_SLV_REG4_OFFSET);
 
 	*data = read_data;
 	// 关闭允许写
-	afe5832_spi_write_byte(0x0000, 0x0000);
-	return read_data;
+	return afe5832_spi_write_byte(0x0000, 0x0000);
 }

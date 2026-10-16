@@ -24,3 +24,5 @@ void sdio_bridge_stop(void);
 void sdio_bridge_get_status(sdio_bridge_status_t *out);
 esp_err_t sdio_bridge_selftest(void);
 size_t sdio_bridge_selftest_size(void);
+void sdio_bridge_control_gate(bool blocked);
+bool sdio_bridge_control_drained(void);

@@ -8,6 +8,10 @@ typedef int esp_err_t;
 typedef void *QueueHandle_t;
 #define ESP_OK 0
 #define ESP_ERR_NO_MEM 1
+#define ESP_ERR_INVALID_ARG 2
+#define ESP_ERR_TIMEOUT 3
+#define ESP_ERR_NOT_SUPPORTED 4
+#define ESP_FAIL 5
 #ifndef CONFIG_ZYNQ_UART_BRIDGE_ENABLE
 #define CONFIG_ZYNQ_UART_BRIDGE_ENABLE 1
 #endif
@@ -34,6 +38,7 @@ esp_err_t uart_set_pin(int,int,int,int,int);
 esp_err_t uart_driver_delete(int);
 esp_err_t uart_flush_input(int);
 int uart_read_bytes(int,void*,size_t,unsigned);
+int uart_tx_chars(int,const char*,uint32_t);
 int xTaskCreate(void(*)(void*),const char*,unsigned,void*,unsigned,void*);
 int xQueueReceive(QueueHandle_t,uart_event_t*,unsigned);
 int xQueueReset(QueueHandle_t);

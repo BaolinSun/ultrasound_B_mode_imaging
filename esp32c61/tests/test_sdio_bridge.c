@@ -218,6 +218,17 @@ int main(int argc,char **argv) {
     regs[BR_CMD]=BR_BEGIN;regs[BR_CMD_SEQ]=br_next_seq(regs[BR_CMD_ACK]);step();assert(regs[BR_RESULT]==BR_REJECTED);
     /* Unsolicited DMA data without an accepted frame resets the session. */
     memcpy(desc[0].data,reference,512);desc[0].filled=true;step();step();assert(!status().running);
-    printf("PASS: real bridge task / 1538 blocks / ownership / backpressure / callbacks / CRC / stop / timeout / reset / disconnect\n");
+    /* Control drain must finish the accepted frame, not cancel its lease. */
+    select_host();assert(sdio_bridge_start(0)==ESP_OK);step();begin(50,checksum);
+    unsigned old_resets=resets;
+    sdio_bridge_control_gate(true);assert(!sdio_bridge_control_drained());
+    assert(sdio_bridge_start(1)==ESP_ERR_INVALID_STATE);
+    assert(sdio_bridge_selftest()!=ESP_OK);
+    frame(true,false);step();assert(!status().running&&udp_busy);
+    assert(!sdio_bridge_control_drained()&&resets==old_resets);
+    finish(RAW_OK);assert(sdio_bridge_control_drained()&&resets==old_resets);
+    sdio_bridge_control_gate(false);assert(sdio_bridge_start(1)==ESP_OK);
+    sdio_bridge_stop();step();
+    printf("PASS: real bridge task / 1538 blocks / ownership / control drain / callbacks / CRC / stop / timeout / reset / disconnect\n");
     return 0;
 }

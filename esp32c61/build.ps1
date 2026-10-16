@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('build', 'size', 'flash', 'monitor', 'menuconfig')]
+    [ValidateSet('activate', 'build', 'size', 'flash', 'monitor', 'menuconfig')]
     [string]$Action = 'build',
     [string]$Port = '',
     [ValidateSet('default', 'throughput')]
@@ -27,6 +27,21 @@ $idfTool = Join-Path $IdfPath 'tools\idf.py'
 $version = & $idfPython $idfTool --version
 if ($LASTEXITCODE -ne 0 -or "$version" -notmatch 'ESP-IDF v6\.1(?:\D|$)') {
     throw "ESP-IDF 6.1 is required. Detected: $version"
+}
+# Environment variables and this command remain in the current PowerShell after
+# the script returns. Resolve paths at invocation time, not from script locals
+# that disappear when invoked normally (without dot-sourcing).
+function global:Invoke-idfpy {
+    $commandPython = Join-Path $env:IDF_PYTHON_ENV_PATH 'Scripts\python.exe'
+    $commandTool = Join-Path $env:IDF_PATH 'tools\idf.py'
+    & $commandPython $commandTool @args
+}
+Set-Alias -Name idf.py -Value Invoke-idfpy -Scope Global -Force
+if ($Action -eq 'activate') {
+    Write-Host "ESP-IDF environment ready: $version"
+    Write-Host 'You can now run idf.py commands in this PowerShell terminal.'
+    Write-Host "Project directory: $PSScriptRoot"
+    return
 }
 if ($Action -in @('flash', 'monitor') -and -not $Port) { throw '-Port COMx is required.' }
 Push-Location $PSScriptRoot

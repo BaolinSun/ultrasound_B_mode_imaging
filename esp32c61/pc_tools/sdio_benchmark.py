@@ -9,6 +9,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from log_paths import LOG_HELP, resolve_log_path
 
 def upstream_idle(status):
     s=status.get('sdio',{})
@@ -43,11 +44,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--device-ip', required=True)
     parser.add_argument('--seconds', type=float, default=30)
-    parser.add_argument('--log', type=Path, required=True)
+    parser.add_argument('--log', type=Path, required=True, help=LOG_HELP)
     parser.add_argument('--port', type=int, default=50001)
     parser.add_argument('--stall-timeout',type=float,default=5,
                         help='Fail if stream stays armed with two free slots and idle sender for N seconds')
     args = parser.parse_args()
+    args.log = resolve_log_path(args.log)
     if not 1 <= args.seconds <= 3600 or not 1 <= args.port <= 65535 or not 1<=args.stall_timeout<=120:
         parser.error('invalid seconds or TCP/UDP port')
     base = 'http://' + args.device_ip

@@ -6,6 +6,8 @@
 #include "sdio_bridge.h"
 #include "temperature_cache.h"
 #include "temperature_protocol.h"
+#include "zynq_control.h"
+#include "zynq_control_http.h"
 #include "esp_timer.h"
 #include "wifi_manager.h"
 #include <stdlib.h>
@@ -120,6 +122,7 @@ static esp_err_t get_status(httpd_req_t *req)
     config_store_get(&config);
     cJSON *json = cJSON_CreateObject();
     if (json) {
+        zynq_control_status_json(json);
         temperature_status_t t;
         temperature_cache_get(&t,(uint64_t)esp_timer_get_time()/1000U);
         cJSON *temperatures=cJSON_AddObjectToObject(json,"temperatures");
@@ -280,7 +283,8 @@ esp_err_t web_server_start(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 6144;
-    config.max_uri_handlers = 8;
+    config.max_uri_handlers = 12;
+    config.uri_match_fn = httpd_uri_match_wildcard;
     config.lru_purge_enable = true;
     config.recv_wait_timeout = 5;
     config.send_wait_timeout = 5;
@@ -301,5 +305,7 @@ esp_err_t web_server_start(void)
         err = httpd_register_uri_handler(server, &routes[i]);
         if (err != ESP_OK) { httpd_stop(server); return err; }
     }
-    return ESP_OK;
+    err=zynq_control_http_register(server);
+    if(err!=ESP_OK) httpd_stop(server);
+    return err;
 }

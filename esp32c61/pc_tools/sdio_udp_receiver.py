@@ -14,6 +14,7 @@ import zlib
 import uuid
 import sys
 from pathlib import Path
+from log_paths import LOG_HELP, resolve_log_path
 
 HEADER = struct.Struct("!IBBHIIIIHHI")
 MAGIC, VERSION, PAYLOAD, MAX_BYTES = 0x55425344, 1, 1440, 1048576
@@ -194,13 +195,29 @@ class DatagramPump:
         self.thread.join(timeout=1)
 
 
+def write_hex_words(output, data, word_bytes=2):
+    """Lossless little-endian words, uppercase hex, one word per LF line."""
+    if word_bytes not in (1, 2, 4) or len(data) % word_bytes:
+        raise ValueError("payload length must be divisible by hex word size (1, 2 or 4 bytes)")
+    code = {1: "<B", 2: "<H", 4: "<I"}[word_bytes]
+    width = word_bytes * 2
+    view = memoryview(data)
+    # Keep formatting memory bounded and off the receive/ACK thread.
+    for offset in range(0, len(view), 4096 * word_bytes):
+        chunk = view[offset:offset + 4096 * word_bytes]
+        output.write("".join(f"{word[0]:0{width}X}\n" for word in struct.iter_unpack(code, chunk)))
+
+
 class EventWriter:
     """Bounded asynchronous output; only validated complete frames reach disk."""
-    def __init__(self, log_path=None, output_dir=None, capacity=64):
+    def __init__(self, log_path=None, output_dir=None, capacity=64, word_bytes=2):
         if capacity < 1:
             raise ValueError("output queue capacity must be positive")
+        if word_bytes not in (1, 2, 4):
+            raise ValueError("hex word size must be 1, 2 or 4 bytes")
+        self.word_bytes = word_bytes
         self.items = queue.Queue(capacity)
-        self.log_path, self.output_dir = log_path, output_dir
+        self.log_path, self.output_dir = resolve_log_path(log_path), output_dir
         self.error = None
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
@@ -216,6 +233,8 @@ class EventWriter:
     def _run(self):
         log = None
         try:
+            if self.log_path:
+                self.log_path.parent.mkdir(parents=True, exist_ok=True)
             log = self.log_path.open("a", encoding="utf-8") if self.log_path else None
             flushed = time.monotonic()
             while True:
@@ -225,10 +244,15 @@ class EventWriter:
                 event, complete = item
                 if complete and self.output_dir:
                     (session, frame), data = complete
-                    path = self.output_dir / f"frame_{session:08x}_{frame:08x}.bin"
-                    with path.open("xb") as out:
-                        out.write(data)
+                    if len(data) % self.word_bytes:
+                        raise ValueError("frame length is not divisible by --word-bytes; no data saved")
+                    path = self.output_dir / f"frame_{session:08x}_{frame:08x}.txt"
+                    with path.open("x", encoding="ascii", newline="\n") as out:
+                        write_hex_words(out, data, self.word_bytes)
                     event["output"] = str(path.resolve())
+                    event["output_format"] = "hex_txt"
+                    event["word_bytes"] = self.word_bytes
+                    event["word_byteorder"] = "little"
                 line = json.dumps(event, ensure_ascii=False)
                 if log:
                     log.write(line + "\n")
@@ -265,12 +289,16 @@ def main(argv=None):
     parser.add_argument("--source-ip")
     parser.add_argument("--test-pattern", action="store_true")
     parser.add_argument("--output-dir", type=Path)
-    parser.add_argument("--log", type=Path)
+    parser.add_argument("--word-bytes", type=int, choices=(1, 2, 4), default=2,
+                        help="TXT little-endian word size; default 2 = one 16-bit hex value per line")
+    parser.add_argument("--log", type=Path, help=LOG_HELP)
     parser.add_argument("--queue-packets", type=int, default=4096, help="bounded PC receive queue")
     parser.add_argument("--managed", action="store_true", help="benchmark stdin STOP command")
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535 or args.frames < 0 or args.seconds < 0 or args.idle_timeout <= 0 or not 1 <= args.queue_packets <= 65536:
         parser.error("invalid port/frame count/time limit")
+    if args.output_dir and args.length % args.word_bytes:
+        parser.error("--length must be divisible by --word-bytes when saving TXT")
     try:
         receiver = FrameReceiver(args.length, args.frame_timeout, args.test_pattern)
     except ValueError as exc:
@@ -279,7 +307,7 @@ def main(argv=None):
     if args.output_dir:
         args.output_dir.mkdir(parents=True, exist_ok=True)
     run_id = uuid.uuid4().hex
-    writer = EventWriter(args.log, args.output_dir)
+    writer = EventWriter(args.log, args.output_dir, word_bytes=args.word_bytes)
     def emit(item):
         item["run_id"] = run_id
         writer.submit(item)

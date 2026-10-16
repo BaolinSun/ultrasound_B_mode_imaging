@@ -1,12 +1,50 @@
 # ESP32-C61 PSRAM UDP 自测与 SDIO TCP/UDP 帧上传
 
+## 文档位置与索引
+
+工程说明统一放在 `esp32c61/docs/`。除非另有说明，本文及同目录文档中的 PC 接收、ESP32 构建命令仍在 `esp32c61` 目录执行，不是在 `docs` 目录执行；明确要求在成像工程根目录执行的命令保持原要求。代码、脚本、固件和图像文件均未移动。
+
+- [build.ps1 命令使用说明](BUILD_COMMANDS.md)
+- [Wi-Fi 下发全部 Zynq 命令](WIFI_COMMANDS.md)
+- [运行日志与报告目录](LOGS.md)
+- [SDIO 链路说明](SDIO_BRIDGE.md)
+- [TCP/UDP 宏选择与协议](TCP_TRANSPORT.md)
+- [Zynq 串口日志与 monitor](ZYNQ_UART_MONITOR.md)
+- [温度采集与显示](TEMPERATURE_MONITOR.md)
+- [USB/SDIO 输出模式验证](OUTPUT_MODE_VERIFICATION.md)
+- [SDIO 验证记录](SDIO_VERIFICATION.md)
+- [SDIO 初始化调试记录](SDIO_INIT_DEBUG_20261012.md)
+- [TCP socket 调优历史](TCP_SOCKET_TUNING.md)
+- [UDP 性能历史](UDP_PERFORMANCE_20261012.md)
+- [UART 日志桥验证历史](UART_BRIDGE_VERIFICATION.md)
+- [Vitis IDE UART 修复记录](VITIS_IDE_UART_FIX.md)
+- [软件验证历史](VERIFICATION.md)
+
+Wi-Fi 命令控制现已移除 USB 控制口令，电池供电时可直接通过网页或 Python 操作。接口不鉴权，仅限可信局域网；高压开启确认及配置安全约束仍保留，详见 [控制说明](WIFI_COMMANDS.md)。
+
+历史文档中的测试结果不代表当前版本验收结果。此前已删除的 `TCP_OPTIMIZATION.md`、`TCP_PIPELINE_OPTIMIZATION.md` 和 `TCP_LARGE_BUFFER_TEST.md` 未恢复，历史引用仍保留。
+
+## 当前 SDIO 接收保存格式
+
+`sdio_tcp_receiver.py` 和 `sdio_udp_receiver.py` 的 `--output-dir` 现在保存 `frame_<会话>_<帧号>.txt`，不再生成 BIN。默认按 16 位小端数据解码，每行一个 4 位大写十六进制数（无 `0x`、无文件头）；原有成像行头也原样保留。一份 787456 字节数据对应 393728 行。需要其他位宽时，可使用 `--word-bytes 1` 或 `--word-bytes 4`；不补零、不截断末尾字节，不覆盖同名文件。TCP 的回执仍表示内存数据校验通过，不代表 TXT 已落盘。
+
+```powershell
+python .\pc_tools\sdio_tcp_receiver.py --port 50001 --source-ip 192.168.3.27 --frames 1 --idle-timeout 120 --output-dir .\image_capture --log .\logs\image_txt.jsonl
+```
+
+看到 Listening 后点击网页“SDIO 单帧”。真实 DDR 图像不要使用 `--test-pattern`。原始 PSRAM UDP 接收工具及板上固件不受此 TXT 保存格式变化影响。
+
+运行日志及 JSON/JSONL 报告集中放在 [logs](../logs/)；只写 `--log image_txt.jsonl` 也会自动保存到本工程的 `logs`。压测附带的设备状态 JSON、标准输出和错误日志跟随主日志保存。显式指定其他目录或绝对路径时保留该位置，构建配置 JSON 不移动。
+
 本目录是独立 ESP-IDF 6.1 工程，读取 ESP32-C61 外部 PSRAM 缓冲区，经 Wi-Fi STA 向上位机发送原始 UDP 数据报。网页完成首次配网、目标 IP/端口在线配置、单次自测上传及停止操作。
 
-保留原始 PSRAM UDP 自测，Zynq 固定 DDR → SDIO → PSRAM → Wi-Fi 帧链路支持 C 宏选择 TCP/带头 UDP，默认 TCP。TCP 完成等待 PC 收齐并校验 CRC 后的回执；不保证 TCP 更快。未接入真实连续采集，也未修改成像 RTL。接线见 [SDIO 链路说明](SDIO_BRIDGE.md)，宏、简短命令、协议和测试记录见 [TCP/UDP 模式说明](TCP_TRANSPORT.md)。三种接收工具不能混用。
+保留原始 PSRAM UDP 自测，Zynq DDR → SDIO → PSRAM → Wi-Fi 帧链路支持 C 宏选择 TCP/带头 UDP，默认 TCP。当前 PS 读取真实成像 DDR 固定片段，尚无帧完成/防覆盖保证；未修改成像 RTL。TCP 完成等待 PC 收齐并校验 CRC 后的回执，不证明采集帧一致性，也不保证 TCP 更快。接线见 [SDIO 链路说明](SDIO_BRIDGE.md)，宏与协议见 [TCP/UDP 模式说明](TCP_TRANSPORT.md)，控制成像及配置见 [Wi-Fi 下发命令](WIFI_COMMANDS.md)。三种接收工具不能混用。
 
 当前 23040 B TCP 性能档加入 CRC 切片、帧头/首段合并、发送内存背压及两端停帧诊断；120/180 秒板测有效吞吐约 11.1..11.4 Mbit/s，未证明显著提速或停帧已根治。benchmark 默认在 armed 且两槽位空闲/发送空闲持续 5 秒时判失败，不再把该停帧当正常完成。最新测试、固件和 BOOT 输入见 [TCP 数据路径优化](TCP_PIPELINE_OPTIMIZATION.md)。
 
 ## 构建与烧录
+
+环境激活、日常性能配置编译/烧录/monitor、完整参数及构建目录选择见 [build.ps1 命令使用说明](BUILD_COMMANDS.md)。脚本扩展名为 `.ps1`，不是 `.ps`。
 
 本机 IDF 源码：`D:\Program Files\esp\v6.1\esp-idf`。安装器实际工具环境：`C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1`。直接运行 IDF 的 `export.ps1` 可能错误地寻找用户目录下的 Python 环境，`build.ps1` 已使用安装器配置。
 
@@ -19,6 +57,23 @@ Set-Location 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61'
 ```
 
 `COM7` 是示例，替换为实际 USB Serial/JTAG 端口。脚本默认仅构建，不自动烧录或擦除 NVS。其他电脑可传入 `-ActivationScript`、`-IdfPath`，或在已激活的 IDF 6.1 shell 中运行。
+
+只激活当前 PowerShell 环境，不编译、不烧录：
+
+```powershell
+.\build.ps1 -Action activate
+idf.py --version
+```
+
+直接在当前 PowerShell 中执行脚本即可，不需要点源；环境和 `idf.py` 命令在脚本返回后仍有效。不要通过另启的 `powershell -File`/`pwsh -File` 子进程激活来期望改变父终端。激活不切换目录，运行工程相关 IDF 命令时仍应位于 `esp32c61`。
+
+打开当前性能固件对应的 monitor（`COM3` 替换为实际端口）：
+
+```powershell
+.\build.ps1 -Profile throughput -Action monitor -Port COM3
+```
+
+这会激活环境并调用对应构建目录的 `idf.py monitor`，不会执行 flash；按 `Ctrl+]` 退出。若烧录的是默认配置，改用 `.\build.ps1 -Action monitor -Port COM3`。monitor 可能按 IDF 默认行为复位设备，不应在成像或重要传输进行中随意打开。后续直接运行 `idf.py` 不会自动继承脚本的 `-Profile throughput` 选择；例如性能档 monitor 对应 `idf.py -B .\build-throughput-fast-socket -p COM3 monitor`，裸 `idf.py build` 仍使用默认 `build` 目录。
 
 可选 Wi-Fi 发送性能配置（需要烧录后才影响板上速率）：
 

@@ -2,6 +2,8 @@
 
 ## 当前范围与启动
 
+下文固定 DDR 测试是历史版本说明。当前 PS 已接入真实成像 DDR，仍存在覆盖与帧起点限制；网页上传不自动启动成像。新增控制入口见 [Wi-Fi 下发命令](WIFI_COMMANDS.md)，不要将历史单向日志说明理解为当前 GPIO11 无发送功能。
+
 Zynq 日志现可经 ESP32 的 USB `idf.py monitor` 查看，单向接线和操作见 [Zynq 串口日志](ZYNQ_UART_MONITOR.md)。需同时更新含 UART0 的新 BOOT.BIN 和 ESP 固件，不需要独立 Zynq USB 串口。
 
 本版本只发送 **Zynq 独立 DDR 测试缓冲区**，不是实时成像数据。不会调用 BEAM START、CFG END 或 HV ENABLE。USB 数据与 SDIO 数据互斥，USB 参数配置始终保留。ESP32 默认不自动发送。

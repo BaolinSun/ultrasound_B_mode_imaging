@@ -13,6 +13,7 @@ import time
 from urllib.request import Request, urlopen
 
 from raw_udp_receiver import DATAGRAM_BYTES, prepare_pattern, receive_upload
+from log_paths import LOG_HELP, resolve_log_path
 
 
 def request(device, path, method="GET"):
@@ -116,7 +117,8 @@ def main():
     parser.add_argument("--frame-quiet", type=float, default=0.25,
                         help="Single post-idle quiet window in seconds (0.01..1, default 0.25)")
     parser.add_argument("--log", type=Path,
-                        default=Path(datetime.now().strftime("soak-%Y%m%d-%H%M%S.jsonl")))
+                        default=Path(datetime.now().strftime("soak-%Y%m%d-%H%M%S.jsonl")),
+                        help=LOG_HELP)
     args = parser.parse_args()
     if not math.isfinite(args.hours) or not math.isfinite(args.interval) or args.hours <= 0 or args.interval < 0:
         parser.error("hours must be positive and interval must be nonnegative")
@@ -144,6 +146,8 @@ def main():
     run_started = time.monotonic()
     deadline = run_started + args.hours * 3600
     # Exclusive creation protects earlier soak results. No binary capture files accumulate.
+    args.log = resolve_log_path(args.log)
+    args.log.parent.mkdir(parents=True, exist_ok=True)
     with args.log.open("x", encoding="utf-8") as log, \
          socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)

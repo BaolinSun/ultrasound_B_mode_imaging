@@ -40,11 +40,13 @@ config PSRAM_TCP_HEAP_HEADROOM
         twice the attempted write. This is admission backpressure, not a
         guaranteed heap reservation against allocations by other tasks.
 endmenu
-menu "Zynq receive-only UART log"
+menu "Zynq UART log and Wi-Fi control"
 config ZYNQ_UART_BRIDGE_ENABLE
-    bool "Forward Zynq UART0 logs to USB Serial/JTAG console"
+    bool "Enable Zynq UART0 logs and structured Wi-Fi commands"
     default y
     help
-        Receives GPIO10 at 115200 8N1. GPIO11 stays input; no reverse traffic.
+        Receives GPIO10 and sends structured commands on GPIO11, 115200 8N1.
+        Monitor input is never forwarded. HTTP commands require no USB or token;
+        only use this control interface on a trusted LAN.
         Requires the primary console on USB Serial/JTAG.
 endmenu

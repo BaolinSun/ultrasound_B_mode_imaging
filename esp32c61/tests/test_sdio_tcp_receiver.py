@@ -141,7 +141,7 @@ class ReceiverTests(unittest.TestCase):
                 with socket.socket() as reserved:
                     reserved.bind(('127.0.0.1',0));port=reserved.getsockname()[1]
                 proc=subprocess.Popen([sys.executable,t.__file__,'--bind','127.0.0.1','--port',str(port),
-                    '--length','8193','--test-pattern','--seconds','1','--output-dir',folder,'--log',str(log)],
+                    '--length','8193','--word-bytes','1','--test-pattern','--seconds','1','--output-dir',folder,'--log',str(log)],
                     stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
                 try:
                     self.assertIn('Listening UBST TCP',proc.stdout.readline())
@@ -151,8 +151,9 @@ class ReceiverTests(unittest.TestCase):
                         self.assertEqual(t.ACK.unpack(self.ack(conn))[3],2 if corrupt else 0)
                     stdout,stderr=proc.communicate(timeout=4)
                     self.assertEqual(proc.returncode,1 if corrupt else 0,stderr+stdout)
-                    files=list(out.glob('*.bin'));self.assertEqual(len(files),0 if corrupt else 1)
-                    if files:self.assertEqual(files[0].read_bytes(),data)
+                    files=list(out.glob('frame_*.txt'));self.assertEqual(len(files),0 if corrupt else 1)
+                    if files:self.assertEqual(bytes.fromhex(files[0].read_text()),data)
+                    self.assertFalse(list(out.glob('*.bin')))
                     summary=json.loads(log.read_text().splitlines()[-1]);self.assertEqual(summary['passed'],not corrupt)
                 finally:
                     if proc.poll() is None:proc.kill();proc.wait()

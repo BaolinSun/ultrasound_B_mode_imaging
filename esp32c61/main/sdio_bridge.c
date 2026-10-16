@@ -23,6 +23,7 @@ static TaskHandle_t task;
 static SemaphoreHandle_t mutex;
 static sdio_bridge_status_t stats;
 static bool driver_live, stop_requested, reset_requested;
+static bool control_blocked;
 static unsigned frames_left, window_size, window_received;
 static uint8_t grant, command_ack;
 static int receiving=-1;
@@ -107,6 +108,7 @@ static void publish_window(void) {
         if(window_received!=window_size || read8(BR_WINDOW_ACK)!=grant) return;
         window_size=0;
     }
+    if(control_blocked && receiving<0) stats.running=false;
     bool blocked=!stats.running || (receiving<0 && free_slot()<0);
     if(blocked) {
         uint8_t previous=read8(BR_STATUS);
@@ -128,7 +130,7 @@ static void command(void) {
     if(op==BR_ABORT) { reset_requested=true; return; }
     int index=free_slot();
     bridge_frame_t m={read32(BR_SESSION_ECHO),read32(BR_FRAME_ID),read32(BR_LENGTH),read32(BR_CRC)};
-    if(op!=BR_BEGIN || !stats.running || !stats.host_sdio || receiving>=0 || window_size || index<0 ||
+    if(op!=BR_BEGIN || control_blocked || !stats.running || !stats.host_sdio || receiving>=0 || window_size || index<0 ||
        !br_meta_valid(&m,stats.session,BR_FRAME_BYTES) || m.frame_bytes!=BR_FRAME_BYTES) {
         write8(BR_RESULT,BR_REJECTED);
     } else {
@@ -270,7 +272,7 @@ esp_err_t sdio_bridge_start(unsigned frames) {
     app_config_t c; config_store_get(&c); psram_udp_status_t u; psram_udp_get_status(&u);
     xSemaphoreTake(mutex,portMAX_DELAY);
     esp_err_t r=ESP_OK;
-    if(!stats.ready || !u.connected || !c.target_ip[0]) r=ESP_ERR_INVALID_STATE;
+    if(control_blocked || !stats.ready || !u.connected || !c.target_ip[0]) r=ESP_ERR_INVALID_STATE;
     else if(!stats.host_sdio || stats.raw_busy || stats.running || u.busy ||
             receiving>=0 || window_size || slots[0].state!=FREE || slots[1].state!=FREE || stop_requested || reset_requested)
         r=ESP_ERR_TIMEOUT;
@@ -299,7 +301,7 @@ esp_err_t sdio_bridge_selftest(void) {
     int i=free_slot();
     esp_err_t r=ESP_ERR_TIMEOUT;
     if(i<0) r=ESP_ERR_NO_MEM;
-    else if(!stats.running && !stats.raw_busy && receiving<0 && !window_size && !stop_requested && !reset_requested &&
+    else if(!control_blocked && !stats.running && !stats.raw_busy && receiving<0 && !window_size && !stop_requested && !reset_requested &&
             slots[0].state!=READY && slots[1].state!=READY && slots[0].state!=SENDING && slots[1].state!=SENDING) {
         slot_t *s=&slots[i]; s->state=RAW_TEST; stats.raw_busy=true;
         raw_pattern_fill(s->data,CONFIG_PSRAM_UDP_TEST_BYTES);
@@ -310,4 +312,16 @@ esp_err_t sdio_bridge_selftest(void) {
 }
 size_t sdio_bridge_selftest_size(void) {
     return slots[0].data || slots[1].data ? CONFIG_PSRAM_UDP_TEST_BYTES : 0;
+}
+void sdio_bridge_control_gate(bool blocked) {
+    if(!mutex) return;
+    xSemaphoreTake(mutex,portMAX_DELAY); control_blocked=blocked; xSemaphoreGive(mutex);
+}
+bool sdio_bridge_control_drained(void) {
+    if(!mutex) return true;
+    xSemaphoreTake(mutex,portMAX_DELAY);
+    psram_udp_status_t u; psram_udp_get_status(&u);
+    bool idle=!u.busy && !stats.running && !stats.raw_busy && receiving<0 && !window_size &&
+        slots[0].state==FREE && slots[1].state==FREE && !stop_requested && !reset_requested;
+    xSemaphoreGive(mutex); return idle;
 }

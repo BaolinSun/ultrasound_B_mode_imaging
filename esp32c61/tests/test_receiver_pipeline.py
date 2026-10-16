@@ -1,4 +1,5 @@
 import json
+import io
 import pathlib
 import sys
 import tempfile
@@ -68,10 +69,10 @@ class PipelineTests(unittest.TestCase):
     def test_output_failure_is_reported_without_overwriting(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(r, 'print', lambda *a, **k: None, create=True):
             dest = pathlib.Path(folder)
-            existing = dest / 'frame_00000001_00000001.bin'
+            existing = dest / 'frame_00000001_00000001.txt'
             existing.write_bytes(b'keep')
             writer = r.EventWriter(output_dir=dest)
-            writer.submit({'event': 'frame'}, ((1, 1), b'new'))
+            writer.submit({'event': 'frame'}, ((1, 1), b'new!'))
             writer.close()
             self.assertIsNotNone(writer.error)
             self.assertEqual(existing.read_bytes(), b'keep')
@@ -79,6 +80,44 @@ class PipelineTests(unittest.TestCase):
     def test_invalid_queue_capacity(self):
         with self.assertRaises(ValueError): r.DatagramPump(None, 0)
         with self.assertRaises(ValueError): r.EventWriter(capacity=0)
+        with self.assertRaises(ValueError): r.EventWriter(word_bytes=3)
+
+    def test_little_endian_hex_words_exact_format(self):
+        out = io.StringIO()
+        r.write_hex_words(out, b'\x34\x12\x00\x00\xff\xff\x00\x80')
+        self.assertEqual(out.getvalue(), '1234\n0000\nFFFF\n8000\n')
+        for word_bytes, expected in ((1, '34\n12\n78\n56\n'), (4, '56781234\n')):
+            out = io.StringIO()
+            r.write_hex_words(out, b'\x34\x12\x78\x56', word_bytes)
+            self.assertEqual(out.getvalue(), expected)
+
+    def test_full_image_hex_roundtrip_and_metadata(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(r, 'print', lambda *a, **k: None, create=True):
+            dest = pathlib.Path(folder)
+            data = r.test_pattern(787456)
+            writer = r.EventWriter(dest/'events.jsonl', dest)
+            writer.submit({'event': 'frame'}, ((1, 2), data))
+            writer.close()
+            self.assertIsNone(writer.error)
+            path = dest/'frame_00000001_00000002.txt'
+            lines = path.read_text(encoding='ascii').splitlines()
+            self.assertEqual(len(lines), 393728)
+            self.assertTrue(all(len(x) == 4 for x in lines))
+            self.assertEqual(b''.join(int(x, 16).to_bytes(2, 'little') for x in lines), data)
+            self.assertFalse(list(dest.glob('*.bin')))
+            event = json.loads((dest/'events.jsonl').read_text())
+            self.assertEqual(event['output_format'], 'hex_txt')
+            self.assertEqual(event['word_bytes'], 2)
+            self.assertEqual(event['word_byteorder'], 'little')
+
+    def test_odd_length_not_truncated_or_padded(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(r, 'print', lambda *a, **k: None, create=True):
+            dest = pathlib.Path(folder)
+            writer = r.EventWriter(output_dir=dest)
+            writer.submit({'event': 'frame'}, ((1, 1), b'odd'))
+            writer.close()
+            self.assertIn('not divisible', writer.error)
+            self.assertFalse(list(dest.glob('*.txt')))
 
 
 if __name__ == '__main__': unittest.main()

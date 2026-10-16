@@ -29,7 +29,9 @@ function setup() {
       socket_errno: 0, active_ip: '', active_port: 0},
     offline: false, failSave: false, calls: [],
   };
-  const context = vm.createContext({document: {getElementById(id) {
+  backend.confirmed=true;
+  const context = vm.createContext({crypto:{getRandomValues(a){a[0]=123;return a}},confirm(){return backend.confirmed},setTimeout,
+  document: {getElementById(id) {
     assert.ok(elements[id], `page referenced nonexistent element ${id}`); return elements[id];
   }}, setInterval() {}, console,
   async fetch(path, options) {
@@ -58,7 +60,10 @@ function setup() {
     } else if(path === '/api/stop' || path === '/api/sdio/stop') {
       if(backend.status.sdio)backend.status.sdio.running=false;
       backend.status.busy=false;backend.status.result='cancelled';result={message:'停止请求已提交'};
-    } else throw Error(`unexpected endpoint ${path}`);
+    } else if(path === '/api/zynq/commands')result={job_id:'00000001'};
+    else if(path === '/api/zynq/jobs/00000001')result={busy:false,state:'succeeded',count:1,completed:1,
+      results:[{command:'STATUS',response:'@STATUS v=1 cfg=0 run=0 hv=0'}]};
+    else throw Error(`unexpected endpoint ${path}`);
     return {ok,json:async()=>result};
   }});
   vm.runInContext(script, context);
@@ -190,4 +195,33 @@ test('status uses text nodes, removes stale IP and reports send errors',async()=
   assert.match(e.elements.ap.textContent,/<img/);
   assert.match(e.elements.result.textContent,/errno 12/);
   assert.equal(e.elements['sta-link'].href,undefined);
+});
+
+test('Wi-Fi controls need no token; HV confirmation remains and polling only reads cache',async()=>{
+ const e=setup();await e.settle();
+ e.backend.status.zynq_control={ready:true,busy:false,config_owned:false,synced:true,ps_status:'@STATUS v=1 cfg=0 run=0 hv=0'};
+ await e.context.refresh();
+ await e.context.sendZynq(['STATUS']);
+ assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,1);
+ assert.equal(e.elements['control-token'],undefined);
+ e.backend.confirmed=false;await e.context.sendZynq(['HV ENABLE']);
+ assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,1);
+ e.backend.confirmed=true;await e.context.sendZynq(['HV ENABLE']);
+ const post=e.backend.calls.filter(c=>c.path==='/api/zynq/commands').at(-1);
+ assert.equal(post.options.headers['X-Control-Token'],undefined);
+ assert.equal(JSON.parse(post.options.body).allow_hv,true);
+ const before=e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length;
+ await e.context.refresh();await e.context.refresh();
+ assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,before);
+});
+
+test('configuration gate disables image submissions and safe stop sends HV DISABLE directly',async()=>{
+ const e=setup();await e.settle();
+ e.backend.status.zynq_control={ready:true,busy:false,config_owned:true};
+ e.backend.status.upload_ready=true;e.backend.config.target_ip='192.168.1.2';
+ await e.context.refresh();assert.equal(e.elements.upload.disabled,true);assert.equal(e.elements['sdio-once'].disabled,true);
+ await e.elements['zynq-safe-stop'].listeners.click();await e.settle();
+ const post=e.backend.calls.find(c=>c.path==='/api/zynq/commands');
+ assert.deepEqual(JSON.parse(post.options.body).commands,['HV DISABLE']);
+ assert.equal('localStorage' in e.context,false);
 });

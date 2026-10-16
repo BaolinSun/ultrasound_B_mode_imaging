@@ -8,11 +8,14 @@ int sdio_bridge_output_is_sdio(void) { return DATA_OUTPUT_MODE == DATA_OUTPUT_SD
 #include "../imaging_config.h"
 #include "xil_cache.h"
 #include "xiltimer.h"
-#include <string.h>
 
 _Static_assert(BF_FRAME_BYTES==BR_FRAME_BYTES,"Update both protocol and imaging frame size");
-/* Linker-owned DDR storage, deliberately NOT the PL's 0x20000000 window. */
-static unsigned char test_frame[BR_FRAME_BYTES] __attribute__((aligned(64)));
+_Static_assert(BR_FRAME_BYTES<=DDR_RING_BYTES,"Image transfer exceeds the PL DDR window");
+_Static_assert((DDR_RING_BASE_ADDR%64U)==0U,"SDIO DMA source must be cache-line aligned");
+/* Read the PL image window directly. This pointer never owns or initializes
+ * DDR. Until PL frame ownership is added, concurrent writes may tear a frame;
+ * the existing CRC detects changed bytes but cannot certify capture coherence. */
+static const u8 *const frame_data=(const u8 *)(UINTPTR)DDR_RING_BASE_ADDR;
 static sdio_host_t host;
 static int online, phase;
 static int reset_on_connect=1;
@@ -41,14 +44,10 @@ static void fail_link(void) {
 void sdio_bridge_init(void) {
     /* Boot/reinitialization starts a fresh handshake; never replay payload. */
     online=0; phase=IDLE; offset=0; reset_on_connect=1; retry_at=milliseconds();
-    for(u32 i=0;i<BR_FRAME_BYTES;i++) {
-        u32 word=(i/4U)^0xA5C30000U;
-        test_frame[i]=(u8)(word>>(8U*(i%4U)));
-    }
-    frame_crc=br_crc32(0,test_frame,sizeof(test_frame));
-    Xil_DCacheFlushRange((UINTPTR)test_frame,sizeof(test_frame));
-    xil_printf("@SDIO DDR_TEST addr=%08x bytes=%u crc32=%08x compiled=SDIO\r\n",
-        (unsigned)(UINTPTR)test_frame,(unsigned)sizeof(test_frame),(unsigned)frame_crc);
+    frame_crc=0;
+    xil_printf("@SDIO DDR_IMAGE addr=%08x bytes=%u compiled=SDIO live_ddr=1\r\n",
+        (unsigned)(UINTPTR)frame_data,(unsigned)BR_FRAME_BYTES);
+    xil_printf("@SDIO WARN no frame-ready/overwrite protection; CRC errors or mixed image frames remain possible\r\n");
 }
 static void poll_once(void) {
     u64 now=milliseconds(); u8 state,mode,version,ack,result;
@@ -94,6 +93,13 @@ static void poll_once(void) {
         session_id=current_session; frame_id++; if(!frame_id) frame_id=1;
         if(read8(BR_CMD_ACK,&command_seq)) { fail_link(); return; }
         command_seq=br_next_seq(command_seq);
+        /* PL writes are not cache coherent. Never flush CPU-owned stale data
+         * into this window. main() keeps D-cache disabled; invalidation also
+         * makes this read safe if clean cache lines are present later.
+         * Recompute for EACH accepted attempt, not once at boot. No snapshot
+         * or implicit STOP/START/HV operation is performed here. */
+        Xil_DCacheInvalidateRange((UINTPTR)frame_data,BR_FRAME_BYTES);
+        frame_crc=br_crc32(0,frame_data,BR_FRAME_BYTES);
         if(write32(BR_FRAME_ID,frame_id) || write32(BR_LENGTH,BR_FRAME_BYTES) ||
            write32(BR_CRC,frame_crc) || write32(BR_SESSION_ECHO,session_id) ||
            write8(BR_CMD,BR_BEGIN) || write8(BR_CMD_SEQ,command_seq)) { fail_link(); return; }
@@ -115,7 +121,7 @@ static void poll_once(void) {
         if(!sequence || sequence==host.last_grant_seq) return;
         unsigned maximum=br_window(BR_FRAME_BYTES-offset,BR_WINDOW_BLOCKS);
         if(!count || count>maximum) { fail_link(); return; }
-        if(sdio_host_send_blocks(&host,test_frame+offset,count)!=SDIO_HOST_OK ||
+        if(sdio_host_send_blocks(&host,frame_data+offset,count)!=SDIO_HOST_OK ||
            sdio_host_write_window_ack(&host,sequence)!=SDIO_HOST_OK) { fail_link(); return; }
         offset+=(u32)count*BR_BLOCK_BYTES;
         if(offset==BR_FRAME_BYTES) phase=DONE_WAIT;

@@ -2,10 +2,11 @@
 #include "sdkconfig.h"
 #include "esp_log.h"
 #include "temperature_cache.h"
+#include "zynq_control.h"
 
 #if CONFIG_ZYNQ_UART_BRIDGE_ENABLE
 #if !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
-#error "Zynq UART bridge requires USB Serial/JTAG console (UART0 is receive-only)"
+#error "Zynq UART bridge requires USB Serial/JTAG console"
 #endif
 #include "uart_log_framer.h"
 #include "driver/uart.h"
@@ -20,7 +21,7 @@
 #include <unistd.h>
 
 #define RX_GPIO 10
-#define UNUSED_TX_GPIO 11
+#define TX_GPIO 11
 #define RX_BUFFER_BYTES 4096
 #define UART_BAUD 115200
 static const char *TAG="zynq_uart";
@@ -75,15 +76,17 @@ static void receive_task(void *ctx)
                 (void)xQueueReset(events);
                 uart_log_framer_reset(&framer); /* Never join text across lost data. */
                 temperature_cache_uart_lost();
+                zynq_control_uart_lost();
             }
         }
         for(unsigned batch=0;batch<4;batch++) {
             int count=uart_read_bytes(UART_NUM_0,bytes,sizeof(bytes),0);
-            if(count<0) { errors++; uart_log_framer_reset(&framer); temperature_cache_uart_lost(); break; }
+            if(count<0) { errors++; uart_log_framer_reset(&framer); temperature_cache_uart_lost(); zynq_control_uart_lost(); break; }
             if(!count) break;
             temperature_cache_feed(bytes,(size_t)count,milliseconds());
+            zynq_control_feed(bytes,(size_t)count); /* Parse before bounded USB logging. */
             uart_log_framer_feed(&framer,bytes,(size_t)count,milliseconds(),print_line,NULL);
-            vTaskDelay(1); /* Read-only telemetry, still lower priority than SDIO. */
+            vTaskDelay(1); /* Still lower priority than SDIO. */
         }
         uint64_t now=milliseconds();
         uart_log_framer_idle(&framer,now,print_line,NULL);
@@ -100,19 +103,34 @@ esp_err_t zynq_uart_bridge_start(void)
     const uart_config_t config={.baud_rate=UART_BAUD,.data_bits=UART_DATA_8_BITS,
         .parity=UART_PARITY_DISABLE,.stop_bits=UART_STOP_BITS_1,
         .flow_ctrl=UART_HW_FLOWCTRL_DISABLE,.source_clk=UART_SCLK_DEFAULT};
-    esp_err_t r=gpio_reset_pin(UNUSED_TX_GPIO);
+    esp_err_t r=gpio_reset_pin(TX_GPIO);
     if(r!=ESP_OK) return r;
-    if((r=gpio_set_direction(UNUSED_TX_GPIO,GPIO_MODE_INPUT))!=ESP_OK) return r;
-    /* Do not route TX to GPIO11, including when that wire is physically present. */
+    /* Only the structured control worker transmits; monitor input is ignored. */
     if((r=uart_driver_install(UART_NUM_0,RX_BUFFER_BYTES,0,16,&events,0))!=ESP_OK) return r;
     if((r=uart_param_config(UART_NUM_0,&config))==ESP_OK)
-        r=uart_set_pin(UART_NUM_0,UART_PIN_NO_CHANGE,RX_GPIO,UART_PIN_NO_CHANGE,UART_PIN_NO_CHANGE);
+        r=uart_set_pin(UART_NUM_0,TX_GPIO,RX_GPIO,UART_PIN_NO_CHANGE,UART_PIN_NO_CHANGE);
     if(r==ESP_OK && xTaskCreate(receive_task,"zynq_uart_rx",3072,NULL,2,NULL)!=pdPASS) r=ESP_ERR_NO_MEM;
     if(r!=ESP_OK) { (void)uart_driver_delete(UART_NUM_0); events=NULL; return r; }
     started=true;
-    ESP_LOGI(TAG,"RX-only: Zynq MIO27/TX -> GPIO10, 115200 8N1; GPIO11 input; USB console");
+    ESP_LOGI(TAG,"Zynq UART0: GPIO10 RX / GPIO11 TX, 115200 8N1; structured control + USB log");
+    return ESP_OK;
+}
+bool zynq_uart_bridge_available(void) { return started; }
+esp_err_t zynq_uart_bridge_send(const char *data,size_t length) {
+    if(!started || !data || !length || length>=WC_LINE) return ESP_ERR_INVALID_ARG;
+    int64_t until=esp_timer_get_time()+100000;
+    size_t sent=0;
+    while(sent<length) {
+        int n=uart_tx_chars(UART_NUM_0,data+sent,(uint32_t)(length-sent));
+        if(n<0) return ESP_FAIL;
+        sent+=(size_t)n;
+        if(esp_timer_get_time()>=until) return ESP_ERR_TIMEOUT;
+        if(sent<length) vTaskDelay(1);
+    }
     return ESP_OK;
 }
 #else
 esp_err_t zynq_uart_bridge_start(void) { return ESP_OK; }
+bool zynq_uart_bridge_available(void) { return false; }
+esp_err_t zynq_uart_bridge_send(const char *data,size_t length) { (void)data;(void)length; return ESP_ERR_NOT_SUPPORTED; }
 #endif

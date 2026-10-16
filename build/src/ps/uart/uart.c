@@ -9,6 +9,9 @@
 #include "../AFE5832/afe5832.h"
 #include "../bram/bram.h"
 #include "../HV/hv.h"
+#include "uart_log.h"
+#include "xiltimer.h"
+#include "../../../../common/wifi_control_protocol.h"
 
 #define UART_BASEADDR       0xE0001000U /* Preserve UART1 after enabling UART0. */
 #define UART_INT_IRQ_ID \
@@ -35,6 +38,16 @@ static u32 uart_cfg_seq = 0;
 static u8 uart_cfg_active = 0;
 static u8 uart_cfg_done = 0;
 static command_response_fn uart_response_fn = NULL;
+enum { SOURCE_UART1, SOURCE_USB, SOURCE_WIFI };
+static unsigned command_source, cfg_owner;
+static u32 wifi_session, cfg_session;
+static u64 cfg_activity;
+static u64 command_ms(void) { XTime t; XTime_GetTime(&t); return (u64)t/(COUNTS_PER_SECOND/1000U); }
+static int owns_cfg(void) { return cfg_owner==command_source && (cfg_owner!=SOURCE_WIFI || cfg_session==wifi_session); }
+static void wifi_abort(void) {
+    hv_disable(); Beamform_Halt(); uart_cfg_active=0; uart_cfg_done=0;
+    (void)AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
+}
 
 static void uart_emit_response(const char *text)
 {
@@ -64,6 +77,7 @@ static void uart_ack(u32 seq, const char *cmd)
 
 static void uart_nack(u32 seq, const char *err)
 {
+	if(uart_cfg_active && cfg_owner==SOURCE_WIFI && owns_cfg()) wifi_abort();
 	uart_emitf("@NACK %u %s", seq, err);
 }
 
@@ -175,6 +189,10 @@ static char *uart_next_token(char **ctx)
 
 static int uart_parse_u32(const char *text, u32 *value)
 {
+	if(command_source==SOURCE_WIFI) {
+		uint32_t parsed; if(!wc_uint(text,&parsed)) return 0;
+		*value=(u32)parsed; return 1;
+	}
 	char *endptr;
 	unsigned long parsed;
 
@@ -236,8 +254,11 @@ static void uart_handle_cfg(char **ctx)
 		uart_cfg_seq = value;
 		Beamform_Stop();
 		uart_cfg_active = 1;
+		cfg_owner=command_source; cfg_session=wifi_session; cfg_activity=command_ms();
 		uart_cfg_done = 0;
-		AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
+		if(AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL)!=XST_SUCCESS) {
+			uart_nack(uart_cfg_seq,"AFE_MAP_FAIL"); return;
+		}
 		uart_ack(uart_cfg_seq, "CFG_BEGIN");
 		return;
 	}
@@ -248,10 +269,13 @@ static void uart_handle_cfg(char **ctx)
 			return;
 		}
 		/* Optional legacy argument is ignored; END commits the configuration transaction. */
-		AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
+		if(AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL)!=XST_SUCCESS) {
+			uart_nack(uart_cfg_seq,"AFE_MAP_FAIL"); return;
+		}
 		uart_cfg_active = 0;
 		uart_cfg_done = 1;
-		Beamform_Start();
+		if(command_source==SOURCE_WIFI) { hv_disable(); Beamform_Halt(); }
+		else Beamform_Start();
 		uart_ack(uart_cfg_seq, "CFG_END");
 		return;
 	}
@@ -528,6 +552,16 @@ static void uart_handle_hv(char **ctx)
 
 static void uart_handle_line(char *line)
 {
+	/* Other inputs cannot enter this transaction. Stop/off remain available. */
+	if(uart_cfg_active && !owns_cfg() && strcmp(line,"HV DISABLE") &&
+	   strcmp(line,"BEAM STOP") && strcmp(line,"STATUS")) {
+		uart_emitf("@NACK %u CFG_OWNER",uart_cfg_seq); return;
+	}
+	if(!strcmp(line,"STATUS")) {
+		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u",uart_cfg_active,
+		    cfg_owner,uart_cfg_seq,(unsigned)(XBram_ReadReg(BRAM_BEAMFORM_CTRL_ADDR,0)&1U),(unsigned)hv_is_enabled());
+		return;
+	}
 	char *ctx = line;
 	char *cmd = uart_next_token(&ctx);
 
@@ -571,9 +605,11 @@ void uart_handle_usb_line(const char *line, command_response_fn response_fn)
 	u32 i = 0;
 
 	uart_response_fn = response_fn;
+	unsigned previous_source=command_source; command_source=SOURCE_USB;
 	if (line == NULL) {
 		uart_nack(uart_cfg_seq, "USB_LINE");
 		uart_response_fn = previous_response_fn;
+		command_source=previous_source;
 		return;
 	}
 
@@ -588,6 +624,22 @@ void uart_handle_usb_line(const char *line, command_response_fn response_fn)
 		uart_handle_line(local_line);
 	}
 	uart_response_fn = previous_response_fn;
+	command_source=previous_source;
+}
+
+void uart_handle_wifi_line(const char *line,u32 session,command_response_fn response_fn)
+{
+    command_response_fn previous=uart_response_fn;
+    unsigned source=command_source;
+    command_source=SOURCE_WIFI; wifi_session=session; uart_response_fn=response_fn;
+    const char *error=wc_validate(line);
+    if(error) uart_nack(uart_cfg_seq,error);
+    else {
+        char copy[UART_LINE_MAX]; strcpy(copy,line);
+        uart_handle_line(copy);
+        if(uart_cfg_active && owns_cfg()) cfg_activity=command_ms();
+    }
+    uart_response_fn=previous; command_source=source;
 }
 
 u32 uart_init(void) {
@@ -613,6 +665,7 @@ u32 uart_init(void) {
 	if (res != XST_SUCCESS) {
 		return XST_FAILURE;
 	}
+	if(zynq_uart_command_init()!=XST_SUCCESS) return XST_FAILURE;
 
 	return XST_SUCCESS;
 }
@@ -620,6 +673,10 @@ u32 uart_init(void) {
 void uart_process_commands(void)
 {
 	char line[UART_LINE_MAX];
+	if(uart_cfg_active && cfg_owner==SOURCE_WIFI && command_ms()-cfg_activity>=60000U) {
+		wifi_abort(); xil_printf("@WIFI_CFG_TIMEOUT stopped; HV disabled\r\n");
+	}
+	zynq_uart_command_poll();
 
 	if (uart_line_overflow) {
 		uart_line_overflow = 0;

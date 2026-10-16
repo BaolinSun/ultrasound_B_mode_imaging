@@ -2,6 +2,7 @@
 #include "zynq_uart_bridge.h"
 #include "temperature_cache.h"
 #include "temperature_protocol.h"
+#include "zynq_control.h"
 #include <assert.h>
 #include <setjmp.h>
 #include <stdlib.h>
@@ -16,6 +17,10 @@ static void (*task_entry)(void*);
 static jmp_buf stop;
 static const char *pending;
 static char temperature_line[TEMP_LINE_BYTES];
+static unsigned control_bytes,control_losses;
+void zynq_control_feed(const uint8_t *p,size_t n) { (void)p;control_bytes+=(unsigned)n; }
+void zynq_control_uart_lost(void) { control_losses++; }
+int uart_tx_chars(int port,const char *p,uint32_t n) { assert(port==0&&p);return (int)n; }
 static int result(void) { return ++call==fail_call ? 9:ESP_OK; }
 esp_err_t gpio_reset_pin(int pin) { assert(pin==11);return result(); }
 esp_err_t gpio_set_direction(int pin,int mode) { assert(pin==11 && mode==GPIO_MODE_INPUT);return result(); }
@@ -27,7 +32,7 @@ esp_err_t uart_param_config(int port,const uart_config_t *c) {
            c->stop_bits==1 && c->flow_ctrl==0);return result();
 }
 esp_err_t uart_set_pin(int port,int tx,int rx,int rts,int cts) {
-    assert(port==0 && tx==-1 && rx==10 && rts==-1 && cts==-1);return result();
+    assert(port==0 && tx==11 && rx==10 && rts==-1 && cts==-1);return result();
 }
 esp_err_t uart_driver_delete(int port) { assert(port==0);deletes++;return 0; }
 esp_err_t uart_flush_input(int port) { assert(port==0);flushes++;pending=NULL;return 0; }
@@ -111,17 +116,21 @@ int main(int argc,char **argv) {
     return 0;
 #else
     if(argc>1) {
-        fail_call=atoi(argv[1]);assert(fail_call>=1 && fail_call<=6);
+        fail_call=atoi(argv[1]);assert(fail_call>=1 && fail_call<=5);
         assert(zynq_uart_bridge_start()!=ESP_OK);
-        assert(deletes==(fail_call>=4?1:0));
+        assert(deletes==(fail_call>=3?1:0));
         fail_call=0;assert(zynq_uart_bridge_start()==ESP_OK); /* Retry after cleanup. */
         puts("PASS: UART bridge initialization failure cleaned and retry succeeded");return 0;
     }
     assert(zynq_uart_bridge_start()==ESP_OK && installs==1);
     assert(zynq_uart_bridge_start()==ESP_OK && installs==1); /* Idempotence. */
+    assert(zynq_uart_bridge_available());
+    assert(zynq_uart_bridge_send("STATUS\n",7)==ESP_OK);
+    assert(zynq_uart_bridge_send(NULL,1)==ESP_ERR_INVALID_ARG);
     if(setjmp(stop)==0)task_entry(NULL);
     assert(flushes==5 && resets==5 && warnings>=4);
-    puts("PASS: UART RX-only pins/baud/task/errors/USB disconnect/stall/idle/recovery");
+    assert(control_bytes>0 && control_losses==6);
+    puts("PASS: UART structured TX/pins/baud/RX errors/USB disconnect/stall/control parsing");
     return 0;
 #endif
 }

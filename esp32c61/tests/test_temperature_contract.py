@@ -42,7 +42,8 @@ class TemperatureContractTests(unittest.TestCase):
         source = (ESP / "zynq_uart_bridge.c").read_text(encoding="utf-8")
         self.assertLess(source.index("temperature_cache_feed(bytes"), source.index("uart_log_framer_feed(&framer,bytes"))
         self.assertEqual(source.count("temperature_cache_uart_lost();"), 2)
-        self.assertNotRegex(source, r"\b(?:uart_write_bytes|uart_tx_chars)\s*\(")
+        self.assertNotRegex(source, r"\b(?:fgets|getchar)\s*\(")
+        self.assertLess(source.index("zynq_control_feed(bytes"),source.index("uart_log_framer_feed(&framer,bytes"))
 
     def test_only_status_endpoint_exposes_telemetry(self):
         source = (ESP / "web_server.c").read_text(encoding="utf-8")

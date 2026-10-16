@@ -126,8 +126,11 @@ class FramedReceiverTests(unittest.TestCase):
                 stdout,stderr=p.communicate(timeout=5)
                 self.assertEqual(p.returncode,0,stderr+stdout)
                 summary=json.loads(stdout.splitlines()[-1]); self.assertTrue(summary['passed'])
-                files=list(pathlib.Path(directory).glob('*.bin'))
-                self.assertEqual(len(files),1);self.assertEqual(files[0].read_bytes(),self.data)
+                files=list(pathlib.Path(directory).glob('frame_*.txt'))
+                self.assertEqual(len(files),1)
+                restored=b''.join(int(line,16).to_bytes(2,'little') for line in files[0].read_text().splitlines())
+                self.assertEqual(restored,self.data)
+                self.assertFalse(list(pathlib.Path(directory).glob('*.bin')))
             finally:
                 if p.poll() is None: p.kill();p.communicate()
     def test_actual_udp_cli_timeout_never_saves_partial(self):
@@ -143,6 +146,7 @@ class FramedReceiverTests(unittest.TestCase):
                 sender.sendto(self.packets()[0],('127.0.0.1',port))
                 stdout,stderr=p.communicate(timeout=5)
                 self.assertEqual(p.returncode,1,stderr+stdout)
+                self.assertFalse(list(pathlib.Path(directory).glob('frame_*.txt')))
                 self.assertFalse(list(pathlib.Path(directory).glob('*.bin')))
                 self.assertEqual(json.loads(stdout.splitlines()[-1])['discarded_frames'],1)
             finally:

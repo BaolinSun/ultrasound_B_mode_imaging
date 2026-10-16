@@ -7,3 +7,7 @@
 __pycache__/
 *.bin
 /tests/output/
+/image_capture/
+/tcp_capture/
+/sdio_capture/
+/captures/

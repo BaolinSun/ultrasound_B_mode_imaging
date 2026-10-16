@@ -11,6 +11,7 @@ import time
 import uuid
 import zlib
 from sdio_udp_receiver import EventWriter, test_pattern
+from log_paths import LOG_HELP
 
 HEADER = struct.Struct('!IBBHIIII')
 ACK = struct.Struct('!IBBHIII')
@@ -175,14 +176,18 @@ def main(argv=None):
     parser.add_argument('--idle-timeout', type=float, default=30)
     parser.add_argument('--test-pattern', action='store_true')
     parser.add_argument('--output-dir', type=Path)
-    parser.add_argument('--log', type=Path)
+    parser.add_argument('--word-bytes', type=int, choices=(1, 2, 4), default=2,
+                        help='TXT little-endian word size; default 2 = one 16-bit hex value per line')
+    parser.add_argument('--log', type=Path, help=LOG_HELP)
     parser.add_argument('--managed', action='store_true', help='benchmark stdin STOP command')
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535 or not 0 < args.length <= MAX_BYTES or args.frames < 0 or \
        args.seconds < 0 or args.frame_timeout <= 0 or args.idle_timeout <= 0:
         parser.error('invalid receiver limits')
+    if args.output_dir and args.length % args.word_bytes:
+        parser.error('--length must be divisible by --word-bytes when saving TXT')
     if args.output_dir: args.output_dir.mkdir(parents=True, exist_ok=True)
-    writer = EventWriter(args.log, args.output_dir)
+    writer = EventWriter(args.log, args.output_dir, word_bytes=args.word_bytes)
     rx = TCPReceiver(args, writer)
     def control():
         for line in sys.stdin:

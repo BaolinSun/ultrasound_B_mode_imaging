@@ -143,8 +143,8 @@ try {
     $hostNm=Join-Path (Split-Path $Compiler -Parent) 'nm.exe'
     $frameSymbol=& $hostNm -S test_host.exe | Select-String '\btest_frame$'
     if ($LASTEXITCODE -ne 0) { throw 'Host symbol read failed' }
-    if (($outputMode -eq 'USB' -and $frameSymbol) -or ($outputMode -eq 'SDIO' -and -not $frameSymbol)) {
-        throw "DDR allocation does not match compiled $outputMode mode"
+    if ($frameSymbol) {
+        throw "$outputMode build must not allocate a synthetic DDR test frame"
     }
     & $gcov -b -c sdio_bridge.gcno
     if ($LASTEXITCODE -ne 0) { throw 'Zynq host bridge coverage report failed' }
@@ -181,7 +181,7 @@ foreach ($suite in @('uart_framer','uart_bridge')) {
         if ($suite -eq 'uart_bridge') {
             if (($uartOutput -join "`n") -match 'lost partial|hidden') { throw 'Lost/disconnected bytes were incorrectly forwarded' }
             if (($uartOutput -join "`n") -notmatch '\[ZYNQ\] next') { throw 'UART did not recover after overflow' }
-            foreach ($fault in 1..6) {
+            foreach ($fault in 1..5) {
                 & ./test_uart.exe $fault
                 if ($LASTEXITCODE -ne 0) { throw "UART init failure $fault failed" }
             }
@@ -204,16 +204,60 @@ try {
     $psSources=Join-Path (Split-Path $projectRoot -Parent) 'build/src/ps'
     & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g `
         '-I' (Join-Path $PSScriptRoot 'stubs/zynq_uart') '-I' (Join-Path $psSources 'uart') `
-        (Join-Path $PSScriptRoot 'test_zynq_uart.c') (Join-Path $psSources 'uart/uart_log.c') `
-        (Join-Path $psSources 'outbyte.c') (Join-Path $PSScriptRoot 'stubs/zynq_uart/bsp_outbyte.c') `
-        '-Wl,--wrap=outbyte' -o test_zynq_uart.exe
+        '-I' (Join-Path $PSScriptRoot 'stubs/ps_control') '-I' (Join-Path $PSScriptRoot 'stubs/temperature') `
+        '-I' (Join-Path $projectRoot '../common') '-include' (Join-Path $PSScriptRoot 'stubs/ps_control/prelude.h') `
+        (Join-Path $PSScriptRoot 'test_ps_wifi_control.c') (Join-Path $psSources 'uart/uart_log.c') `
+        (Join-Path $psSources 'uart/uart.c') -o test_zynq_uart.exe
     if ($LASTEXITCODE -ne 0) { throw 'Zynq UART log tests compilation failed' }
     & ./test_zynq_uart.exe
     if ($LASTEXITCODE -ne 0) { throw 'Zynq UART log tests failed' }
-    & $gcov -b -c uart_log.gcno outbyte.gcno
+    & $gcov -b -c uart_log.gcno uart.gcno
     if ($LASTEXITCODE -ne 0) { throw 'Zynq UART log coverage failed' }
+    & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic -ffunction-sections -fdata-sections `
+        '-I' (Join-Path $PSScriptRoot 'stubs/zynq_uart') '-I' (Join-Path $psSources 'uart') `
+        '-I' (Join-Path $PSScriptRoot 'stubs/ps_control') '-I' (Join-Path $PSScriptRoot 'stubs/temperature') `
+        '-include' (Join-Path $PSScriptRoot 'stubs/ps_control/prelude.h') `
+        (Join-Path $PSScriptRoot 'test_zynq_uart.c') (Join-Path $psSources 'uart/uart_log.c') `
+        (Join-Path $PSScriptRoot 'stubs/zynq_uart/unused_rx.c') `
+        (Join-Path $psSources 'outbyte.c') (Join-Path $PSScriptRoot 'stubs/zynq_uart/bsp_outbyte.c') `
+        '-Wl,--gc-sections,--wrap=outbyte' -o test_original_log.exe
+    if($LASTEXITCODE -ne 0) { throw 'Original UART init/outbyte regression compile failed' }
+    & ./test_original_log.exe
+    if($LASTEXITCODE -ne 0) { throw 'Original UART init/outbyte regression failed' }
 } finally { Pop-Location }
 & (Join-Path $PSScriptRoot 'run_temperature_tests.ps1') -Compiler $Compiler -OutputDirectory (Join-Path $testOutput 'temperature')
+$controlOutput=Join-Path $testOutput 'wifi-control'
+New-Item -ItemType Directory -Path $controlOutput -Force | Out-Null
+foreach($suite in @('wifi_protocol','wifi_control_service')) {
+    [string[]]$extra=if($suite -eq 'wifi_control_service') { @('-I',(Join-Path $PSScriptRoot 'stubs/control')) } else { @() }
+    $binary=Join-Path $controlOutput "$suite.exe"
+    & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic '-I' (Join-Path $projectRoot '../common') `
+        '-I' (Join-Path $projectRoot 'main') @extra (Join-Path $PSScriptRoot "test_$suite.c") -o $binary
+    if($LASTEXITCODE -ne 0) { throw "$suite compile failed" }
+    & $binary
+    if($LASTEXITCODE -ne 0) { throw "$suite failed" }
+    if($suite -eq 'wifi_control_service') {
+        foreach($fault in @('mutex','queue','task')) {
+            & $binary $fault
+            if($LASTEXITCODE -ne 0) { throw "$suite $fault failed" }
+        }
+    }
+}
+& $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic '-I' (Join-Path $PSScriptRoot 'stubs/zynq_uart') `
+    '-I' (Join-Path $PSScriptRoot 'stubs/temperature') (Join-Path $PSScriptRoot 'test_afe_spi_timeout.c') `
+    -o (Join-Path $controlOutput 'afe_spi.exe')
+if($LASTEXITCODE -ne 0) { throw 'AFE SPI timeout test compile failed' }
+& (Join-Path $controlOutput 'afe_spi.exe')
+if($LASTEXITCODE -ne 0) { throw 'AFE SPI timeout test failed' }
+$cjson=Join-Path $projectRoot 'managed_components/espressif__cjson/cJSON'
+if(Test-Path (Join-Path $cjson 'cJSON.c')) {
+    & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic '-I' (Join-Path $projectRoot '../common') `
+        '-I' (Join-Path $projectRoot 'main') '-I' (Join-Path $PSScriptRoot 'stubs/control_http') '-I' $cjson `
+        (Join-Path $PSScriptRoot 'test_wifi_control_http.c') (Join-Path $cjson 'cJSON.c') -o (Join-Path $controlOutput 'http.exe')
+    if($LASTEXITCODE -ne 0) { throw 'Control HTTP test compile failed' }
+    & (Join-Path $controlOutput 'http.exe')
+    if($LASTEXITCODE -ne 0) { throw 'Control HTTP test failed' }
+} else { Write-Warning 'Control HTTP native test requires the installed managed cJSON component' }
 & $Python -m unittest discover -s $PSScriptRoot -p 'test_*.py' -v
 if ($LASTEXITCODE -ne 0) { throw 'Python tests failed' }
 & $Node --test (Join-Path $PSScriptRoot 'test_web.mjs')

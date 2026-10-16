@@ -22,6 +22,7 @@ void uart_process_commands(void);
 void uart_handle_usb_line(const char *line, command_response_fn response_fn);
 int uart_wait_config_done(void);
 int uart_wait_afe_config_done(void);
+void uart_handle_wifi_line(const char *line, u32 session, command_response_fn response_fn);
 
 void uart_intrhandler(void *callbackref);
 u32 setup_uart_intr_system(void);

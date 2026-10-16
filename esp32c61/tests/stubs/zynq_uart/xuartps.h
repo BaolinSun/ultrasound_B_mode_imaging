@@ -20,4 +20,20 @@ int XUartPs_SetDataFormat(XUartPs*,XUartPsFormat*);
 void XUartPs_SetOperMode(XUartPs*,u8);
 void XUartPs_SetInterruptMask(XUartPs*,u32);
 void XUartPs_SendByte(UINTPTR,u8);
+#define XUARTPS_IMR_OFFSET 0U
+#define XUARTPS_ISR_OFFSET 4U
+#define XUARTPS_FIFO_OFFSET 8U
+#define XUARTPS_IXR_RXOVR 1U
+#define XUARTPS_IXR_TOUT 2U
+#define XUARTPS_IXR_OVER 4U
+#define XUARTPS_IXR_FRAMING 8U
+#define XUARTPS_IXR_PARITY 16U
+u32 XUartPs_ReadReg(UINTPTR,u32);
+void XUartPs_WriteReg(UINTPTR,u32,u32);
+int XUartPs_IsReceiveData(UINTPTR);
+int XUartPs_IsTransmitFull(UINTPTR);
+int XUartPs_SelfTest(XUartPs*);
+void XUartPs_SetFifoThreshold(XUartPs*,u8);
+void XUartPs_SetRecvTimeout(XUartPs*,u8);
+u32 XUartPs_Recv(XUartPs*,u8*,u32);
 #endif

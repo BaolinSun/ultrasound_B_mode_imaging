@@ -2,6 +2,8 @@
 
 2026-10-12 后续 SDIO 握手修复、板测结果及当前固件哈希见 [SDIO 调试记录](SDIO_INIT_DEBUG_20261012.md)。
 
+当前已扩展 GPIO11/TX → Zynq MIO26/RX 的结构化 Wi-Fi 控制，见 [全部 Wi-Fi 命令](WIFI_COMMANDS.md)。下文单向转发与 GPIO11 高阻描述属于历史版本，不再描述当前固件；monitor 键盘输入仍不转发。
+
 ## 接线和功能
 
 `Zynq PS UART0 MIO27/TX → ESP32-C61 GPIO10/UART0 RX → ESP32 USB Serial/JTAG → PC`

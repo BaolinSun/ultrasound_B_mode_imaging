@@ -9,11 +9,12 @@ ESP = ROOT / "esp32c61/main"
 
 
 class UartContractTests(unittest.TestCase):
-    def test_rx_only_and_usb_console(self):
+    def test_structured_tx_and_usb_console(self):
         source = (ESP / "zynq_uart_bridge.c").read_text(encoding="utf-8")
-        self.assertNotRegex(source, r"\b(?:uart_write_bytes|uart_tx_chars|uart_wait_tx_done|fgets|getchar)\s*\(")
-        self.assertIn("UART_PIN_NO_CHANGE,RX_GPIO", source)
-        self.assertIn("gpio_set_direction(UNUSED_TX_GPIO,GPIO_MODE_INPUT)", source)
+        self.assertNotRegex(source, r"\b(?:fgets|getchar)\s*\(")
+        self.assertIn("UART_NUM_0,TX_GPIO,RX_GPIO", source)
+        self.assertIn("uart_tx_chars(UART_NUM_0", source)
+        self.assertLess(source.index("zynq_control_feed(bytes"),source.index("uart_log_framer_feed(&framer"))
         self.assertIn("3072,NULL,2,NULL", source)
         self.assertIn("#if !CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG", source)
 

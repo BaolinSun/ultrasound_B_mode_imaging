@@ -1,0 +1,203 @@
+# Wi-Fi 下发 Zynq 命令
+
+## 1. 通路与使用前提
+
+```text
+网页 / Python → ESP32 HTTP → GPIO11/TX → Zynq MIO26/UART0 RX
+PS 回执 / 日志 / 温度 → MIO27/TX → ESP32 GPIO10/RX → 网页缓存 / USB monitor
+```
+
+UART0 使用 115200、8N1、无流控，双方共地。不是将 monitor 键盘输入透传给 Zynq；UART1 的 460800 波特率和原 USB 配置入口继续保留。命令不放入图像 TCP/UDP 载荷，也不依赖图像目标 PC IP 或是否打开 monitor。
+
+需要同时更新本功能对应的 **Zynq PS ELF 和 ESP32 固件**，仅更新其中一端无法完成协议握手。PL、bit、XSA 未修改，BOOT.BIN 不自动覆盖。构建方法见 [build.ps1 命令](BUILD_COMMANDS.md)。实际下载、烧录和发射操作须由用户确认条件安全后执行。
+
+### 电池供电与访问边界
+
+控制不需要连接 USB、打开 monitor 或输入控制口令；电池供电、Wi-Fi 连接后，直接打开网页或执行下面的 Python 命令。Wi-Fi 配网与目标地址的 NVS 保存行为不变。
+
+已移除控制口令的生成、NVS 读取/保存、USB 打印和 HTTP 请求头校验。旧固件留下的 NVS 口令记录不再读取，不需要擦除 NVS 或重新配网。
+
+**控制接口不鉴权，HTTP 未加密：能访问 ESP32 的网络设备也能下发命令。仅限可信、受控的局域网，不得映射到公网或接入不可信共享网络。** 客户端编号用于事务互斥，不是身份认证；网页确认和 `--allow-hv` 防止误操作，不是网络访问控制。
+
+高压开启仍要求网页明确确认或 Python 显式 `--allow-hv`；命令校验、配置互斥、停流排空、重复请求识别和 Wi-Fi `CFG END` 保持高压关闭等机制不变。
+
+## 2. 常用操作
+
+以下命令在 `esp32c61` 目录的 PowerShell 执行，无需口令或环境变量。IP 替换为 ESP32 的实际地址。
+
+```powershell
+# 查询 PS 软件状态，不启动成像
+python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 --status
+
+# 暂停扫描，保留高压原状态
+python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 -c "BEAM STOP"
+
+# 停机并关闭高压
+python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 -c "HV DISABLE"
+
+# 在线设置接收数字增益，不自动重启扫描
+python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 -c "GAIN SET 2"
+```
+
+以下两项会改变设备工作状态，只能在硬件及发射条件安全时明确执行；文档展示不代表允许自动执行：
+
+```powershell
+# 明确开启高压，必须带 --allow-hv
+python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 -c "HV ENABLE" --allow-hv
+
+# 开始扫描，本命令不自动开启高压
+python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 -c "BEAM START"
+```
+
+网页“Zynq 控制与配置”卡片提供相同操作、增益设置和高级多行命令。“安全停止”和“关闭高压并停机”直接执行 `HV DISABLE`，优先关闭高压，再撤销扫描请求；不是硬件急停装置。网络断开或 PS 无响应时，不能保证远程关断已生效。
+
+“SDIO 单帧/连续”只传输 DDR，不启动扫描；“停止全部传输”仅取消上传，不等同于关闭高压。
+
+单条 `HV DISABLE` 具有优先关断路径：即使普通控制批次忙碌，也可进入唯一的有界关断待处理槽，打断排空或回执等待、停止后续普通命令，再由同一串口发送任务执行。原批次可能返回失败、未知或因结果缓存替换而不可查询；不要自动重发。关断仍须收到 PS 回执才能确认软件操作完成，不保证网络/串口/PS 故障时的物理关断。
+
+普通扫描运行不附带网络失联自动关高压功能；配置事务的 60 秒看门狗仅保护正在进行的 Wi-Fi 配置。重启 ESP32 也不能当作关闭 Zynq 高压的手段。需要停止时明确发送 HV DISABLE，并核对回执及实际硬件状态。
+
+## 3. 全部原始命令
+
+命令区分大小写，使用单个空格分隔；整数支持无符号十进制或 `0x` 十六进制。Wi-Fi 命令不接受符号、额外参数、嵌入换行或 `*`，每条最多 159 字节。命令文件每行一条，空行和以 `#` 开头的整行注释忽略。
+
+| 命令 | 参数与作用 | 配置事务要求 |
+|---|---|---|
+| `STATUS` | 查询协议版本、事务和软件控制状态 | 无 |
+| `CFG BEGIN <seq>` | seq 为 0～4294967295；关闭高压、停止扫描并进入配置 | 当前没有其他事务 |
+| `CFG END` | 恢复 AFE 正常寄存器映射并结束配置；Wi-Fi 保持高压关闭、扫描停止 | 当前客户端持有 |
+| `CFG ABORT` | 中止配置、关闭高压并停机；不回滚已写入的寄存器 | 只能清理自己的事务；无事务时可停机 |
+| `AFE WR <map> <addr> <data>` | map 为 `GLOBAL/ADC/VCA/DTGC`；addr 0～255，data 0～65535 | 当前客户端持有 |
+| `AFE RD <map> <addr>` | 读取 AFE 寄存器；同上 map/addr 范围 | 当前客户端持有 |
+| `BRAM WR <section> <offset> <count> <words...>` | offset 为字索引；count 1～8；每个 word 为 32 位无符号数 | 当前客户端持有 |
+| `TX7332 WR tx7332_config_data <offset> <count> <words...>` | offset 为字索引；count 1～8；每个 word 为 32 位无符号数 | 当前客户端持有 |
+| `TX7332 RD <addr>` | addr 0～1023；运行中可能返回忙，应先停止扫描 | 无 |
+| `BEAM START` | 恢复扫描请求并重新触发 TX 配置；不自动开启高压 | 不允许在配置中启动 |
+| `BEAM STOP` | 暂停扫描请求，保留高压状态 | 停止操作可跨入口执行 |
+| `HV ENABLE` | 开启高压使能 GPIO；网页要求确认，Python 要求 `--allow-hv` | 不允许在配置中开启 |
+| `HV DISABLE` | 先关闭高压使能，再完全停止扫描请求 | 关闭操作可跨入口执行 |
+| `GAIN SET <shift>` | shift 0～8；每步约 +6.02 dB，放大噪声并可能饱和；不自动改变模拟增益 | 无事务时可在线修改；有事务时仅所属客户端 |
+
+这里的“停止”延续当前 PS/PL 控制语义，**不代表新增了硬件排空、当前脉冲完成或安全待机确认**。本功能未引入低功耗状态机，也没有对 PS 命令增加物理完成回读。
+
+### BRAM 区域
+
+| section | 深度（32 位字） | 用途 |
+|---|---:|---|
+| `fdemod_sin` | 8192 | 解调正弦系数 |
+| `fdemod_cos` | 8192 | 解调余弦系数 |
+| `log_table` | 1024 | 对数查表 |
+| `x_element` | 64 | 阵元位置 |
+| `hamming` | 64 | 加窗权重 |
+| `dfilter` | 64 | 数字滤波系数 |
+| `t_timing` | 10 | 扫描时序；第 0 个字必须保持 6144 |
+| `sin_beta` | 64 | 扫描方向参数 |
+| `delay_profile` | 16384 | 延迟表 |
+
+`TX7332 WR` 的 `tx7332_config_data` 深度为 128 个 32 位字，不属于 `BRAM WR` 区域。所有写入均要求 `offset + count <= depth` 且实际数据字数等于 count。每个 32 位字的具体位域沿用现有 PS/PL 及参考 JSON，不由 Wi-Fi 重新解释。
+
+当前固定上传为每帧 787456 字节，Wi-Fi 入口拒绝将 `t_timing[0]` 改成非 6144；不会修改或自动适配 ESP32/PC 帧长。原 USB/UART 接口不增加此兼容限制，混用时应自行保持一致。现有 DDR 覆盖及帧起点问题仍未解决。
+
+## 4. JSON 与文本批量下发
+
+工具独立实现参考工程的参数打包规则，支持相同的 AFE/DTGC、TX7332 和 BRAM JSON 格式，不导入参考工程代码、不自动使用其默认 JSON。
+
+```powershell
+# 先检查并显示命令；不联网、不生成运行日志
+python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 --target afe5832 --config 'D:\configs\afe5832.json' --dry-run
+
+# 下发明确指定的 JSON；自动包裹 CFG BEGIN / END
+python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 --target afe5832 --config 'D:\configs\afe5832.json'
+
+# 扫描时序文件中第 0 个字必须是 6144
+python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 --target t_timing --config 'D:\configs\t_timing.json'
+
+# 文本文件包含完整命令序列，包括需要的 CFG BEGIN / END
+python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 --file 'D:\configs\commands.txt'
+```
+
+`--target` 支持 `afe5832`、`tx7332`、`delay_profile`、`demod_coeffs`、`log_table`、`x_element`、`hamming`、`dfilter`、`t_timing`、`sin_beta`、`all`。
+
+单目标可用 `--config`，也可用 `--afe5832-config`、`--tx7332-config`、`--delay-profile-config`、`--demod-coeffs-config`、`--log-table-config`、`--x-element-config`、`--hamming-config`、`--dfilter-config`、`--t-timing-config`、`--sin-beta-config`。`--target all` 要求明确指定上述全部文件。`demod_coeffs` 文件须同时包含 `fdemod_sin` 和 `fdemod_cos`；其他 BRAM 目标文件只包含对应区域。
+
+JSON 全部在 PC 校验并生成命令后才联网；无效文件不会产生部分写入。但执行途中硬件失败、断网、中止不会回滚此前成功的寄存器写入。配置失败后应完整重新配置，而不是把 ABORT 当成回滚。
+
+参考工程 `t_timing_default.json` 为 2048 点，**不能直接用于当前 6144 点链路**；工具会拒绝，不会静默修改输入。
+
+批量配置先阻止新上传 BEGIN，再等待当前 SDIO 帧、待发送完整帧和发送回调结束，最多等待 90 秒。正常排空不取消在途帧；异常按原数据通路规则处理，未释放资源时不强制复用。配置期间禁止新上传，结束后不会自动重新上传、开启高压或启动成像。
+
+### 回执与报告
+
+```text
+@ACK <seq> <operation>
+@ACK <seq> GAIN_SET <实际shift>
+@RD <seq> <addr> <AFE数据>
+@RD <seq> TX7332 <addr> <TX数据>
+@NACK <seq> <error>
+@STATUS v=1 cfg=<0/1> owner=<0/1/2> seq=<seq> run=<0/1> hv=<0/1>
+```
+
+owner：0 为 UART1，1 为 USB，2 为 Wi-Fi，仅在 cfg=1 时代表事务所有者。run 为扫描请求寄存器值，hv 为使能 GPIO 读回；不是实际高压电压或物理发射反馈。
+
+运行报告默认生成 `logs/zynq-control-日期时间-随机后缀.json`，不覆盖已有文件；也可指定 `--log example.json`，自动放入 `logs`。返回码 0 为全部命令已收到成功回执，1 为失败或结果未知；参数错误为 2。
+
+常见错误：`NO_CFG`、`CFG_ACTIVE`、`CFG_OWNER`、`AFE_MAP_FAIL`、`AFE_WR_FAIL`、`AFE_RD_FAIL`、`BRAM_RANGE`、`TX7332_RANGE`、`BEAM_ACTIVE_USE_BEAM_STOP`、`FRAME_LAYOUT_6144_REQUIRED`、`HANDSHAKE_REQUIRED`、`STALE_REQUEST`、`REQUEST_CONFLICT`、`DRAIN_TIMEOUT`。参数解析也可能返回 `*_ARGS`、`*_DATA`、`*_OP` 或 `UNKNOWN_CMD`。
+
+失败立即停止后续命令。客户端仅在已确认持有事务且结果明确失败时尝试 ABORT；结果未知时不自动重发。PS Wi-Fi 配置事务连续 60 秒没有有效命令会关闭高压并清理事务，不自动恢复成像。网页状态轮询只读取缓存，不给串口事务续期。
+
+## 5. HTTP 与串口协议
+
+控制接口不要求认证请求头；POST 仍要求 `Content-Type: application/json`，不提供跨域 CORS 放行。控制任务尚未就绪时返回 HTTP 503，不再返回口令校验的 HTTP 401。CORS 不等于网络访问控制。
+
+`POST /api/zynq/commands` 示例请求体：
+
+```json
+{"client_id":"1234abcd","request_id":"00000001","commands":["STATUS"],"allow_hv":false}
+```
+
+客户端号、请求号均为非零的 8 位十六进制字符串；每批 1～8 条命令，请求体最多 2048 字节。接受后返回 HTTP 202 和 `{"job_id":"..."}`；GET `/api/zynq/jobs/<job_id>` 查询 `busy/state/count/completed/results/error`。`state` 为 `running/succeeded/failed/unknown`，优先关断等待执行时为 `queued`。
+
+仅保存一个活动批次和一个已完成批次；同一客户端及请求编号在缓存中重复提交相同命令返回原任务，不重复发送，内容冲突则拒绝。任务退出缓存后不能通过重发旧 POST 恢复结果，HTTP 断开也不代表命令没有执行。工具不自动重试 POST。
+
+配置事务期间只允许所属客户端继续配置；其他客户端及 USB/UART 写入被拒绝，关闭高压、暂停扫描和状态查询保留。Python 默认每次进程生成新客户端号；如确需跨多次调用维持同一事务，可显式使用相同 `--client-id`，但更推荐一个文本文件完成完整事务。
+
+串口封装：
+
+```text
+@WFC1 <session:8hex> <request:8hex> <length:decimal> <command>*<crc32:8hex>\n
+@WFR1 <session:8hex> <request:8hex> <length:decimal> <response>*<crc32:8hex>\n
+```
+
+CRC32 为 IEEE/zlib，覆盖 `*` 前所有 ASCII 字节；length 只计内部命令或回执。整行上限 256 字节。串口会话独立于 HTTP 客户端号，ESP32 生成会话并单调递增请求号；PS 仅对匹配请求返回封装回执。首次或恢复时先 STATUS 握手，内部命令不自动重放。PS 保留最近一次响应，并拒绝已经越过的旧请求号；复位后不能推断复位前未知命令是否执行。
+
+单条 UART 命令等待最多 20 秒；Python 每批等待默认 300 秒，可通过 `--timeout` 调整。优先关断在尚未确认会话时先按顺序发送只读 STATUS 建立会话，但不等待它的回执，再单次发送 HV DISABLE，避免被额外的查询超时阻挡。CRC 只检测损坏，不提供串口来源认证；当前 HTTP 控制接口也不鉴权，须由可信网络隔离限制访问。
+
+## 6. 软件验证与板测边界
+
+### 当前版本：移除 USB 口令（2026-10-16）
+
+- 本次只修改 ESP32 控制接口、网页、Python 工具及相关测试文档；不修改 PS、PL 或数据传输协议。已使用前述 Wi-Fi 命令 PS ELF 时，只需更新 ESP32 固件和 PC 工具，不需要重新下载 PS 或生成 BOOT.BIN。
+- ESP-IDF 6.1 默认与 throughput/fast 配置均构建成功；BIN 分别为 949712 B、951280 B，静态 DIRAM 分别为 123559 B、135521 B。高压确认、事务所有权、排空、超时和优先关断机制保留。
+- 原生 C 自检查通过；Python 129 项中 128 项通过，唯一失败仍为此前已有的规范/管理 BD 文本差异。控制工具专项 10 项及网页 11 项通过，包括无口令下发/查询、高压确认和服务未就绪拒绝；不以软件测试替代板测。
+- 新固件位于 `build/output/wifi_control_no_token_20261016/`。原 `wifi_control_20261016/` 中的 ESP32 BIN 是移除口令前的历史版本，不要混用；PS ELF 可继续使用原版本。
+- 路径与 SHA256 见 [无口令版构建清单](../logs/wifi-control-no-token-build-manifest.json)，回归及构建日志为 `esp32c61/logs/wifi-control-no-token-*.log`。
+- 未烧录、未 JTAG 下载、未开启高压或启动成像；BOOT.BIN、bit 和 XSA 的哈希保持不变。待实际更新固件后，再验证电池供电、无 monitor 时的控制。
+
+### 初版软件结果（2026-10-16，移除口令前）
+
+- Vitis 2026.1 的 SDIO、USB 两种 PS 应用均完成构建。SDIO 应用 text/data/bss 为 179707/140604/163152 B；USB 为 174907/140604/162192 B。当前 Vitis 源与规范源的本次修改一致。
+- ESP-IDF 6.1 的默认和 throughput/fast 配置均构建通过，应用分区仍约剩余 38%。默认 DIRAM 为 123599/256624 B（48.16%），性能配置为 135561/256624 B（52.82%）；这些是静态占用，不是运行时堆余量。
+- 新增控制任务栈为 4096 B，回执队列、批次与优先关断槽有界；HTTP JSON 的临时分配及上传期间的真实堆低水位仍需板测。没有新增整帧 PSRAM 缓冲区。
+- 原生 C 自检查通过，包括实际 PS 解析、ESP 控制任务、HTTP 处理器、AFE SPI 有限等待，以及既有数据传输和 UART/温度回归。优先关断测试覆盖普通批次已排队、正在等待回执两种情况。
+- Python 全量回归 128 项，127 项通过；唯一失败为原有 `test_source_and_bd_copies_match` 中规范 BD 与 Vivado 管理 BD 的文本比较。本次没有修改 BD 或掩盖该失败。网页交互 11 项通过。新增 Python 控制/JSON/参考一致性测试 9 项通过。
+- 初版未烧录、未 JTAG 下载、未启动成像或开启高压，未覆盖 BOOT.BIN。
+
+新产物集中在 `build/output/wifi_control_20261016/`：`B_mode_focus_imaging_sdio.elf`、`B_mode_focus_imaging_usb.elf`、`esp32c61_default.bin`、`esp32c61_throughput.bin`。当前 Vitis 可用 ELF 仍位于 `workspace/B_mode_focus_imaging/build/B_mode_focus_imaging.elf`，对应 SDIO。ESP32 建议通过原构建目录的 `build.ps1` 烧录完整镜像组合，不把单独的应用 bin 当作完整 Flash 镜像。
+
+绝对路径、SHA256、备份目录和未修改的 BOOT/bit/XSA 哈希见 [构建清单](../logs/wifi-control-build-manifest.json)。日志见 `esp32c61/logs/wifi-control-*.log`；最终 ESP32 build 日志同时包含 size 结果。原 `build/output/BOOT.BIN` 仍是旧版本，不能据此认为新控制功能已经写入启动镜像。
+
+自检查运行实际 PS 解析和 ESP 控制任务的主机桩，覆盖安全 END、所有者、SPI 错误传播相关接口、CRC/分段/溢出、重复/迟到、排空、超时及失联。参数打包与只读参考工程逐项比较；网页测试覆盖无需口令、高压确认及上传门控。
+
+板测尚需逐项验证：两端固件更新后查询状态；monitor 不连接时仍可配置；完整 JSON 下发后高压关闭；USB/UART 冲突拒绝；连续上传中排空配置；两端重启及断线恢复；实际吞吐与内部堆最低余量。只有在另行确认后才允许开启高压/扫描。软件测试不能替代真实电压、成像正确性或 48 小时板级稳定性验证。
+
+返回 [文档索引](README.md)。

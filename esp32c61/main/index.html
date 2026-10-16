@@ -23,6 +23,20 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <label><input id="open-network" type="checkbox"> 使用开放 Wi-Fi（清空已保存密码）</label>
 <button id="save" type="submit">保存并应用</button><small>目标地址下一次上传生效。修改 Wi-Fi 后会重新连接；连接成功 15 秒后关闭配置热点。</small>
 </form></section>
+<section class="card"><h2>Zynq 控制与配置</h2>
+<p class="muted">无需 USB 或控制口令，电池供电时可直接控制。接口不鉴权且 HTTP 未加密，仅限可信局域网，禁止开放到公网。</p>
+<p id="control-status" class="muted">等待控制服务状态</p>
+<button id="zynq-query" class="secondary">查询 Zynq 状态</button>
+<button id="zynq-hv-on">开启高压</button><button id="zynq-hv-off" class="secondary">关闭高压并停机</button>
+<button id="zynq-start">开始扫描</button><button id="zynq-pause" class="secondary">暂停扫描（保留高压）</button>
+<button id="zynq-safe-stop" class="secondary">安全停止（关闭高压）</button>
+<p class="muted">开始扫描不自动开启高压；Wi-Fi 配置结束后保持停机。上传按钮只传输 DDR，不启动成像。软件状态不是实际高压或物理收发完成的证明。</p>
+<label>数字增益（0～8）<input id="zynq-gain" type="number" min="0" max="8" value="0"></label><button id="zynq-gain-set">设置数字增益</button>
+<details><summary>高级命令（每行一条）</summary><textarea id="zynq-lines" rows="6" style="width:100%;font-family:monospace" placeholder="STATUS"></textarea>
+<small>支持 CFG、AFE、BRAM、TX7332、BEAM、HV、GAIN、STATUS。长 JSON 配置使用 Python 工具；当前采样点数必须保持 6144。配置不是回滚事务，ABORT 不恢复已写寄存器。</small>
+<button id="zynq-send">下发命令</button></details>
+<pre id="control-result" style="white-space:pre-wrap;overflow-wrap:anywhere" aria-live="polite">尚未下发命令</pre>
+</section>
 <section class="card"><h2>温度监测</h2><dl>
 <dt>Zynq 芯片</dt><dd id="temp-zynq">等待温度数据</dd>
 <dt>电源</dt><dd id="temp-power">等待温度数据</dd>
@@ -94,6 +108,7 @@ function render(s){
  if(d.running||d.raw_busy||s.busy||d.free_slots!==2)reasons.push('传输或缓冲区正在占用');
  el('sdio-gate').textContent=canStart?'可启动：SDIO 握手与上传条件均已满足':'不可启动：'+reasons.join('；');
  if(d.running||d.raw_busy||d.free_slots<2)el('upload').disabled=true;
+ renderZynqControl(s);
 }
 async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;renderTemperatures(null,true);el('upload').disabled=true;el('stop').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false}}
 el('config-form').addEventListener('submit',async event=>{event.preventDefault();saving=true;el('save').disabled=true;el('upload').disabled=true;const c={ssid:el('ssid').value,target_ip:el('target-ip').value.trim(),target_port:Number(el('target-port').value)};
@@ -105,4 +120,57 @@ refresh();setInterval(refresh,1000);
 for(const [id,frames] of [['sdio-once',1],['sdio-stream',0]])el(id).addEventListener('click',async()=>{
  try{notify((await api('/api/sdio/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({frames})})).message)}catch(e){notify(e.message,true)}await refresh()});
 el('sdio-stop').addEventListener('click',async()=>{try{notify((await api('/api/sdio/stop',{method:'POST'})).message)}catch(e){notify(e.message,true)}await refresh()});
+let controlBusy=0,controlClient='',controlRequest=0;
+const controlButtons=['zynq-query','zynq-hv-on','zynq-hv-off','zynq-start','zynq-pause','zynq-safe-stop','zynq-gain-set','zynq-send'];
+function controlId(){return (crypto.getRandomValues(new Uint32Array(1))[0]||1).toString(16).padStart(8,'0')}
+function renderZynqControl(s){
+ const c=s.zynq_control||{};
+ el('control-status').textContent=`控制服务 ${c.ready?'就绪':'不可用'}；${c.busy?'命令处理中':'空闲'}；${c.config_owned?'配置事务占用 / 上传禁止':'无 Wi-Fi 配置事务'}；PS ${c.synced?'已握手':'未知（需查询）'}；${c.ps_status||'尚无有效状态'}${c.status_age_ms>=0?'（'+(c.status_age_ms/1000).toFixed(1)+' 秒前）':''}`;
+ for(const id of controlButtons)el(id).disabled=controlBusy||!!c.busy||!c.ready;
+ for(const id of ['zynq-hv-off','zynq-safe-stop'])el(id).disabled=!c.ready;
+ if(c.config_owned){el('upload').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true}
+}
+async function controlApi(path,body){
+ return api(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},...(body?{body:JSON.stringify(body)}:{})});
+}
+async function sendZynq(lines){
+ lines=lines.map(s=>s.trim().replace(/\s+/g,' ')).filter(Boolean);
+ const urgent=lines.length===1&&lines[0]==='HV DISABLE';
+ if(controlBusy&&!urgent)return;
+ if(!lines.length)return;
+ if(lines.some(s=>s.length>159||!/^[\x20-\x7e]+$/.test(s)))throw Error('每条命令必须为不超过 159 字节的 ASCII');
+ const hv=lines.includes('HV ENABLE');
+ if(hv&&!confirm('即将开启高压。请确认硬件连接及操作条件安全。是否继续？'))return;
+ if(!controlClient){controlClient=controlId();controlRequest=Number.parseInt(controlId(),16)&0x7fffffff}
+ controlBusy++;for(const id of controlButtons)el(id).disabled=true;
+ for(const id of ['zynq-hv-off','zynq-safe-stop'])el(id).disabled=false;
+ const output=[];
+ try{
+  for(let offset=0;offset<lines.length;offset+=8){
+   const body={client_id:controlClient,request_id:(++controlRequest).toString(16).padStart(8,'0'),commands:lines.slice(offset,offset+8),allow_hv:hv};
+   const accepted=await controlApi('/api/zynq/commands',body);
+   const deadline=Date.now()+300000;
+   for(;;){
+    const job=await controlApi('/api/zynq/jobs/'+accepted.job_id);
+    el('control-result').textContent=output.join('\n')+`\n批次 ${accepted.job_id}：${job.completed}/${job.count} ${job.state}`;
+    if(!job.busy){
+     for(const item of job.results||[])if(item.response)output.push(item.command+'\n'+item.response);
+     if(job.state!=='succeeded')throw Error(job.state+': '+job.error+'；已停止后续命令，不会自动重发');
+     break;
+    }
+    if(Date.now()>=deadline)throw Error('等待超时，执行结果未知；请查询状态，不要重复提交旧命令');
+    await new Promise(resolve=>setTimeout(resolve,150));
+   }
+  }
+  el('control-result').textContent=output.join('\n')+'\n完成（配置结束不会自动启动）';
+ }catch(e){el('control-result').textContent=output.join('\n')+'\n'+e.message+'。通信中断时结果可能未知；配置失联由 PS 看门狗停机清理。';}
+ finally{controlBusy--;await refresh()}
+}
+for(const [id,lines] of [['zynq-query',['STATUS']],['zynq-hv-on',['HV ENABLE']],['zynq-hv-off',['HV DISABLE']],['zynq-start',['BEAM START']],['zynq-pause',['BEAM STOP']],['zynq-safe-stop',['HV DISABLE']]])
+ el(id).addEventListener('click',()=>sendZynq(lines).catch(e=>notify(e.message,true)));
+el('zynq-gain-set').addEventListener('click',()=>{
+ const n=Number(el('zynq-gain').value);if(!Number.isInteger(n)||n<0||n>8){notify('数字增益必须为 0～8 的整数',true);return}
+ sendZynq(['GAIN SET '+n]).catch(e=>notify(e.message,true));
+});
+el('zynq-send').addEventListener('click',()=>sendZynq(el('zynq-lines').value.split(/\r?\n/)).catch(e=>notify(e.message,true)));
 </script></body></html>
