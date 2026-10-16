@@ -6,6 +6,7 @@
 
 - [build.ps1 命令使用说明](BUILD_COMMANDS.md)
 - [Wi-Fi 下发全部 Zynq 命令](WIFI_COMMANDS.md)
+- [扫描 run 状态读回修复与板测](SCAN_RUN_STATUS_FIX.md)
 - [运行日志与报告目录](LOGS.md)
 - [SDIO 链路说明](SDIO_BRIDGE.md)
 - [TCP/UDP 宏选择与协议](TCP_TRANSPORT.md)

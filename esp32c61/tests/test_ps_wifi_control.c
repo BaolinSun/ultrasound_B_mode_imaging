@@ -31,7 +31,7 @@ u32 XUartPs_Recv(XUartPs *u,u8 *p,u32 n) { (void)u;(void)p;(void)n;return 0; }
 int XScuGic_Connect(XScuGic *g,u32 id,Xil_ExceptionHandler fn,void *ctx) { (void)g;(void)id;(void)ctx;irq_handler=fn;return 0; }
 void XScuGic_Enable(XScuGic *g,u32 id) { (void)g;(void)id; }
 void XScuGic_InterruptMaptoCpu(XScuGic *g,u8 mask,u32 id) { (void)g;(void)id;assert(mask==1); }
-u32 XBram_ReadReg(u32 base,u32 off) { (void)base;(void)off;return run; }
+u32 XBram_ReadReg(u32 base,u32 off) { (void)base;(void)off;assert(0);return 0; } /* No valid run readback in PL. */
 void hv_enable(void) { hv=1;enables++; }
 void hv_disable(void) { hv=0; }
 u32 hv_is_enabled(void) { return hv; }
@@ -40,6 +40,8 @@ void Beamform_Start(void) { hv_enable();run=1; }
 void Beamform_Halt(void) { run=0; }
 void Beamform_Pause(void) { run=0; }
 void Beamform_Resume(void) { run=1; }
+u32 Beamform_GetRunRequest(void) { return run; }
+u32 Beamform_GetSpiStartRequest(void) { return run; }
 u32 Rx_SetGainShift(u32 n) { return n; }
 u32 AFE5832_SetRegMap(u32 m) { (void)m;return afe_fail; }
 u32 AFE5832_WriteRegMap(u32 m,u32 a,u32 d) { (void)m;(void)a;(void)d;writes++;return afe_fail; }
@@ -84,6 +86,10 @@ int main(void) {
     memset(received,'x',300);strcpy(received+300,"HV ENABLE\n");receive_at=0;receive_len=strlen(received);
     irq_handler(NULL);uart_process_commands();assert(!hv);
     assert(strstr(wifi(16,"STATUS"),"cfg=0"));
+    uart_handle_wifi_line("BEAM START",12,capture);assert(strstr(answer,"BEAM_START")&&run&&!hv);
+    uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"run=1 hv=0 run_src=ps spi=1"));
+    uart_handle_wifi_line("BEAM STOP",12,capture);assert(!run&&!hv);
+    uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"run=0 hv=0 run_src=ps"));
     uart_handle_wifi_line("CFG BEGIN 20",12,capture);
     uart_handle_wifi_line("BRAM WR t_timing 0 1 06144",12,capture);assert(strstr(answer,"BRAM_WR"));
     uart_handle_wifi_line("CFG END",12,capture);assert(!hv&&!run);

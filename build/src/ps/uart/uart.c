@@ -558,8 +558,9 @@ static void uart_handle_line(char *line)
 		uart_emitf("@NACK %u CFG_OWNER",uart_cfg_seq); return;
 	}
 	if(!strcmp(line,"STATUS")) {
-		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u",uart_cfg_active,
-		    cfg_owner,uart_cfg_seq,(unsigned)(XBram_ReadReg(BRAM_BEAMFORM_CTRL_ADDR,0)&1U),(unsigned)hv_is_enabled());
+		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u run_src=ps spi=%u",uart_cfg_active,
+		    cfg_owner,uart_cfg_seq,(unsigned)Beamform_GetRunRequest(),(unsigned)hv_is_enabled(),
+		    (unsigned)Beamform_GetSpiStartRequest());
 		return;
 	}
 	char *ctx = line;

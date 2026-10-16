@@ -26,6 +26,10 @@
 
 void para_down(void);
 void Beamform_SetControl(u32 beamform_enable, u32 spi_start_enable);
+/* PS-issued requests, NOT PL activity feedback. These scan-timing words are
+ * write-only in the current bitstream; reading their addresses returns stale data. */
+u32 Beamform_GetRunRequest(void);
+u32 Beamform_GetSpiStartRequest(void);
 u32 Rx_SetGainShift(u32 gain_shift);
 void Beamform_Resume(void);
 void Beamform_Pause(void);

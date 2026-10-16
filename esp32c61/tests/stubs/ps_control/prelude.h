@@ -28,6 +28,8 @@ void Beamform_Start(void);
 void Beamform_Pause(void);
 void Beamform_Resume(void);
 void Beamform_Halt(void);
+u32 Beamform_GetRunRequest(void);
+u32 Beamform_GetSpiStartRequest(void);
 void hv_enable(void);
 void hv_disable(void);
 u32 hv_is_enabled(void);

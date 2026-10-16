@@ -134,10 +134,14 @@ JSON 全部在 PC 校验并生成命令后才联网；无效文件不会产生�
 @RD <seq> <addr> <AFE数据>
 @RD <seq> TX7332 <addr> <TX数据>
 @NACK <seq> <error>
-@STATUS v=1 cfg=<0/1> owner=<0/1/2> seq=<seq> run=<0/1> hv=<0/1>
+@STATUS v=1 cfg=<0/1> owner=<0/1/2> seq=<seq> run=<0/1> hv=<0/1> run_src=ps spi=<0/1>
 ```
 
-owner：0 为 UART1，1 为 USB，2 为 Wi-Fi，仅在 cfg=1 时代表事务所有者。run 为扫描请求寄存器值，hv 为使能 GPIO 读回；不是实际高压电压或物理发射反馈。
+owner：0 为 UART1，1 为 USB，2 为 Wi-Fi，仅在 cfg=1 时代表事务所有者。`run_src=ps` 表示 run 是 **PS 最后下发的扫描请求缓存**，spi 同样是 PS 下发的 SPI 启动请求；hv 是使能 GPIO 读回。它们都不是实际高压电压、PL 扫描活动或事务排空的证明。PL 复位或 JTAG 直接写寄存器也不会同步修改 PS 缓存。
+
+当前 bit 中 `0x40011528/0x4001152C` 支持 SPI/扫描请求写入，但静态参数读通路没有包含这两个地址；此前直接读 `0x4001152C` 得到的 `run=0` 不能证明未启动扫描。修复只涉及 PS，不把缓存伪装成硬件反馈。开始扫描不自动使能高压；停止请求仍保留既有整帧停止语义。
+
+该问题的板测、构建及 RAM 下载边界见 [扫描状态修复记录](SCAN_RUN_STATUS_FIX.md)。
 
 运行报告默认生成 `logs/zynq-control-日期时间-随机后缀.json`，不覆盖已有文件；也可指定 `--log example.json`，自动放入 `logs`。返回码 0 为全部命令已收到成功回执，1 为失败或结果未知；参数错误为 2。
 

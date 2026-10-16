@@ -1,0 +1,2 @@
+#pragma once
+#define XPAR_XBRAM_0_BASEADDR 0x40000000U

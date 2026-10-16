@@ -66,11 +66,21 @@ static const BramSectionInfo bram_sections[] = {
 };
 void para_down(void);
 
+static u32 beamform_run_request;
+static u32 beamform_spi_start_request;
+
+u32 Beamform_GetRunRequest(void) { return beamform_run_request; }
+u32 Beamform_GetSpiStartRequest(void) { return beamform_spi_start_request; }
+
 void Beamform_SetControl(u32 beamform_enable, u32 spi_start_enable)
 {
 	XBram_WriteReg(BRAM_BEAMFORM_CTRL_ADDR, 0,
 			beamform_enable ? BEAMFORM_CTRL_RUN_MASK : 0U);
 	XBram_WriteReg(BRAM_SPI_START_ADDR, 0, spi_start_enable ? 1U : 0U);
+	/* This records what PS requested, not whether PL accepted it or drained.
+	 * Do not read these write-only timing addresses for status or busy checks. */
+	beamform_run_request = beamform_enable ? 1U : 0U;
+	beamform_spi_start_request = spi_start_enable ? 1U : 0U;
 }
 
 /* Set the receive digital gain shift. Safe to call while imaging is running:
@@ -177,7 +187,7 @@ u32 Tx7332_ReadRegister(u32 addr, u32 *data)
 	if (data == NULL || addr > TX7332_REG_ADDR_MAX) {
 		return BRAM_CFG_STATUS_ARGS;
 	}
-	if ((XBram_ReadReg(BRAM_BEAMFORM_CTRL_ADDR, 0) & BEAMFORM_CTRL_RUN_MASK) != 0U) {
+	if (Beamform_GetRunRequest() != 0U) {
 		return BRAM_CFG_STATUS_BUSY;
 	}
 

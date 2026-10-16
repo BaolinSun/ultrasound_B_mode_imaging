@@ -228,6 +228,12 @@ try {
 & (Join-Path $PSScriptRoot 'run_temperature_tests.ps1') -Compiler $Compiler -OutputDirectory (Join-Path $testOutput 'temperature')
 $controlOutput=Join-Path $testOutput 'wifi-control'
 New-Item -ItemType Directory -Path $controlOutput -Force | Out-Null
+& $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic '-I' (Join-Path $PSScriptRoot 'stubs/bram') `
+    '-I' (Join-Path $PSScriptRoot 'stubs/ps_control') (Join-Path $PSScriptRoot 'test_beamform_control.c') `
+    -o (Join-Path $controlOutput 'beamform.exe')
+if($LASTEXITCODE -ne 0) { throw 'Beamform MMIO regression compile failed' }
+& (Join-Path $controlOutput 'beamform.exe')
+if($LASTEXITCODE -ne 0) { throw 'Beamform MMIO regression failed' }
 foreach($suite in @('wifi_protocol','wifi_control_service')) {
     [string[]]$extra=if($suite -eq 'wifi_control_service') { @('-I',(Join-Path $PSScriptRoot 'stubs/control')) } else { @() }
     $binary=Join-Path $controlOutput "$suite.exe"
