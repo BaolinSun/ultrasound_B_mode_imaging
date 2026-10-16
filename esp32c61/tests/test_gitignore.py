@@ -32,6 +32,19 @@ class IgnoreTests(unittest.TestCase):
         self.assertFalse(self.ignored('common/example.json'))
         self.assertFalse(self.ignored('build/src/ps/example.json'))
 
+    def test_build_inputs_are_visible_and_generated_outputs_ignored(self):
+        for path in ('build/src/ps/main.c', 'build/src/imports/release/ila_release_stubs.v',
+                     'build/src/bd/pus_ctrl_system.bd', 'build/src/ip/clk_gen/clk_gen.xci',
+                     'build/constraints/pin.xdc', 'build/scripts/build_all.ps1',
+                     'build/scripts/tests/test_vitis_source_cleanup.py', 'build/vivado.tcl', 'build/README.md'):
+            with self.subTest(path=path):
+                self.assertFalse(self.ignored(path))
+        for path in ('build/output/BOOT.BIN', 'build/reports/sdio_timing.rpt',
+                     'build/verification/cmake.log', 'build/sdio_vitis_example/file.c',
+                     'build/workspace_backups/file.c', 'build/archives/cleanup.zip'):
+            with self.subTest(path=path):
+                self.assertTrue(self.ignored(path))
+
 
 if __name__ == '__main__':
     unittest.main()

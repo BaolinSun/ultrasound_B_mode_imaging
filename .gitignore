@@ -48,21 +48,12 @@ Release/
 !/vivado/ultrasound_B_mode_imaging.srcs/sources_1/imports/imports/release/**
 
 # Reproducible build state and delivery artifacts
-/build/NA/
-/build/ipython/
-/build/workspace_backups/
-/build/vitis_workspace_verify_2026_1/
-/build/sdio_vitis_*/
-/build/tcp_pipeline_usb/
-/build/reports/*.jou
-/build/reports/*.log
-/build/vivado-temp/
-/build/*.jou
-/build/*.log
-/build/vivado*.jou
-/build/vivado*.log
-/build/channel_map_sim*.jou
-/build/channel_map_sim*.log
-/build/output/
+# This directory also holds canonical source code: do not ignore /build/ itself.
+/build/*
+!/build/src/
+!/build/scripts/
+!/build/constraints/
+!/build/vivado.tcl
+!/build/README.md
 /tools/__pycache__/
 /build/scripts/__pycache__/

@@ -1,3 +1,0 @@
-branch=channel_mapping
-commit=b0d10d56251da3a93220aa829b0eb9fbc2252e90
-status=clean
