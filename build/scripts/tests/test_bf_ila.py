@@ -3,6 +3,7 @@ from pathlib import Path
 import json
 import re
 import unittest
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[3]
 CANONICAL = ROOT/'build/src/imports'
@@ -10,6 +11,13 @@ MANAGED = ROOT/'vivado/ultrasound_B_mode_imaging.srcs/sources_1/imports/imports'
 
 
 class BfIlaTests(unittest.TestCase):
+    def test_saved_project_keeps_real_core_and_implementation_hook(self):
+        tree = ET.parse(ROOT/'vivado/ultrasound_B_mode_imaging.xpr')
+        self.assertIsNotNone(tree.find(".//FileSet[@Name='ila_bf']/File"))
+        self.assertIsNotNone(tree.find(".//Run[@Id='ila_bf_synth_1']"))
+        step = tree.find(".//Run[@Id='impl_1']/Strategy/Step[@Id='opt_design']")
+        self.assertIn('bf_ila_impl_pre.tcl', step.attrib['PreStepTclHook'])
+
     def test_original_probe_connections_are_unchanged_in_both_copies(self):
         expected = {'clk': 'data_clk', 'probe0': '{proc_en,proc_in[15:0]}',
                     'probe1': '{rtc_rxen,proc_top_i.rtc_bfen}', 'probe2': '{up_dataen,up_data}',
@@ -35,6 +43,8 @@ class BfIlaTests(unittest.TestCase):
                             ('C_INPUT_PIPE_STAGES',0), *[(f'C_PROBE{i}_WIDTH',w) for i,w in enumerate((17,2,17,32,7))]]:
             self.assertRegex(text, rf'CONFIG\.{prop}\s+\{{{value}\}}')
         self.assertNotIn('CONFIG.C_PROBE5_WIDTH', text)
+        self.assertIn('get_runs -quiet ila_bf_synth_1', text)
+        self.assertIn('create_ip_run -force', text)
 
     def test_generated_ip_definition_has_original_geometry(self):
         for path in (ROOT/'build/src/ip/ila_bf/ila_bf.xci',

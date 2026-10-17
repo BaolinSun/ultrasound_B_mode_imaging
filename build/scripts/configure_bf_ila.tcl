@@ -18,6 +18,14 @@ set_property -dict [list CONFIG.C_NUM_OF_PROBES {5} CONFIG.C_DATA_DEPTH {8192} \
     CONFIG.C_PROBE3_WIDTH {32} CONFIG.C_PROBE4_WIDTH {7} \
     CONFIG.C_INPUT_PIPE_STAGES {0}] $bf_ila_ip
 generate_target all $bf_ila_ip
+# A GUI that was open before integration can save an older XPR. Re-registering
+# an already generated XCI alone does not recreate its missing OOC run/fileset.
+if {![llength [get_runs -quiet ila_bf_synth_1]]} {
+    create_ip_run -force [get_files [get_property IP_FILE $bf_ila_ip]]
+    if {![llength [get_runs -quiet ila_bf_synth_1]]} {
+        error "Failed to restore ila_bf OOC run"
+    }
+}
 # Persist the upgraded IP definition as the canonical clean-rebuild input.
 set bf_ila_ip_file [get_property IP_FILE $bf_ila_ip]
 set bf_ila_canonical [file join $bf_ila_root build src ip ila_bf ila_bf.xci]
