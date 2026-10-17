@@ -18,6 +18,7 @@ open_project $project_path
 set bridge_bd [lindex [get_files -quiet -all pus_ctrl_system.bd] 0]
 open_bd_design $bridge_bd
 source [file join $script_dir configure_sdio.tcl]
+source [file join $script_dir configure_bf_ila.tcl]
 generate_target all [get_files $bridge_bd]
 if {[llength [get_files -quiet -all pus_ctrl_system_wrapper.v]] != 1} {
     build_fail "pus_ctrl_system_wrapper.v is not registered in sources_1"
@@ -43,6 +44,14 @@ if {$impl_progress ne "100%" || [string match -nocase "*error*" $impl_status]} {
     build_fail "implementation failed: $impl_status"
 }
 
-puts "BUILD_COMPLETE: synthesis, implementation, and bitstream generation passed"
+open_run impl_1
+source [file join $script_dir verify_bf_ila.tcl]
+set output_dir [file join $root_dir build output]
+file mkdir $output_dir
+write_debug_probes -force [file join $output_dir ultrasound_B_mode_imaging.ltx]
+file copy -force [file join [get_property DIRECTORY [get_runs impl_1]] heart_top.bit] \
+    [file join $output_dir ultrasound_B_mode_imaging.bit]
+write_hw_platform -fixed -include_bit -force -file [file join $output_dir ultrasound_B_mode_imaging.xsa]
+puts "BUILD_COMPLETE: synthesis, implementation, bitstream and matching ILA probes generated"
 close_project
 exit 0

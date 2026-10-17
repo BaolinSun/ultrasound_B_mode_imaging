@@ -112,8 +112,8 @@ set all_xci_files [collect_source_files [file join $root_dir build src ip] {.xci
 set xci_files {}
 foreach xci $all_xci_files {
     set ip_name [file rootname [file tail $xci]]
-    if {$ip_name in {ila_bf ila_timing ila_tx}} {
-        puts "MIGRATION_INFO: excluding debug-only $ip_name from BASIC-license release build"
+    if {$ip_name in {ila_timing ila_tx}} {
+        puts "MIGRATION_INFO: excluding unused debug-only $ip_name; ila_bf is enabled"
         continue
     }
     lappend xci_files $xci
@@ -203,6 +203,7 @@ if {[llength $wrapper_files] == 0} {
 }
 add_files -norecurse -fileset sources_1 $wrapper_files
 set_property top heart_top [get_filesets sources_1]
+source [file join $root_dir build scripts configure_bf_ila.tcl]
 update_compile_order -fileset sources_1
 report_ip_status -file [file join $output_dir ip_status.rpt]
 
@@ -228,6 +229,7 @@ if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {
 }
 
 open_run impl_1
+source [file join $root_dir build scripts verify_bf_ila.tcl]
 assert_pin_exists {pus_ctrl_system_wrapper_i/pus_ctrl_system_i/w_ddr_0/inst/w_ddr_v1_0_M00_AXI_inst/wr_ddr_start_ff_reg/D} W_DDR_CDC_STAGE1
 assert_pin_exists {proc_top_i/scan_sync_i/rtc_enable_sync_ff1_reg/D} SCAN_ENABLE_CDC_STAGE1
 assert_pin_exists {proc_top_i/beamform_active_sync_ff1_reg/D} BEAMFORM_ACTIVE_CDC_STAGE1
@@ -247,6 +249,7 @@ if {![file exists $bit_file]} {
     fail "expected bitstream does not exist: $bit_file"
 }
 file copy -force $bit_file [file join $output_dir ultrasound_B_mode_imaging.bit]
+write_debug_probes -force [file join $output_dir ultrasound_B_mode_imaging.ltx]
 write_hw_platform -fixed -include_bit -force -file [file join $output_dir ultrasound_B_mode_imaging.xsa]
 
 puts "MIGRATION_COMPLETE: bitstream and XSA exported to $output_dir"

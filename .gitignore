@@ -57,3 +57,4 @@ Release/
 !/build/README.md
 /tools/__pycache__/
 /build/scripts/__pycache__/
+/build/scripts/tests/__pycache__/

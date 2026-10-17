@@ -208,8 +208,7 @@ set_clock_groups -name afe_to_system_async -asynchronous \
 # Removed in 2026.1: this generated-clock declaration referenced the deleted
 # data_sample hierarchy. The clock is derived through the current BUFR netlist.
 
-# The release build uses port-compatible ILA stubs and has no debug hub.
-# Vivado XDC files do not support Tcl `if`; debug-hub properties belong in a
-# separate debug build Tcl script if the preserved ILA XCI files are enabled.
+# ila_bf is enabled by configure_bf_ila.tcl. The implementation pre-hook connects
+# dbg_hub to the independent 100 MHz system clock; do not use ADC data_clk for it.
 
 # New PCB maps dcp_0 to clock-capable pin D5; no clock-route override is required.

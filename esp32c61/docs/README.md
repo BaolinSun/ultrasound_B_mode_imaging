@@ -8,6 +8,7 @@
 - [Wi-Fi 超声图像实时网页显示](WIFI_IMAGE_VIEWER.md)
 - [Wi-Fi 下发全部 Zynq 命令](WIFI_COMMANDS.md)
 - [扫描 run 状态读回修复与板测](SCAN_RUN_STATUS_FIX.md)
+- [原始 ila_bf 探针与波束合成调试](ILA_BF_DEBUG.md)
 - [运行日志与报告目录](LOGS.md)
 - [SDIO 链路说明](SDIO_BRIDGE.md)
 - [TCP/UDP 宏选择与协议](TCP_TRANSPORT.md)
