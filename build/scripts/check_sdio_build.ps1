@@ -60,16 +60,10 @@ $selection=[regex]::Match($config,'(?m)^#define DATA_OUTPUT_MODE DATA_OUTPUT_(US
 if (-not $selection.Success) { throw 'Output macro must explicitly select DATA_OUTPUT_USB or DATA_OUTPUT_SDIO.' }
 $symbol=& $nm -S (Join-Path $root 'build/output/B_mode_focus_imaging.elf') | Select-String '^([0-9a-f]+) ([0-9a-f]+) b test_frame$'
 if ($LASTEXITCODE -ne 0) { throw 'ELF symbol read failed.' }
+if ($symbol) { throw 'Build unexpectedly contains the removed synthetic SDIO test frame.' }
 if ($selection.Groups[1].Value -eq 'SDIO') {
-    if (-not $symbol) { throw 'SDIO build DDR test frame symbol not found.' }
-    $start=[Convert]::ToUInt64($symbol.Matches[0].Groups[1].Value,16)
-    $bytes=[Convert]::ToUInt64($symbol.Matches[0].Groups[2].Value,16)
-    if ($start%64 -ne 0 -or $bytes -ne 787456 -or $start -lt 0x100000 -or $start+$bytes -gt 0x1c000000) {
-        throw 'DDR test frame is misaligned, wrong-sized, or overlaps reserved USB/PL regions.'
-    }
-    $memorySummary='DDR test frame 0x{0:x}..0x{1:x}' -f $start,($start+$bytes)
+    $memorySummary='SDIO live imaging DDR 0x20000000, 787456 bytes (no frame overwrite protection yet)'
 } else {
-    if ($symbol) { throw 'USB build unexpectedly contains an SDIO DDR test frame.' }
     $memorySummary='USB build: no SDIO DDR test frame'
 }
 $boot=& (Join-Path $tools 'Vivado/bin/bootgen.bat') -arch zynq -read (Join-Path $root 'build/output/BOOT.BIN') 2>&1 | Out-String

@@ -27,8 +27,8 @@ extern XScuGic xInterruptController;
 #define AFE5832_TASK_PRIO 2
 #define USB_TASK_PRIO 7
 
-#define LED_1_EMIO_PIN 55
-#define LED_2_EMIO_PIN 54
+#define LED_1_EMIO_PIN 54
+#define LED_2_EMIO_PIN 55
 
 #define L2Cpl310_BASE_ADDR 0xF8F02000U
 #define REG9_D_LOCKDOWN0_OFFSET 0x00000900U
@@ -60,7 +60,7 @@ extern XScuGic xInterruptController;
 #define SAMPLE_LENGTH 2048
 #define PLANE_WAVE_ANGLE_NUMS 11
 
-//#define USE_DEBUG_PRINT
+#define USE_DEBUG_PRINT
 
 #ifdef USE_DEBUG_PRINT
 #define DEBUG_PRINT(fmt, ...)  xil_printf("[DEBUG] "fmt, ##__VA_ARGS__ )

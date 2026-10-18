@@ -94,9 +94,6 @@ void AFE5832_init(void) {
 	 * */
 	afe5832_spi_write_byte(0x0001, 0x0000);
 	afe5832_spi_write_byte(0x0003, 0x0000 | (0x01 << 4));
-	afe5832_spi_read_byte(0x0003, &data);
-	DEBUG_PRINT("AFE5832 READ 0x03 %x \r\n", data);
-
 
 	// 以下两个寄存器特定位要求写1
 	afe5832_spi_write_byte(0x00d1, 0x0000 | (0x07 << 0));
@@ -137,6 +134,9 @@ void AFE5832_init(void) {
 			0x0000 | (SER_DATA_RATE_14X << SER_DATA_RATE_BIT) | (0x01 << 4)
 					| (0x00<< 12));
 
+	afe5832_spi_read_byte(0x0003, &data);
+	DEBUG_PRINT("AFE5832 READ 0x0003 %x \r\n", data);
+
 
 	// TX_TRIG 脉冲，固定的初始化流程
 	usleep(100);
@@ -170,7 +170,7 @@ void AFE5832_init(void) {
 	afe5832_spi_write_byte(0x00C6, 0x0000 | (0x00 << 2) | (0x00 << 3));
 	afe5832_spi_read_byte(0x00C7, &data);
 
-	DEBUG_PRINT("AFE5832 READ %x \r\n", data);
+	DEBUG_PRINT("AFE5832 READ 0x00C7 %x \r\n", data);
 
 
 	/******************************* DTGC *******************************/
@@ -238,6 +238,7 @@ void AFE5832_init(void) {
 	usleep(100);
 
 }
+
 void AFE5832_Read_Temp(float *temp) {
 	u32 data = 0;
 	data = afe5832_spi_read_byte(0xD0, &data);
