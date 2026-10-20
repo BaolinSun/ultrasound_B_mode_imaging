@@ -60,7 +60,7 @@ extern XScuGic xInterruptController;
 #define SAMPLE_LENGTH 2048
 #define PLANE_WAVE_ANGLE_NUMS 11
 
-#define USE_DEBUG_PRINT
+// #define USE_DEBUG_PRINT
 
 #ifdef USE_DEBUG_PRINT
 #define DEBUG_PRINT(fmt, ...)  xil_printf("[DEBUG] "fmt, ##__VA_ARGS__ )

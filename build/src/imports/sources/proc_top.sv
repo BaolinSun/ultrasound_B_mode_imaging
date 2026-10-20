@@ -1,5 +1,8 @@
 module proc_top
 (
+    output reg up_header,
+    output reg up_last,
+    output reg capture_busy,
 	input								clk_para,
 	input								clk_200,
 	input								clk_25,
@@ -371,8 +374,23 @@ bproc_top								bproc_top_i
 	.log_data							(log_data			)
 );
 
+// capture_busy crosses as a held single-bit level into the AXI domain.
+// Track the processing tail after physical scanning becomes inactive.
+(* ASYNC_REG="TRUE", SHREG_EXTRACT="NO" *) reg bf_sync1, bf_sync2;
+reg tail_pending;
+always_ff @(posedge clk_25) begin
+    if(reset) begin bf_sync1<=0;bf_sync2<=0;tail_pending<=0;capture_busy<=0;end
+    else begin
+        bf_sync1<=rtc_bfen;bf_sync2<=bf_sync1;
+        capture_busy<=beamform_active_sync_ff2 | tail_pending | up_dataen | up_last;
+        if(bf_sync2) tail_pending<=1;
+        else if(log_last) tail_pending<=0;
+    end
+end
 always@(posedge clk_25)
 begin
+    up_header <= !reset && log_headen;
+    up_last <= !reset && log_last;
 	if(log_headen)			up_dataen <= 1'b1;
 	else if(log_dataen)		up_dataen <= 1'b1;
 	else					up_dataen <= 1'b0;

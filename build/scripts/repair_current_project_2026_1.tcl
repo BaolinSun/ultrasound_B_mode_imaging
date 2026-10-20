@@ -21,10 +21,11 @@ if {$bd_file eq ""} {
 }
 
 # The copied BD retained BMM metadata for a former internal blk_mem_gen_0.
-# The current AXI BRAM controller is exported through the para interface, so
+# The current AXI BRAM controller is exported through explicit para_* ports, so
 # keeping that stale reference makes write_bitstream try to initialize a cell
 # that no longer exists in the implemented netlist.
 open_bd_design $bd_file
+source [file join $script_dir configure_frame_store.tcl]
 source [file join $script_dir configure_sdio.tcl]
 set_property HDL_ATTRIBUTE.BMM_INFO_ADDRESS_SPACE {} [get_bd_cells axi_bram_ctrl_0]
 set_property HDL_ATTRIBUTE.BMM_INFO_PROCESSOR {} [get_bd_cells processing_system7_0]

@@ -17,8 +17,12 @@ static XAdcPs adc;
 static int adc_ready;
 uint32_t temp_hw_now_ms(void) {
     XTime ticks; XTime_GetTime(&ticks);
-    return (uint32_t)((ticks/COUNTS_PER_SECOND)*1000U+
-                     (ticks%COUNTS_PER_SECOND)*1000U/COUNTS_PER_SECOND);
+    /* Vitis BSP expands COUNTS_PER_SECOND to CPU_FREQ/2 without parentheses.
+     * Capture the WHOLE expression once; otherwise / and % bind to CPU_FREQ
+     * before /2, making time nonmonotonic and a 10 s period about 40 s. */
+    const uint64_t frequency=(uint64_t)(COUNTS_PER_SECOND);
+    return (uint32_t)((ticks/frequency)*1000U+
+                     (ticks%frequency)*1000U/frequency);
 }
 static int expired(uint32_t start) {
     return (uint32_t)(temp_hw_now_ms()-start)>=TEMP_IO_TIMEOUT_MS;

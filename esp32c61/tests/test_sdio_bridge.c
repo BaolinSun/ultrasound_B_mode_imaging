@@ -69,7 +69,7 @@ esp_err_t sdio_slave_recv(sdio_slave_buf_handle_t*h,uint8_t**p,size_t*n,uint32_t
     return ESP_ERR_TIMEOUT;
 }
 uint8_t sdio_slave_read_reg(unsigned p) { assert(p<64);return regs[p]; }
-esp_err_t sdio_slave_write_reg(unsigned p,uint8_t v) { assert(p<64);regs[p]=v;return !strcmp(fault,"write")?ESP_ERR_INVALID_STATE:ESP_OK; }
+esp_err_t sdio_slave_write_reg(unsigned p,uint8_t v) { assert(p<64 && !(p>=28 && p<=31));regs[p]=v;return !strcmp(fault,"write")?ESP_ERR_INVALID_STATE:ESP_OK; }
 void config_store_get(app_config_t*c) { memset(c,0,sizeof(*c));if(target_configured)strcpy(c->target_ip,"192.168.3.31");c->target_port=50001; }
 void *psram_udp_alloc(size_t n) {
     static unsigned allocations;
@@ -150,6 +150,7 @@ int main(int argc,char **argv) {
     random_id=UINT32_MAX;
     assert(sdio_bridge_start(1)==ESP_OK);step();wait_inject=1;begin(1,checksum);frame(true,false);
     assert(status().received_frames==1 && jobs==1 && !status().running);
+    assert(status().last_received_frame==1 && status().last_received_bytes==BR_FRAME_BYTES);
     assert(!memcmp(job_data,reference,BR_FRAME_BYTES));
     assert(sdio_bridge_selftest()==ESP_ERR_TIMEOUT);
     finish(RAW_OK);assert(status().free_slots==2 && status().sent_frames==1);
@@ -170,6 +171,7 @@ int main(int argc,char **argv) {
     sdio_bridge_stop();step();
     assert(!status().running && !status().host_sdio);
     assert(status().free_slots==1); /* SENDING lease cannot be returned yet. */
+    assert(!status().last_received_bytes && !status().last_received_frame); /* New session clears old facts. */
     finish(RAW_CANCELLED);assert(status().free_slots==2);
     select_host();assert(sdio_bridge_start(0)==ESP_OK);step();begin(5,checksum);
     batch(0,16,true,false);clock_us+=31000000;step();
@@ -190,6 +192,7 @@ int main(int argc,char **argv) {
     assert(!status().raw_busy);
     select_host();assert(sdio_bridge_start(1)==ESP_OK);step();begin(6,checksum);frame(true,true);step();
     assert(status().crc_errors==1 && status().free_slots==2 && !status().running);
+    assert(!status().last_received_bytes && !status().last_received_frame);
     select_host();assert(sdio_bridge_start(1)==ESP_OK);step();begin(7,checksum);frame(false,false);
     clock_us+=31000000;step();assert(!status().running && resets>=4);finish(RAW_CANCELLED);
     select_host();assert(sdio_bridge_start(0)==ESP_OK);step();begin(8,checksum);
@@ -229,6 +232,23 @@ int main(int argc,char **argv) {
     finish(RAW_OK);assert(sdio_bridge_control_drained()&&resets==old_resets);
     sdio_bridge_control_gate(false);assert(sdio_bridge_start(1)==ESP_OK);
     sdio_bridge_stop();step();
+    for(unsigned d=0;d<=4;d++) {
+        size_t bytes=((6144U>>d)+8U)*128U;
+        select_host();assert(sdio_bridge_start(1)==ESP_OK);step();
+        put32(BR_SESSION_ECHO,status().session);put32(BR_FRAME_ID,100+d);
+        put32(BR_LENGTH,(uint32_t)bytes);put32(BR_CRC,br_crc32(0,reference,bytes));
+        regs[BR_CMD]=BR_BEGIN;regs[BR_CMD_SEQ]=br_next_seq(regs[BR_CMD_ACK]);step();
+        assert(regs[BR_RESULT]==BR_ACCEPTED);
+        /* BEGIN is not a verified received frame. */
+        assert(status().last_received_frame!=100+d);
+        for(size_t off=0;off<bytes;) {
+            unsigned n=regs[BR_CREDIT];assert(n==br_window(bytes-off,16));
+            batch(off,n,true,false);off+=n*512;
+        }
+        assert(job_size==bytes && status().frame_bytes==bytes && !status().running);
+        assert(status().last_received_frame==100+d && status().last_received_bytes==bytes);
+        assert(!memcmp(job_data,reference,bytes));finish(RAW_OK);
+    }
     printf("PASS: real bridge task / 1538 blocks / ownership / control drain / callbacks / CRC / stop / timeout / reset / disconnect\n");
     return 0;
 }

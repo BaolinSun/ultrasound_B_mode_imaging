@@ -24,12 +24,13 @@ typedef void (*command_response_fn)(const char *);
 #define XST_INVALID_PARAM 2
 u32 XBram_ReadReg(u32,u32);
 void Beamform_Stop(void);
-void Beamform_Start(void);
+int Beamform_Start(void);
 void Beamform_Pause(void);
-void Beamform_Resume(void);
+int Beamform_Resume(void);
 void Beamform_Halt(void);
 u32 Beamform_GetRunRequest(void);
 u32 Beamform_GetSpiStartRequest(void);
+u32 Beamform_GetDownsample(void);
 void hv_enable(void);
 void hv_disable(void);
 u32 hv_is_enabled(void);

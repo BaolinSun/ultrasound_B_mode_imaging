@@ -4,10 +4,13 @@
 
 工程说明统一放在 `esp32c61/docs/`。除非另有说明，本文及同目录文档中的 PC 接收、ESP32 构建命令仍在 `esp32c61` 目录执行，不是在 `docs` 目录执行；明确要求在成像工程根目录执行的命令保持原要求。代码、脚本、固件和图像文件均未移动。
 
+- [DDR 完整帧三缓冲与动态长度](DDR_FRAME_STORE.md)
+- [DDR 初始化诊断与停机对照结果](DDR_INIT_DIAGNOSIS.md)
 - [build.ps1 命令使用说明](BUILD_COMMANDS.md)
 - [Wi-Fi 超声图像实时网页显示](WIFI_IMAGE_VIEWER.md)
 - [Wi-Fi 下发全部 Zynq 命令](WIFI_COMMANDS.md)
 - [扫描 run 状态读回修复与板测](SCAN_RUN_STATUS_FIX.md)
+- [从 release/ubmi-pcb-v2 到当前版本的 PL/PS 修改清单](PL_PS_CHANGELOG_FROM_RELEASE_V2.md)
 - [原始 ila_bf 探针与波束合成调试](ILA_BF_DEBUG.md)
 - [Vivado 启动写入 C 报错修复](VIVADO_STARTUP_FIX.md)
 - [运行日志与报告目录](LOGS.md)

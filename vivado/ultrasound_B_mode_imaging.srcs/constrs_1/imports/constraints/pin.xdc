@@ -143,7 +143,7 @@ set_false_path -from [get_pins {proc_top_i/scan_sync_i/rtc_shot_reg[*]/C}] -to [
 set_false_path -from [get_pins proc_top_i/scan_sync_i/rtc_rxen_reg/C] -to [get_pins proc_top_i/bproc_top_i/filter_iq_i/filter_coef_rden_reg/D]
 set_false_path -from [get_pins proc_top_i/scan_sync_i/rtc_rxen_reg/C] -to [get_pins proc_top_i/ad_en_in_reg/D]
 # Removed in 2026.1: bf_apod_data_rdaddr_reg[5] is optimized away.
-set_false_path -from [get_pins pus_ctrl_system_wrapper_i/pus_ctrl_system_i/w_ddr_0/inst/inst_recv_data_wr_fifo/wr_ddr_start_reg/C] -to [get_pins pus_ctrl_system_wrapper_i/pus_ctrl_system_i/w_ddr_0/inst/w_ddr_v1_0_M00_AXI_inst/wr_ddr_start_ff_reg/D]
+# Retired with the ring writer: wr_ddr_start_reg -> wr_ddr_start_ff_reg no longer exists.
 set_false_path -from [get_pins {proc_top_i/para_top_i/para_st_i/rtc_rfdot_reg[*]/C}] -to [get_pins {proc_top_i/bproc_top_i/add_rf_head_i/pack_updot_x1024_reg[*]/D}]
 # Freeze control CDC: constrain only the first stage of each two-flop synchronizer.
 set_false_path -from [get_pins proc_top_i/para_top_i/para_st_i/scan_enable_reg/C] -to [get_pins proc_top_i/scan_sync_i/rtc_enable_sync_ff1_reg/D]
@@ -195,12 +195,10 @@ create_clock -period 2.500 -name dcp_0 -waveform {0.000 1.250} [get_ports dcp_0]
 #set_input_delay -clock [get_clocks dcp_0] -min -add_delay 0.500 [get_ports {dp_0[*]}]
 #set_input_delay -clock [get_clocks dcp_0] -max -add_delay 0.500 [get_ports {dp_0[*]}]
 
-# The AFE sample clock and board system clock come from independent oscillators.
-# Include all MMCM outputs so Vivado does not time arbitrary phase relationships
-# between the two clock trees.
-set_clock_groups -name afe_to_system_async -asynchronous \
-    -group [get_clocks -include_generated_clocks dcp_0] \
-    -group [get_clocks -include_generated_clocks sys_clk_p]
+# AFE and system clocks remain independent. DO NOT use a whole-domain
+# set_clock_groups here: it overrides the frame FIFO's XPM max-delay bounds.
+# frame_store_cdc.xdc retains ONLY the legacy cell-to-cell exclusions and
+# separately constrains the newly added synchronized crossings.
 
 #set_property LOC MMCME2_ADV_X1Y3 [get_cells pus_ctrl_system_i/data_sample/clk_wiz_0/inst/mmcm_adv_inst]
 

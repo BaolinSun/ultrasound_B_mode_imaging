@@ -6,6 +6,7 @@
 #include "sleep.h"
 #include <string.h>
 #include "../HV/hv.h"
+#include "../data_transfer/frame_store.h"
 
 /*
 ���Ƶ��ϵ�� sin		0x40000000	0x40007FFC	8192
@@ -71,6 +72,7 @@ static u32 beamform_spi_start_request;
 
 u32 Beamform_GetRunRequest(void) { return beamform_run_request; }
 u32 Beamform_GetSpiStartRequest(void) { return beamform_spi_start_request; }
+u32 Beamform_GetDownsample(void) { return T_timing_hex[9]; }
 
 void Beamform_SetControl(u32 beamform_enable, u32 spi_start_enable)
 {
@@ -97,8 +99,12 @@ u32 Rx_SetGainShift(u32 gain_shift)
 	return gain_shift;
 }
 
-void Beamform_Resume(void)
+int Beamform_Resume(void)
 {
+    if(frame_store_resume()!=0) {
+        hv_disable(); Beamform_Halt();
+        xil_printf("@DDR ERROR resume/ABI; scan not started\r\n"); return -1;
+    }
 	/*
 	 * tx_cfg_top starts its static-register configuration only on a rising
 	 * edge of spi_start. scan_enable falling returns that FSM to CFG_IDLE, so
@@ -110,6 +116,7 @@ void Beamform_Resume(void)
 	Beamform_SetControl(0U, 1U);
 	usleep(5000);
 	Beamform_SetControl(1U, 1U);
+	return 0;
 }
 
 void Beamform_Pause(void)
@@ -124,13 +131,18 @@ void Beamform_Halt(void)
 	Beamform_SetControl(0U, 0U);
 }
 
-void Beamform_Start(void)
+int Beamform_Start(void)
 {
+    if(frame_store_resume()!=0) {
+        hv_disable(); Beamform_Halt();
+        xil_printf("@DDR ERROR resume/ABI; scan not started\r\n"); return -1;
+    }
 	/* Reconfigure TX7332 while scanning and HV output are disabled. */
 	Beamform_SetControl(0U, 1U);
 	usleep(5000);
 	hv_enable();
 	Beamform_SetControl(1U, 1U);
+	return 0;
 }
 
 void Beamform_Stop(void)
@@ -157,8 +169,17 @@ u32 Bram_WriteSectionWords(const char *section, u32 offset, const u32 *words, u3
 		if (offset >= info->depth || count > (info->depth - offset)) {
 			return BRAM_CFG_STATUS_RANGE;
 		}
+        if(strcmp(section,"t_timing")==0) {
+            for(u32 j=0;j<count;j++) {
+                if((offset+j==0 && words[j]!=6144U) ||
+                   (offset+j==9 && words[j]>4U)) return BRAM_CFG_STATUS_RANGE;
+            }
+        }
 		for (u32 j = 0; j < count; j++) {
 			XBram_WriteReg(info->base_addr, (offset + j) * BRAM_DATA_BYTE, words[j]);
+			/* Timing words are write-only: retain the successfully programmed
+			 * values for STATUS and any subsequent parameter download. */
+			if (strcmp(section, "t_timing") == 0) T_timing_hex[offset + j] = words[j];
 		}
 		return BRAM_CFG_STATUS_OK;
 	}

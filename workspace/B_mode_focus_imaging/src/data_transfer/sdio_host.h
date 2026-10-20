@@ -46,4 +46,6 @@ u8 sdio_host_read_status(sdio_host_t *host);
 
 int sdio_write_reg(sdio_host_t *host,u32 pos,u8 value);
 int sdio_read_reg(sdio_host_t *host,u32 pos,u8 *value);
+/* Stop CMD/DAT and prove no DMA activity before releasing a DDR lease. */
+int sdio_host_quiesce(sdio_host_t *host);
 #endif

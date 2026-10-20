@@ -14,7 +14,7 @@ _UNDEF_STACK_SIZE = DEFINED(_UNDEF_STACK_SIZE) ? _UNDEF_STACK_SIZE : 1024;
 
 MEMORY
 {
-	ps7_ddr_0_memory_0 : ORIGIN = 0x100000, LENGTH = 0x3ff00000
+	ps7_ddr_0_memory_0 : ORIGIN = 0x100000, LENGTH = 0x1bf00000
 	axi_bram_ctrl_0_memory_0 : ORIGIN = 0x40000000, LENGTH = 0x1000000
 	ps7_qspi_linear_0_memory_0 : ORIGIN = 0xfc000000, LENGTH = 0x1000000
 	ps7_ram_0_memory_0 : ORIGIN = 0x0, LENGTH = 0x30000

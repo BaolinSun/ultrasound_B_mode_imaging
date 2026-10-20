@@ -145,6 +145,7 @@ if {$bd_file eq "" || $xdc_file eq ""} {
 set_property target_constrs_file $xdc_file [current_fileset -constrset]
 
 open_bd_design $bd_file
+source [file join $script_dir configure_frame_store.tcl]
 source [file join $script_dir configure_sdio.tcl]
 report_ip_status -file [file join $report_dir ip_status_before_upgrade.rpt]
 write_ip_configuration [file join $report_dir ip_configuration_before_upgrade.txt]
@@ -230,7 +231,9 @@ if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} {
 
 open_run impl_1
 source [file join $root_dir build scripts verify_bf_ila.tcl]
-assert_pin_exists {pus_ctrl_system_wrapper_i/pus_ctrl_system_i/w_ddr_0/inst/w_ddr_v1_0_M00_AXI_inst/wr_ddr_start_ff_reg/D} W_DDR_CDC_STAGE1
+foreach pin {req_sync1 ack_sync1 ov_sync1 busy_sync1} {
+    assert_pin_exists "pus_ctrl_system_wrapper_i/pus_ctrl_system_i/w_ddr_0/inst/frame_store_i/${pin}_reg/D" FRAME_STORE_CDC_STAGE1
+}
 assert_pin_exists {proc_top_i/scan_sync_i/rtc_enable_sync_ff1_reg/D} SCAN_ENABLE_CDC_STAGE1
 assert_pin_exists {proc_top_i/beamform_active_sync_ff1_reg/D} BEAMFORM_ACTIVE_CDC_STAGE1
 assert_pin_exists {proc_top_i/bproc_top_i/filter_iq_i/gain_shift_sync_ff1_reg[*]/D} GAIN_SHIFT_CDC_STAGE1

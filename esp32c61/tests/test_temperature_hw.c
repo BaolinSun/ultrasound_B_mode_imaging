@@ -121,6 +121,14 @@ static void bounded_failure(int kind) {
     assert(temp_hw_sensor_raw(0x49,&value)==0 && value==0xf5e0);
 }
 int main(void) {
+    /* Real elapsed time must be monotonic across second/remainder boundaries
+     * with both a literal frequency and the actual CPU_FREQ/2 macro shape. */
+    const uint64_t times_us[]={0,1000,999999,1000000,1999999,2000000,3999999,
+                               4000000,9999999,10000000,39999999,40000000};
+    for(unsigned i=0;i<sizeof(times_us)/sizeof(*times_us);i++) {
+        time_us=times_us[i];assert(temp_hw_now_ms()==(uint32_t)(time_us/1000));
+    }
+    time_us=0;
     uint16_t raw;
     assert(temp_hw_sensor_raw(0x48,NULL)!=0);
     assert(temp_hw_sensor_raw(0,&raw)!=0);
@@ -160,6 +168,6 @@ int main(void) {
     assert(temp_hw_send(NULL,1)!=0);
     time_us=(uint64_t)UINT32_MAX*1000+1000;
     assert(temp_hw_now_ms()==0); // Real tick conversion wraps at 2^32 ms.
-    puts("PASS: real BSP register masks, IIC busy/NACK/arbitration/timeouts/recovery, XADC FIFO/alarm preservation and bounded UART resync");
+    puts("PASS: literal/BSP-expression timer, monotonic milliseconds, 10 s period units, real BSP register masks, IIC faults, XADC alarms and bounded UART");
     return 0;
 }

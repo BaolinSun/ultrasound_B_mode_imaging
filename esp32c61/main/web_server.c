@@ -223,6 +223,17 @@ static esp_err_t get_status(httpd_req_t *req)
             cJSON_AddNumberToObject(sdio,"dropped_frames",s.dropped_frames);
             cJSON_AddNumberToObject(sdio,"free_slots",s.free_slots);
             cJSON_AddNumberToObject(sdio,"receive_offset",s.receive_offset);
+            cJSON_AddNumberToObject(sdio,"frame_bytes",s.frame_bytes);
+            cJSON_AddNumberToObject(sdio,"last_received_bytes",s.last_received_bytes);
+            cJSON_AddNumberToObject(sdio,"last_received_frame",s.last_received_frame);
+            cJSON_AddNumberToObject(sdio,"source_flags",s.source_flags);
+            cJSON_AddNumberToObject(sdio,"source_drops",s.source_drops);
+            cJSON_AddNumberToObject(sdio,"source_errors",s.source_errors);
+            cJSON_AddNumberToObject(sdio,"source_latest",s.source_latest);
+            cJSON_AddNumberToObject(sdio,"source_published",s.source_published);
+            cJSON_AddNumberToObject(sdio,"source_down",s.source_down);
+            cJSON_AddNumberToObject(sdio,"source_slot",s.source_slot);
+            cJSON_AddNumberToObject(sdio,"source_occupancy",s.source_occupancy);
             cJSON_AddNumberToObject(sdio,"current_frame",s.current_frame);
             cJSON_AddNumberToObject(sdio,"receiving_slot",s.receiving_slot);
             cJSON_AddNumberToObject(sdio,"window_blocks",s.window_blocks);

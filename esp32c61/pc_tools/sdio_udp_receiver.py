@@ -55,11 +55,12 @@ class Pending:
     indices: set[int] = dataclasses.field(default_factory=set)
 
 class FrameReceiver:
-    def __init__(self, length=787456, timeout=2.0, check_pattern=False):
-        if not 0 < length <= MAX_BYTES or timeout <= 0:
+    def __init__(self, length=None, timeout=2.0, check_pattern=False):
+        if (length is not None and not 0 < length <= MAX_BYTES) or timeout <= 0:
             raise ValueError("invalid receiver limits")
         self.length, self.timeout = length, timeout
-        self.expected = test_pattern(length) if check_pattern else None
+        self.check_pattern = check_pattern
+        self.expected = test_pattern(length) if check_pattern and length else None
         self.pending = collections.OrderedDict()
         self.retired = collections.deque(maxlen=256)
         self.old_sessions = collections.deque(maxlen=64)
@@ -148,7 +149,7 @@ class FrameReceiver:
         if zlib.crc32(p.data) != crc:
             events.append(self._drop(key, "CRC32 mismatch", now))
             return events, None
-        if self.expected is not None and p.data != self.expected:
+        if self.check_pattern and p.data != (self.expected if self.expected is not None else test_pattern(total)):
             events.append(self._drop(key, "test pattern mismatch", now))
             return events, None
         del self.pending[key]
@@ -281,7 +282,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bind", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=50001)
-    parser.add_argument("--length", type=int, default=787456)
+    parser.add_argument("--length", type=int, default=None, help="strict frame bytes; default: use header length")
     parser.add_argument("--frames", type=int, default=1, help="valid frames to receive; 0 forever")
     parser.add_argument("--seconds", type=float, default=0, help="optional total run duration")
     parser.add_argument("--frame-timeout", type=float, default=2)
@@ -297,7 +298,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not 1 <= args.port <= 65535 or args.frames < 0 or args.seconds < 0 or args.idle_timeout <= 0 or not 1 <= args.queue_packets <= 65536:
         parser.error("invalid port/frame count/time limit")
-    if args.output_dir and args.length % args.word_bytes:
+    if args.output_dir and args.length is not None and args.length % args.word_bytes:
         parser.error("--length must be divisible by --word-bytes when saving TXT")
     try:
         receiver = FrameReceiver(args.length, args.frame_timeout, args.test_pattern)

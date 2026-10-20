@@ -13,6 +13,10 @@ typedef struct {
     uint32_t crc_rom_bench_us, crc_table_bench_us;
     unsigned free_slots;
     uint32_t receive_offset, current_frame;
+    uint32_t frame_bytes, source_drops, source_errors, source_latest, source_published;
+    /* Complete CRC-verified frame only; frame_bytes above is current BEGIN. */
+    uint32_t last_received_bytes, last_received_frame;
+    uint8_t source_flags, source_down, source_slot, source_occupancy;
     unsigned window_blocks, window_received;
     uint8_t grant, window_ack, cmd_seq, cmd_ack, command, result, register_status;
     int receiving_slot;

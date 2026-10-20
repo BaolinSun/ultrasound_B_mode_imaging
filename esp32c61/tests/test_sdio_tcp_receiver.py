@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import json
 import unittest
+from unittest.mock import patch
 import zlib
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]/'pc_tools'))
@@ -23,6 +24,18 @@ def header(data,frame=1,crc=None):
     return t.HEADER.pack(t.MAGIC,1,24,0,7,frame,len(data),zlib.crc32(data) if crc is None else crc)
 
 class ReceiverTests(unittest.TestCase):
+    def test_zero_elapsed_summary_has_unknown_rates_not_division_by_zero(self):
+        args=types.SimpleNamespace(length=None,test_pattern=False,seconds=0,frames=1)
+        with patch.object(t.time,'monotonic',return_value=100.):
+            rx=t.TCPReceiver(args,Writer())
+            rx.valid_frames=1;rx.valid_bytes=50176;rx.first_data=rx.last_data=100.
+            summary=rx.summary()
+        self.assertTrue(summary['passed'])
+        self.assertEqual(summary['elapsed_s'],0)
+        self.assertIsNone(summary['valid_fps'])
+        self.assertIsNone(summary['payload_mbit_s'])
+        self.assertIsNone(summary['data_payload_mbit_s'])
+
     def make_server(self,**overrides):
         args=types.SimpleNamespace(length=8193,test_pattern=True,source_ip='127.0.0.1',
             seconds=3,idle_timeout=3,frame_timeout=1,frames=1,output_dir=True)
@@ -50,6 +63,23 @@ class ReceiverTests(unittest.TestCase):
         self.assertEqual(t.encode_ack(7,1,123),b'UBSA\x01\x14\x00\x00'+(7).to_bytes(4,'big')+(1).to_bytes(4,'big')+(123).to_bytes(4,'big'))
 
     def test_split_header_payload_and_persistent_frames(self):
+        self._split_header_payload_and_persistent_frames()
+
+    def test_dynamic_five_lengths_persistent_connection(self):
+        rx,w,address,thread=self.make_server(length=None,frames=5,seconds=10,frame_timeout=3)
+        with socket.create_connection(address) as conn:
+            conn.settimeout(.2)
+            for i,n in enumerate((787456,394240,197632,99328,50176),1):
+                data=t.test_pattern(n)
+                conn.sendall(header(data,i)+data)
+                self.assertEqual(self.ack(conn),t.encode_ack(7,i,zlib.crc32(data)))
+        thread.join(2)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(rx.valid_frames,5)
+        self.assertEqual(rx.connections,1)
+        self.assertEqual([len(data) for _,data in w.outputs],[787456,394240,197632,99328,50176])
+
+    def _split_header_payload_and_persistent_frames(self):
         rx,w,address,thread=self.make_server(frames=2)
         data=t.test_pattern(8193)
         with socket.create_connection(address) as conn:

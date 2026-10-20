@@ -51,6 +51,7 @@ set(USER_COMPILE_SOURCES
 "data_transfer/sdio_host.c"
 "data_transfer/sdio_cmd_engine.c"
 "data_transfer/sdio_bridge.c"
+"data_transfer/frame_store.c"
 "AFE5832/afe5832.c"
 "AFE5832/afe5832_spi.c"
 "GPIO/gpio.c"

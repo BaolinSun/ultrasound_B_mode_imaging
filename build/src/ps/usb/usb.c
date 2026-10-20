@@ -96,53 +96,12 @@ void usb_printf(char *str, u32 len) {
 	}
 }
 void usb_send_adc_data(u8* buffer_ptr, u32 nums, u32 package_of) {
-	u32 send_status;
-	u8 angle = 0;
-	u8 chip = 0;
-	// 等主机消息
-	while (recv_new_data != 1) {
-		temperature_service_poll();
-		uart_process_commands();
-		usb_process_commands();
-	}
-	recv_new_data = 0;
-	// 判断主机状态
-	switch (host_state) {
-	case HOST_READY_TO_RECV: {
-//		u8 *data_ptr = rx_buffer_ptr[0];
-		u8 *data_ptr = (u8*)DDR_RING_BASE_ADDR;
-
-//		xusb_COMMS_send_data(&UsbInstance, data_ptr_1, 8192*25);
-//		xusb_COMMS_send_data(&UsbInstance, data_ptr_1, 8192*25);
-//		xusb_COMMS_send_data(&UsbInstance, data_ptr_1, 8192*25);
-//		xusb_COMMS_send_data(&UsbInstance, data_ptr_1, 8192*25);
-//		xusb_COMMS_send_data(&UsbInstance, data_ptr_1, 8192*25);
-		for (u32 i = 0; i < 1000U; i++)
-		{
-			temperature_service_poll();
-			xusb_COMMS_send_data(&UsbInstance, data_ptr + (i * 1024U), 1024U);
-		}
-
-
-//		usb_ready_data[3] = 0x01;
-//		xusb_COMMS_send_data(&UsbInstance, usb_ready_data, 4);
-	}
-		break;
-	case HOST_STOP: {
-
-	}
-		break;
-
-	case HOST_RECVING: {
-
-	}
-		break;
-	default: {
-
-	}
-		break;
-	}
-
+    (void)buffer_ptr;(void)nums;(void)package_of;
+    if(recv_new_data!=1) return;
+    recv_new_data=0;
+    if(host_state==HOST_READY_TO_RECV) {
+        xil_printf("@NACK 0 USB_IMAGE_UNSUPPORTED use Wi-Fi frame transport\r\n");
+    }
 }
 
 void usb_buffer_init(void) {

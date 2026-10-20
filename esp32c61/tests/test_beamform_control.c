@@ -5,6 +5,8 @@
 #include "xbram.h"
 void hv_enable(void);
 void hv_disable(void);
+static int resume_failure;
+int frame_store_resume(void) { return resume_failure?-1:0; }
 #include "../../build/src/ps/bram/bram.c"
 
 u32 fdemod_cos_array[8192],fdemod_sin_array[8192],log_table_hex[1024];
@@ -25,7 +27,7 @@ void hv_enable(void) { hv=1; }
 void hv_disable(void) { hv=0; }
 static void check_resume(void) {
     count=waits=0;
-    Beamform_Resume();
+    assert(Beamform_Resume()==0);
     assert(count==6&&waits==2);
     for(unsigned i=0;i<6;i++) {
         assert(mmio[i].address==(i%2?BRAM_SPI_START_ADDR:BRAM_BEAMFORM_CTRL_ADDR));
@@ -44,6 +46,29 @@ int main(void) {
     assert(count==1&&mmio[0].address==BRAM_TX_CFG_RD_REQ_ADDR);
     Beamform_Start();assert(hv&&Beamform_GetRunRequest()); /* Legacy startup compatibility. */
     Beamform_Stop();assert(!hv&&!Beamform_GetRunRequest()&&!Beamform_GetSpiStartRequest());
+    resume_failure=1;hv=1;count=waits=0;
+    assert(Beamform_Resume()==-1 && !hv && !Beamform_GetRunRequest() && !Beamform_GetSpiStartRequest());
+    assert(count==2 && waits==0);
+    /* Successful timing writes update only their software shadow. Never
+     * pretend the write-only parameter aperture supports readback. */
+    for(unsigned i=0;i<10;i++) T_timing_hex[i]=100+i;
+    T_timing_hex[0]=6144;T_timing_hex[9]=0;
+    for(u32 down=0;down<=4;down++) {
+        count=0;
+        assert(Bram_WriteSectionWords("t_timing",9,&down,1)==BRAM_CFG_STATUS_OK);
+        assert(count==1&&mmio[0].address==BRAM_SCAN_ADDR+9*4&&mmio[0].value==down);
+        assert(Beamform_GetDownsample()==down);
+        for(unsigned i=1;i<9;i++) assert(T_timing_hex[i]==100+i);
+        assert(T_timing_hex[0]==6144&&reads==1);
+    }
+    u32 invalid=5,pair[2]={999,5};count=0;
+    assert(Bram_WriteSectionWords("t_timing",9,&invalid,1)==BRAM_CFG_STATUS_RANGE);
+    assert(Bram_WriteSectionWords("t_timing",8,pair,2)==BRAM_CFG_STATUS_RANGE);
+    assert(!count&&Beamform_GetDownsample()==4&&T_timing_hex[8]==108);
+    invalid=0;assert(Bram_WriteSectionWords("t_timing",10,&invalid,1)==BRAM_CFG_STATUS_RANGE);
+    hv=1;count=0;
+    assert(Beamform_Start()==-1 && !hv && !Beamform_GetRunRequest() && !Beamform_GetSpiStartRequest());
+    assert(count==2 && waits==0);
     puts("PASS actual PS MMIO: clean SPI edge/resume/pause/halt/run shadow/no write-only reads/TX busy/legacy start-stop");
     return 0;
 }

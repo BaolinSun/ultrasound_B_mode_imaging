@@ -17,6 +17,7 @@ set project_path [file join $root_dir vivado ultrasound_B_mode_imaging.xpr]
 open_project $project_path
 set bridge_bd [lindex [get_files -quiet -all pus_ctrl_system.bd] 0]
 open_bd_design $bridge_bd
+source [file join $script_dir configure_frame_store.tcl]
 source [file join $script_dir configure_sdio.tcl]
 source [file join $script_dir configure_bf_ila.tcl]
 generate_target all [get_files $bridge_bd]

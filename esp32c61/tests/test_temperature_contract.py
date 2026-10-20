@@ -22,10 +22,10 @@ class TemperatureContractTests(unittest.TestCase):
             self.assertLess(main.index("IIC_Init();"), main.index("temperature_service_init();"))
             self.assertRegex(main, r"while \(1\) \{\s*temperature_service_poll\(\);")
             usb = (root / "usb/usb.c").read_text(encoding="utf-8")
-            wait = usb[usb.index("while (recv_new_data"):usb.index("while (recv_new_data")+900]
-            self.assertIn("temperature_service_poll();", wait)
-            # The other hook is in the foreground packet loop, not a USB ISR.
-            self.assertEqual(usb.count("temperature_service_poll();"), 2)
+            # USB image output is intentionally disabled, so no blocking image
+            # wait remains. Main polls temperature for BOTH compile-time modes.
+            self.assertNotIn("while (recv_new_data", usb)
+            self.assertIn("USB_IMAGE_UNSUPPORTED", usb)
             self.assertNotIn("temperature_service_poll", usb[usb.index("u32 xusbps_ep_buffer_handle"):])
 
     def test_no_unbounded_sensor_or_uart_driver_calls(self):

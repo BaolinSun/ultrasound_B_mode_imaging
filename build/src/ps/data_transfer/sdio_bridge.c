@@ -7,22 +7,22 @@ int sdio_bridge_output_is_sdio(void) { return DATA_OUTPUT_MODE == DATA_OUTPUT_SD
 #include "sdio_host.h"
 #include "../imaging_config.h"
 #include "xil_cache.h"
+#include "frame_store.h"
+#include "xil_io.h"
 #include "xiltimer.h"
 
-_Static_assert(BF_FRAME_BYTES==BR_FRAME_BYTES,"Update both protocol and imaging frame size");
-_Static_assert(BR_FRAME_BYTES<=DDR_RING_BYTES,"Image transfer exceeds the PL DDR window");
-_Static_assert((DDR_RING_BASE_ADDR%64U)==0U,"SDIO DMA source must be cache-line aligned");
-/* Read the PL image window directly. This pointer never owns or initializes
- * DDR. Until PL frame ownership is added, concurrent writes may tear a frame;
- * the existing CRC detects changed bytes but cannot certify capture coherence. */
-static const u8 *const frame_data=(const u8 *)(UINTPTR)DDR_RING_BASE_ADDR;
+_Static_assert(BF_FRAME_BYTES==BR_FRAME_BYTES,"Maximum frame capacity mismatch");
+static frame_lease_t frame;
+static u32 watermark;
+static u64 waiting_since;
+static int store_ready;
 static sdio_host_t host;
 static int online, phase;
 static int reset_on_connect=1;
 static u8 command_seq;
 static u32 session_id, frame_id, frame_crc, offset, failures, frames;
 static u64 deadline, retry_at;
-static u64 last_progress, next_diagnostic;
+static u64 last_progress, next_diagnostic, source_report_at;
 static u32 progress_offset, progress_frames;
 enum { IDLE, BEGIN_WAIT, WINDOW, DONE_WAIT };
 static u64 milliseconds(void) { XTime n; XTime_GetTime(&n); return (u64)n*1000U/(u64)(COUNTS_PER_SECOND); }
@@ -37,20 +37,29 @@ static int write32(unsigned p,u32 v) {
     for(unsigned i=0;i<4;i++) if(write8(p+i,(u8)(v>>(8*i)))) return -1;
     return 0;
 }
+static int release_frame(void) {
+    if(!frame.lease) return 0;
+    if(sdio_host_quiesce(&host)!=SDIO_HOST_OK) return -1;
+    return frame_store_release(&frame);
+}
 static void fail_link(void) {
+    if(release_frame()!=0) {
+        store_ready=0;
+        xil_printf("@SDIO FATAL retained DDR lease; DMA/ownership not proven idle\r\n");
+    }
     failures++; online=0; phase=IDLE; offset=0; reset_on_connect=1; retry_at=milliseconds()+500;
     xil_printf("@SDIO ERROR failures=%u; re-enumerate, no payload replay\r\n",(unsigned)failures);
 }
 void sdio_bridge_init(void) {
+    if(frame.lease && release_frame()!=0) { store_ready=0; return; }
     /* Boot/reinitialization starts a fresh handshake; never replay payload. */
     online=0; phase=IDLE; offset=0; reset_on_connect=1; retry_at=milliseconds();
-    frame_crc=0;
-    xil_printf("@SDIO DDR_IMAGE addr=%08x bytes=%u compiled=SDIO live_ddr=1\r\n",
-        (unsigned)(UINTPTR)frame_data,(unsigned)BR_FRAME_BYTES);
-    xil_printf("@SDIO WARN no frame-ready/overwrite protection; CRC errors or mixed image frames remain possible\r\n");
+    frame_crc=0; store_ready=1;
+    xil_printf("@SDIO DDR_FRAME_STORE slots=3 base=20000000 dynamic_length=1 compiled=SDIO\r\n");
 }
 static void poll_once(void) {
     u64 now=milliseconds(); u8 state,mode,version,ack,result;
+    if(!store_ready) return;
     if(!online) {
         if(now<retry_at) return;
         int init_result=sdio_host_init(&host);
@@ -65,10 +74,26 @@ static void poll_once(void) {
                write8(BR_CMD_SEQ,br_next_seq(command_seq))) { fail_link(); return; }
             reset_on_connect=0; retry_at=milliseconds()+500; return;
         }
-        if(read8(BR_PROTOCOL,&version) || version!=BR_SDIO_VERSION ||
-           read8(BR_CMD_ACK,&command_seq) || write8(BR_HOST_MODE,1)) { fail_link(); return; }
+        if(read8(BR_PROTOCOL,&version)) { fail_link(); return; }
+        if(version!=BR_SDIO_VERSION) {
+            xil_printf("@SDIO PROTOCOL_MISMATCH ESP=%u PS=%u; upload rejected\r\n",
+                (unsigned)version,(unsigned)BR_SDIO_VERSION);
+            fail_link(); return;
+        }
+        int source_ready=frame_store_is_ready();
+        if(read8(BR_CMD_ACK,&command_seq) ||
+           write8(BR_SOURCE_FLAGS,source_ready?1U:8U) ||
+           write8(BR_HOST_MODE,source_ready?1U:0U)) { fail_link(); return; }
         online=1; phase=IDLE; host.last_grant_seq=0;
-        xil_printf("@SDIO ONLINE SD1 4bit; waiting webpage start\r\n");
+        if(source_ready) xil_printf("@SDIO ONLINE SD1 4bit; waiting webpage start\r\n");
+        else xil_printf("@SDIO SOURCE_UNAVAILABLE frame-store init/ABI; upload disabled\r\n");
+    }
+    /* Enumeration alone does not prove a usable image source. Keep host mode
+     * unavailable so the existing ESP start check rejects immediately. Never
+     * retry INIT here: it could revoke a live lease after a runtime fault. */
+    if(!frame_store_is_ready() && phase==IDLE) {
+        if(write8(BR_SOURCE_FLAGS,8U) || write8(BR_HOST_MODE,0U)) fail_link();
+        return;
     }
     if(phase!=IDLE && now>=deadline) { fail_link(); return; }
     if(read8(BR_STATUS,&state)) { fail_link(); return; }
@@ -86,21 +111,33 @@ static void poll_once(void) {
     if(phase!=IDLE && (current_session!=session_id || !(state&BR_STREAM))) {
         /* Single frame closes STREAM after receiving the last block, so DONE
          * still needs acknowledgement even though STREAM has become zero. */
-        if(phase!=DONE_WAIT || current_session!=session_id) { phase=IDLE; offset=0; }
+        if(phase!=DONE_WAIT || current_session!=session_id) {
+            if(release_frame()!=0) { fail_link(); return; }
+            phase=IDLE; offset=0; waiting_since=0;
+        }
     }
     if(phase==IDLE) {
         if((state&(BR_READY|BR_STREAM|BR_BACKPRESSURE))!=(BR_READY|BR_STREAM)) return;
-        session_id=current_session; frame_id++; if(!frame_id) frame_id=1;
+        if(current_session!=session_id) { watermark=0; waiting_since=now; }
+        session_id=current_session;
+        if(!waiting_since) waiting_since=now;
+        u8 kind=0;
+        if(read8(BR_STREAM_KIND,&kind)) { fail_link(); return; }
+        int acquired=frame_store_acquire(&frame,kind?0:watermark);
+        write8(BR_SOURCE_FLAGS,(u8)(1U|(acquired==1?2U:0U)));
+        if(acquired==1) {
+            if(kind && now-waiting_since>=30000) write8(BR_SOURCE_FLAGS,5);
+            return;
+        }
+        if(acquired!=0) { write8(BR_SOURCE_FLAGS,8); store_ready=0; return; }
+        frame_id=frame.frame; waiting_since=0;
+        write8(BR_SOURCE_DOWN,(u8)frame.decimation); write8(BR_SOURCE_SLOT,(u8)frame.slot);
         if(read8(BR_CMD_ACK,&command_seq)) { fail_link(); return; }
         command_seq=br_next_seq(command_seq);
-        /* PL writes are not cache coherent. Never flush CPU-owned stale data
-         * into this window. main() keeps D-cache disabled; invalidation also
-         * makes this read safe if clean cache lines are present later.
-         * Recompute for EACH accepted attempt, not once at boot. No snapshot
-         * or implicit STOP/START/HV operation is performed here. */
-        Xil_DCacheInvalidateRange((UINTPTR)frame_data,BR_FRAME_BYTES);
-        frame_crc=br_crc32(0,frame_data,BR_FRAME_BYTES);
-        if(write32(BR_FRAME_ID,frame_id) || write32(BR_LENGTH,BR_FRAME_BYTES) ||
+        /* Lease prevents PL overwrites through CRC, DMA and the ESP CRC ACK. */
+        Xil_DCacheInvalidateRange((UINTPTR)frame.data,frame.bytes);
+        frame_crc=br_crc32(0,frame.data,frame.bytes);
+        if(write32(BR_FRAME_ID,frame_id) || write32(BR_LENGTH,frame.bytes) ||
            write32(BR_CRC,frame_crc) || write32(BR_SESSION_ECHO,session_id) ||
            write8(BR_CMD,BR_BEGIN) || write8(BR_CMD_SEQ,command_seq)) { fail_link(); return; }
         deadline=now+30000; offset=0; phase=BEGIN_WAIT;
@@ -110,7 +147,7 @@ static void poll_once(void) {
         if(read8(BR_CMD_ACK,&ack)) { fail_link(); return; }
         if(ack!=command_seq) return;
         if(read8(BR_RESULT,&result)) { fail_link(); return; }
-        if(result!=BR_ACCEPTED) { phase=IDLE; return; } /* Busy/tearing: no bytes sent. */
+        if(result!=BR_ACCEPTED) { if(release_frame()!=0) { fail_link(); return; } phase=IDLE; return; } /* Busy/tearing: no bytes sent. */
         phase=WINDOW;
     }
     if(phase==WINDOW) {
@@ -119,17 +156,19 @@ static void poll_once(void) {
         sequence=next_grant;
         if((!sequence && read8(BR_GRANT,&sequence)) || read8(BR_CREDIT,&count)) { fail_link(); return; }
         if(!sequence || sequence==host.last_grant_seq) return;
-        unsigned maximum=br_window(BR_FRAME_BYTES-offset,BR_WINDOW_BLOCKS);
+        unsigned maximum=br_window(frame.bytes-offset,BR_WINDOW_BLOCKS);
         if(!count || count>maximum) { fail_link(); return; }
-        if(sdio_host_send_blocks(&host,frame_data+offset,count)!=SDIO_HOST_OK ||
+        if(sdio_host_send_blocks(&host,frame.data+offset,count)!=SDIO_HOST_OK ||
            sdio_host_write_window_ack(&host,sequence)!=SDIO_HOST_OK) { fail_link(); return; }
         offset+=(u32)count*BR_BLOCK_BYTES;
-        if(offset==BR_FRAME_BYTES) phase=DONE_WAIT;
+        if(offset==frame.bytes) phase=DONE_WAIT;
         return;
     }
     if(phase==DONE_WAIT) {
         if(read8(BR_RESULT,&result)) { fail_link(); return; }
         if(result==BR_DONE) {
+            watermark=frame.frame;
+            if(release_frame()!=0) { fail_link(); return; }
             frames++; phase=IDLE;
             xil_printf("@SDIO FRAME id=%u bytes=%u elapsed_ms=%u (ESP receive, not PC ACK)\r\n",
                 (unsigned)frame_id,(unsigned)offset,(unsigned)(now-(deadline-30000)));
@@ -139,6 +178,16 @@ static void poll_once(void) {
 void sdio_bridge_poll(void) {
     poll_once();
     u64 now=milliseconds();
+    if(online && now>=source_report_at) {
+        source_report_at=now+500;
+        if(write32(BR_SOURCE_DROPS,Xil_In32(FS_BASE+FS_DROPS)) ||
+           write32(BR_SOURCE_ERRORS,Xil_In32(FS_BASE+FS_ERRORS)) ||
+           write32(BR_SOURCE_LATEST,Xil_In32(FS_BASE+FS_LATEST)) ||
+           write32(BR_SOURCE_PUBLISHED,Xil_In32(FS_BASE+FS_PUBLISHED)) ||
+           write8(BR_SOURCE_OCCUPANCY,(u8)Xil_In32(FS_BASE+FS_OCCUPANCY))) {
+            fail_link();return;
+        }
+    }
     if(offset!=progress_offset || frames!=progress_frames) {
         progress_offset=offset;progress_frames=frames;last_progress=now;
     }

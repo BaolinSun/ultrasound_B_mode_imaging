@@ -882,6 +882,15 @@ int sdio_host_send_block(sdio_host_t *host, const u8 block[US_SDIO_BLOCK_BYTES])
 #endif
 }
 
+int sdio_host_quiesce(sdio_host_t *host)
+{
+    if(host==NULL) return SDIO_HOST_ERR_CONFIG;
+    u32 psr=XSdPs_ReadReg(host->sd.Config.BaseAddress,XSDPS_PRES_STATE_OFFSET);
+    if((psr & 7U)==0U) return SDIO_HOST_OK;
+    sdio_reset_cmd_dat_lines(host,"release DDR lease");
+    return sdio_wait_bus_idle(host,1u,10000u,"LEASE_DMA_IDLE");
+}
+
 int sdio_host_send_blocks(sdio_host_t *host, const u8 *blocks, u32 block_count)
 {
     u32 total_bytes;

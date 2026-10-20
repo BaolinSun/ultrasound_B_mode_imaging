@@ -32,6 +32,7 @@ static uint32_t crc;
 static int64_t frame_start;
 static uint64_t crc_us;
 static int64_t last_progress;
+static int64_t waiting_start;
 static const char *TAG="sdio_bridge";
 static uint8_t read8(unsigned p) { return sdio_slave_read_reg(p); }
 static void write8(unsigned p,uint8_t v) {
@@ -81,6 +82,7 @@ static esp_err_t open_driver(void) {
     }
     grant=0; command_ack=0; window_size=window_received=0;
     stats.session=esp_random(); if(!stats.session) stats.session=1;
+    stats.last_received_bytes=0; stats.last_received_frame=0;
     last_progress=esp_timer_get_time();
     write8(BR_CMD,BR_NOP); write8(BR_CMD_SEQ,0); write8(BR_CMD_ACK,0);
     write8(BR_HOST_MODE,0); write8(BR_GRANT,0); write8(BR_WINDOW_ACK,0); write8(BR_CREDIT,0);
@@ -117,7 +119,7 @@ static void publish_window(void) {
         return;
     }
     if(receiving<0) { write8(BR_STATUS,BR_READY|BR_STREAM); return; }
-    window_size=br_window(BR_FRAME_BYTES-offset,BR_WINDOW_BLOCKS);
+    window_size=br_window(slots[receiving].meta.frame_bytes-offset,BR_WINDOW_BLOCKS);
     window_received=0; grant=br_next_seq(grant);
     write8(BR_CREDIT,(uint8_t)window_size);
     write8(BR_STATUS,BR_READY|BR_STREAM);
@@ -131,10 +133,11 @@ static void command(void) {
     int index=free_slot();
     bridge_frame_t m={read32(BR_SESSION_ECHO),read32(BR_FRAME_ID),read32(BR_LENGTH),read32(BR_CRC)};
     if(op!=BR_BEGIN || control_blocked || !stats.running || !stats.host_sdio || receiving>=0 || window_size || index<0 ||
-       !br_meta_valid(&m,stats.session,BR_FRAME_BYTES) || m.frame_bytes!=BR_FRAME_BYTES) {
+       !br_meta_valid(&m,stats.session,BR_FRAME_BYTES) || !br_image_bytes_valid(m.frame_bytes)) {
         write8(BR_RESULT,BR_REJECTED);
     } else {
         receiving=index; slots[index].state=RECEIVING; slots[index].meta=m;
+        stats.frame_bytes=m.frame_bytes;
         offset=0; crc=0; crc_us=0; frame_start=esp_timer_get_time();
         last_progress=frame_start;
         write8(BR_RESULT,BR_ACCEPTED);
@@ -143,7 +146,7 @@ static void command(void) {
 }
 static void consume(const uint8_t *p,size_t length) {
     if(receiving<0 || !window_size || window_received>=window_size || length!=BR_BLOCK_BYTES ||
-       offset+length>BR_FRAME_BYTES) { stats.errors++; reset_requested=true; return; }
+       (receiving>=0 && offset+length>slots[receiving].meta.frame_bytes)) { stats.errors++; reset_requested=true; return; }
     slot_t *s=&slots[receiving];
     memcpy(s->data+offset,p,length);
     int64_t crc_start=esp_timer_get_time();
@@ -151,17 +154,19 @@ static void consume(const uint8_t *p,size_t length) {
     crc_us+=(uint64_t)(esp_timer_get_time()-crc_start);
     offset+=length; window_received++;
     last_progress=esp_timer_get_time();
-    if(offset==BR_FRAME_BYTES) {
+    if(offset==s->meta.frame_bytes) {
         stats.last_receive_us=(uint64_t)(esp_timer_get_time()-frame_start);
         stats.last_crc_us=crc_us;
         if(crc!=s->meta.crc32) {
             stats.crc_errors++; stats.dropped_frames++; s->state=FREE;
             write8(BR_RESULT,BR_BAD_CRC); reset_requested=true;
         } else {
+            stats.last_received_bytes=s->meta.frame_bytes;
+            stats.last_received_frame=s->meta.frame_id;
             stats.received_frames++; s->state=READY; write8(BR_RESULT,BR_DONE);
             if(frames_left && --frames_left==0) stats.running=false;
             ESP_LOGD(TAG,"SDIO frame=%" PRIu32 " bytes=%u crc=%08" PRIx32 " elapsed_ms=%" PRIi64,
-                s->meta.frame_id,BR_FRAME_BYTES,crc,(esp_timer_get_time()-frame_start)/1000);
+                s->meta.frame_id,(unsigned)s->meta.frame_bytes,crc,(esp_timer_get_time()-frame_start)/1000);
         }
         receiving=-1;
     }
@@ -174,7 +179,7 @@ static void upload_ready(void) {
         (index<0 || (int32_t)(slots[i].meta.frame_id-slots[index].meta.frame_id)<0)) index=(int)i;
     if(index<0) return;
     slot_t *s=&slots[index]; s->state=SENDING;
-    esp_err_t r=psram_frame_submit(s->data,BR_FRAME_BYTES,&s->meta,done,s);
+    esp_err_t r=psram_frame_submit(s->data,s->meta.frame_bytes,&s->meta,done,s);
     if(r!=ESP_OK) { s->state=FREE; stats.dropped_frames++; stats.errors++; stop_requested=true; }
 }
 static void bridge_task(void *ctx) {
@@ -188,6 +193,17 @@ static void bridge_task(void *ctx) {
         if(!u.connected && (stats.running || pending)) stop_requested=true;
         if(u.tcp_failed && (stats.running || pending))stop_requested=true;
         if(stats.ready) {
+            stats.source_flags=read8(BR_SOURCE_FLAGS);
+            stats.source_down=read8(BR_SOURCE_DOWN); stats.source_slot=read8(BR_SOURCE_SLOT);
+            stats.source_occupancy=read8(BR_SOURCE_OCCUPANCY);
+            stats.source_drops=read32(BR_SOURCE_DROPS); stats.source_errors=read32(BR_SOURCE_ERRORS);
+            stats.source_latest=read32(BR_SOURCE_LATEST);
+            stats.source_published=read32(BR_SOURCE_PUBLISHED);
+            if(stats.running && receiving<0 &&
+               ((stats.source_flags&12U) || (frames_left && esp_timer_get_time()-waiting_start>=30000000))) {
+                stats.errors++; stop_requested=true;
+                ESP_LOGE(TAG,"No complete source frame / PL ABI error; explicit restart required");
+            }
             stats.host_sdio=read8(BR_HOST_MODE)==1;
             if(!stats.host_sdio && (stats.running || pending)) stop_requested=true;
             if((receiving>=0 || window_size) && esp_timer_get_time()-frame_start>=30000000) {
@@ -279,7 +295,9 @@ esp_err_t sdio_bridge_start(unsigned frames) {
     else {
         psram_frame_prepare(frames==0);
         stats.session=esp_random(); if(!stats.session) stats.session=1;
+        write8(BR_STREAM_KIND,(uint8_t)frames); write8(BR_SOURCE_FLAGS,0);
         write32(BR_SESSION,stats.session); frames_left=frames; stats.running=true;
+        waiting_start=esp_timer_get_time();
         last_progress=esp_timer_get_time();
     }
     xSemaphoreGive(mutex); return r;

@@ -8,7 +8,8 @@
 XScuGic xInterruptController;
 static XUartPs_Config config={0xe0000000U,59U};
 static uint64_t clock_ticks;
-static unsigned hv,run,enables,writes,afe_fail,tx_full;
+static unsigned hv,run,enables,writes,afe_fail,tx_full,resume_failure,downsample,pause_failure;
+int frame_store_pause(void) { assert(!hv&&!run);return pause_failure?-1:0; }
 static char received[1024],transmitted[1024],answer[128];
 static size_t receive_at,receive_len,transmit_len;
 static void (*irq_handler)(void*);
@@ -36,17 +37,25 @@ void hv_enable(void) { hv=1;enables++; }
 void hv_disable(void) { hv=0; }
 u32 hv_is_enabled(void) { return hv; }
 void Beamform_Stop(void) { hv=run=0; }
-void Beamform_Start(void) { hv_enable();run=1; }
+int Beamform_Start(void) { if(resume_failure){hv=run=0;return -1;}hv_enable();run=1;return 0; }
 void Beamform_Halt(void) { run=0; }
 void Beamform_Pause(void) { run=0; }
-void Beamform_Resume(void) { run=1; }
+int Beamform_Resume(void) { if(resume_failure){hv=run=0;return -1;}run=1;return 0; }
 u32 Beamform_GetRunRequest(void) { return run; }
 u32 Beamform_GetSpiStartRequest(void) { return run; }
+u32 Beamform_GetDownsample(void) { return downsample; }
 u32 Rx_SetGainShift(u32 n) { return n; }
 u32 AFE5832_SetRegMap(u32 m) { (void)m;return afe_fail; }
 u32 AFE5832_WriteRegMap(u32 m,u32 a,u32 d) { (void)m;(void)a;(void)d;writes++;return afe_fail; }
 u32 AFE5832_ReadRegMap(u32 m,u32 a,u32 *d) { (void)m;(void)a;*d=123;return afe_fail; }
-u32 Bram_WriteSectionWords(const char *s,u32 a,const u32 *w,u32 n) { if(!strcmp(s,"t_timing")&&a==0)assert(w[0]==6144);(void)n;writes++;return 0; }
+u32 Bram_WriteSectionWords(const char *s,u32 a,const u32 *w,u32 n) {
+    if(!strcmp(s,"t_timing")) {
+        assert(!hv&&!run);
+        if(a==0)assert(w[0]==6144);
+        if(a<=9&&a+n>9)downsample=w[9-a];
+    }
+    writes++;return 0;
+}
 u32 Tx7332_WriteSectionWords(const char *s,u32 a,const u32 *w,u32 n) { return Bram_WriteSectionWords(s,a,w,n); }
 u32 Tx7332_ReadRegister(u32 a,u32 *d) { (void)a;*d=0x1234;return 0; }
 static void capture(const char *s) { snprintf(answer,sizeof(answer),"%s",s); }
@@ -93,8 +102,35 @@ int main(void) {
     uart_handle_wifi_line("CFG BEGIN 20",12,capture);
     uart_handle_wifi_line("BRAM WR t_timing 0 1 06144",12,capture);assert(strstr(answer,"BRAM_WR"));
     uart_handle_wifi_line("CFG END",12,capture);assert(!hv&&!run);
+    resume_failure=1;
+    uart_handle_wifi_line("BEAM START",12,capture);
+    assert(strstr(answer,"@NACK") && strstr(answer,"DDR_RESUME_OR_ABI") && !hv && !run);
+    uart_handle_usb_line("CFG BEGIN 21",capture);assert(strstr(answer,"CFG_BEGIN"));
+    uart_handle_usb_line("CFG END",capture);
+    assert(strstr(answer,"@NACK") && strstr(answer,"DDR_RESUME_OR_ABI") && !hv && !run);
+    resume_failure=0;
     tx_full=1;(void)wc_encode(received,sizeof(received),false,12,17,"STATUS");
     receive_at=0;receive_len=strlen(received);transmit_len=0;irq_handler(NULL);uart_process_commands();assert(transmit_len==0);
+    tx_full=0;
+    for(unsigned d=0;d<=4;d++) {
+        char command[64],expected[24];hv=run=1;
+        uart_handle_wifi_line("CFG BEGIN 30",12,capture);assert(strstr(answer,"CFG_BEGIN")&&!hv&&!run);
+        snprintf(command,sizeof(command),"BRAM WR t_timing 9 1 %u",d);
+        unsigned previous=writes;
+        uart_handle_wifi_line(command,13,capture);assert(strstr(answer,"CFG_OWNER")&&writes==previous);
+        uart_handle_wifi_line(command,12,capture);assert(strstr(answer,"BRAM_WR")&&writes==previous+1);
+        uart_handle_wifi_line("CFG END",12,capture);assert(strstr(answer,"CFG_END")&&!hv&&!run);
+        uart_handle_wifi_line("STATUS",12,capture);
+        snprintf(expected,sizeof(expected),"down=%u",d);assert(strstr(answer,expected)&&strstr(answer,"cfg=0")&&strstr(answer,"run=0 hv=0"));
+    }
+    unsigned previous=writes;
+    pause_failure=1;hv=run=1;
+    uart_handle_wifi_line("CFG BEGIN 31",12,capture);assert(strstr(answer,"DDR_DRAIN_OR_ABI")&&!hv&&!run);
+    uart_handle_wifi_line("BRAM WR t_timing 9 1 1",12,capture);assert(strstr(answer,"NO_CFG")&&writes==previous&&downsample==4);
+    pause_failure=0;
+    uart_handle_wifi_line("CFG BEGIN 32",12,capture);
+    uart_handle_wifi_line("BRAM WR t_timing 9 1 5",12,capture);assert(strstr(answer,"FRAME_LAYOUT")&&writes==previous&&downsample==4);
+    uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"cfg=0")&&strstr(answer,"down=4"));
     puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE failure/bounded TX");
     return 0;
 }

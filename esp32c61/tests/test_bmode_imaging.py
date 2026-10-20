@@ -15,10 +15,11 @@ sys.path.insert(0, str(ROOT/'pc_tools'))
 import bmode_imaging as b
 
 
-def payload(ids=range(64), value=20000):
-    rows = np.full((len(ids), b.LINE_WORDS), value, dtype='<u2')
+def payload(ids=range(64), value=20000, down=0):
+    rows = np.full((len(ids), 8+(6144 >> down)), value, dtype='<u2')
     rows[:, :8] = 0
     rows[:, 0], rows[:, 1], rows[:, 2] = 0x1c00, 0x1800, list(ids)
+    rows[:, 3] = down
     return rows.tobytes()
 
 
@@ -44,16 +45,16 @@ class ParseTests(unittest.TestCase):
             self.assertEqual(b.parse_lines(data), {})
 
     def test_truncated_neighbor_can_confirm_complete_preceding_line(self):
-        self.assertEqual(set(b.parse_lines(payload([2, 3])[:-100])), {2})
+        self.assertEqual(b.parse_lines(payload([2, 3])[:-100]), {})
 
     def test_false_header_inside_payload_does_not_destroy_real_spacing(self):
-        words = np.frombuffer(payload([1, 2]), '<u2').copy()
+        words = np.frombuffer(payload(), '<u2').copy()
         words[30:33] = [0x1c00, 0x1800, 8]
-        self.assertEqual(set(b.parse_lines(words.tobytes())), {1, 2})
+        self.assertEqual(set(b.parse_lines(words.tobytes())), set(range(64)))
 
     def test_last_duplicate_wins(self):
         data = payload([1, 2], 100)+payload([1, 2], 60000)
-        self.assertEqual(int(b.parse_lines(data)[1][0]), 60000)
+        self.assertEqual(b.parse_lines(data), {})
 
     def test_byte_offset_does_not_join_independent_snapshots(self):
         original = payload([1, 2])
@@ -61,15 +62,27 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(b.parse_lines(original[:100]), {})
         self.assertEqual(b.parse_lines(original[100:]), {})
 
-    def test_cache_rolling_and_expiry_including_zero(self):
-        cache = b.LineCache()
-        cache.update(b.parse_lines(payload(range(32), 0)), 10.)
-        self.assertEqual(cache.coverage(10.), 32)
-        cache.update(b.parse_lines(payload(range(32, 64))), 11.)
-        self.assertEqual(cache.coverage(11.), 64)
-        self.assertEqual(cache.coverage(15.01), 32)
-        self.assertEqual(cache.coverage(16.01), 0)
-        self.assertEqual(int(cache.data[0, 0]), 0)
+    def test_five_lengths_zero_mixed_missing_duplicate_and_depth(self):
+        for d, length in enumerate((787456,394240,197632,99328,50176)):
+            data = payload(value=0, down=d)
+            self.assertEqual(len(data), length)
+            down, samples = b.parse_frame(data)
+            self.assertEqual(down, d)
+            self.assertEqual(samples.shape, (64,6144 >> d))
+            self.assertFalse(samples.any())
+            r = b.Renderer()
+            r.configure(d)
+            np.testing.assert_allclose(r.gain, b.tgc_gain()[::1 << d])
+            # Scan geometry represents unchanged depth after decimation.
+            scan = r.scan
+            at = np.flatnonzero(scan['valid_flat'])[len(np.flatnonzero(scan['valid_flat']))//2]
+            original = b.precompute_scan_converter()
+            self.assertLessEqual(abs(scan['range0'][at]*(1 << d)-original['range0'][at]), (1 << d))
+            for bad in (payload(list(range(63))+[62], down=d),data[:-2],data+bytes(2)):
+                self.assertFalse(b.parse_lines(bad))
+            mixed = np.frombuffer(data, '<u2').copy()
+            mixed[8+(6144 >> d)+3] = (d+1)%5
+            self.assertFalse(b.parse_lines(mixed.tobytes()))
 
     def test_existing_bad_txt_is_rejected_not_displayed(self):
         names = ('frame_3e6e4163_00000002.txt', 'frame_d96df184_00000003.txt')
@@ -129,17 +142,40 @@ class WorkerTests(unittest.TestCase):
     def test_warmup_render_session_reset_and_invalid_payload(self):
         worker = self.make_worker()
         worker.submit(7, 1, payload(range(32)))
-        wait_for(lambda: worker.snapshot()['lines'] == 32)
+        wait_for(lambda: worker.snapshot()['format_errors'] == 1)
+        self.assertEqual(worker.snapshot()['lines'], 0)
         self.assertFalse(worker.snapshot()['image_available'])
-        worker.submit(7, 2, payload(range(32, 64)))
+        worker.submit(7, 2, payload())
         wait_for(lambda: worker.snapshot()['image_available'])
         seq, png = worker.latest(0)
         self.assertTrue(png.startswith(b'\x89PNG'))
         self.assertIsNone(worker.latest(seq)[1])
         worker.submit(8, 1, b'invalid')
-        wait_for(lambda: worker.snapshot()['format_errors'] == 1)
+        wait_for(lambda: worker.snapshot()['format_errors'] == 2)
         self.assertFalse(worker.snapshot()['image_available'])
         self.assertEqual(worker.snapshot()['lines'], 0)
+
+    def test_all_downsample_changes_reset_reference_and_publish_dynamic_complete_frames(self):
+        worker = self.make_worker()
+        for frame, down in enumerate((0, 1, 2, 3, 4, 0), 1):
+            worker.submit(7, frame, payload(value=20000+down*1000, down=down))
+            wait_for(lambda: worker.snapshot()['image_frame'] == frame)
+            state = worker.snapshot()
+            self.assertEqual(state['samples_per_line'], 6144 >> down)
+            self.assertEqual(state['sample_rate_mhz'], 25/(1 << down))
+            self.assertEqual(state['decimation'], down)
+            self.assertEqual(state['lines'], 64)
+            _, png = worker.latest(0)
+            self.assertEqual(Image.open(BytesIO(png)).size, (883, 624))
+        renderer = b.Renderer()
+        renderer.gray(np.full((64, 6144), 20000, dtype=np.uint16))
+        self.assertIsNotNone(renderer.reference)
+        renderer.configure(2)
+        self.assertIsNone(renderer.reference)
+        renderer.gray(np.full((64, 1536), 30000, dtype=np.uint16))
+        reference = renderer.reference
+        renderer.configure(2)
+        self.assertEqual(renderer.reference, reference)  # Same config preserves smoothing.
 
     def test_slow_renderer_has_bounded_queue_and_submit_does_not_wait(self):
         entered, release = threading.Event(), threading.Event()

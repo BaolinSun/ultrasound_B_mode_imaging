@@ -1,8 +1,15 @@
 set root [file dirname [file dirname [file dirname [file normalize [info script]]]]]
+set diag_incremental ""
+if {$argc>1} {error "Optional argument is one incremental implementation checkpoint"}
+if {$argc==1} {
+    set diag_incremental [file normalize [lindex $argv 0]]
+    if {![file isfile $diag_incremental]} {error "Incremental checkpoint does not exist"}
+}
 set_param tclapp.enableGitAccess 0
 open_project [file join $root vivado ultrasound_B_mode_imaging.xpr]
 set bd [lindex [get_files -quiet -all pus_ctrl_system.bd] 0]
 open_bd_design $bd
+source [file join $root build scripts configure_frame_store.tcl]
 source [file join $root build scripts configure_sdio.tcl]
 source [file join $root build scripts configure_bf_ila.tcl]
 generate_target all [get_files $bd]
@@ -12,6 +19,11 @@ launch_runs synth_1 -jobs 2
 wait_on_run synth_1
 if {[get_property PROGRESS [get_runs synth_1]] ne "100%"} { error "SDIO synthesis failed" }
 reset_run impl_1
+set diag_saved_incremental [get_property INCREMENTAL_CHECKPOINT [get_runs impl_1]]
+if {$diag_incremental ne ""} {
+    # Reuse placement/routing only. Netlist and constraints are rebuilt from RTL.
+    set_property INCREMENTAL_CHECKPOINT $diag_incremental [get_runs impl_1]
+}
 launch_runs impl_1 -to_step write_bitstream -jobs 2
 wait_on_run impl_1
 if {[get_property PROGRESS [get_runs impl_1]] ne "100%"} { error "SDIO implementation failed" }
@@ -29,4 +41,7 @@ if {[llength $bits]!=1} { error "Expected one bitstream" }
 file copy -force [lindex $bits 0] [file join $root build output ultrasound_B_mode_imaging.bit]
 write_debug_probes -force [file join $root build output ultrasound_B_mode_imaging.ltx]
 puts "SDIO_BUILD_COMPLETE"
+if {$diag_incremental ne ""} {
+    set_property INCREMENTAL_CHECKPOINT $diag_saved_incremental [get_runs impl_1]
+}
 close_project

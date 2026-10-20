@@ -9,6 +9,7 @@
 #include "../AFE5832/afe5832.h"
 #include "../bram/bram.h"
 #include "../HV/hv.h"
+#include "../data_transfer/frame_store.h"
 #include "uart_log.h"
 #include "xiltimer.h"
 #include "../../../../common/wifi_control_protocol.h"
@@ -253,6 +254,7 @@ static void uart_handle_cfg(char **ctx)
 		}
 		uart_cfg_seq = value;
 		Beamform_Stop();
+        if(frame_store_pause()!=0) { uart_nack(value,"DDR_DRAIN_OR_ABI"); return; }
 		uart_cfg_active = 1;
 		cfg_owner=command_source; cfg_session=wifi_session; cfg_activity=command_ms();
 		uart_cfg_done = 0;
@@ -275,7 +277,7 @@ static void uart_handle_cfg(char **ctx)
 		uart_cfg_active = 0;
 		uart_cfg_done = 1;
 		if(command_source==SOURCE_WIFI) { hv_disable(); Beamform_Halt(); }
-		else Beamform_Start();
+		else if(Beamform_Start()!=0) { uart_nack(uart_cfg_seq,"DDR_RESUME_OR_ABI"); return; }
 		uart_ack(uart_cfg_seq, "CFG_END");
 		return;
 	}
@@ -503,7 +505,7 @@ static void uart_handle_beam(char **ctx)
 			uart_nack(uart_cfg_seq, "CFG_ACTIVE");
 			return;
 		}
-		Beamform_Resume();
+		if(Beamform_Resume()!=0) { uart_nack(uart_cfg_seq,"DDR_RESUME_OR_ABI"); return; }
 		uart_ack(uart_cfg_seq, "BEAM_START");
 		return;
 	}
@@ -558,9 +560,9 @@ static void uart_handle_line(char *line)
 		uart_emitf("@NACK %u CFG_OWNER",uart_cfg_seq); return;
 	}
 	if(!strcmp(line,"STATUS")) {
-		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u run_src=ps spi=%u",uart_cfg_active,
+		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u run_src=ps spi=%u down=%u",uart_cfg_active,
 		    cfg_owner,uart_cfg_seq,(unsigned)Beamform_GetRunRequest(),(unsigned)hv_is_enabled(),
-		    (unsigned)Beamform_GetSpiStartRequest());
+		    (unsigned)Beamform_GetSpiStartRequest(),(unsigned)Beamform_GetDownsample());
 		return;
 	}
 	char *ctx = line;

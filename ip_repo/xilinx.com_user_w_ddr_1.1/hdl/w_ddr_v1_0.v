@@ -24,6 +24,11 @@ module w_ddr_v1_0 #(
 	parameter integer C_M00_AXI_RUSER_WIDTH              = 0           ,
 	parameter integer C_M00_AXI_BUSER_WIDTH              = 0
 ) (
+	// Frame-store control is synchronous to m00_axi_aclk.
+    input wire in_header, input wire in_last, input wire in_busy,
+    input wire [23:0] ctrl_addr, input wire [31:0] ctrl_wdata,
+    input wire ctrl_en, input wire [3:0] ctrl_we,
+    output wire [31:0] ctrl_rdata,
 	// Users to add ports here
 	input       [         FIFO_WR_WIDTH-1:0] in_data         ,
 	input                                    in_data_valid   ,
@@ -81,183 +86,36 @@ module w_ddr_v1_0 #(
 	output wire                              m00_axi_rready
 );
 
-	function integer clogb2 (input integer bit_depth);
-		begin
-			for(clogb2=0; bit_depth>0; clogb2=clogb2+1)
-				bit_depth = bit_depth >> 1;
-		end
-	endfunction
-
-	localparam integer FIFO_READ_DEPTH = FIFO_DEPTH * FIFO_WR_WIDTH / FIFO_RD_WIDTH;
-	localparam integer RD_DATA_COUNT_WIDTH = clogb2(FIFO_READ_DEPTH-1) +1;
-	localparam integer WR_DATA_COUNT_WIDTH = clogb2(FIFO_DEPTH-1)  +1   ;
-
-	wire                     wr_in_ddr_start;
-	wire [FIFO_RD_WIDTH-1:0] rd_data        ;
-	wire                     rd_en          ;
-	wire                     rd_clk         ;
-	wire                     m00_axi_error  ;
-	wire [FIFO_WR_WIDTH-1:0] data            ;
-	wire [FIFO_WR_WIDTH-1:0] wr_data         ;
-	wire                     fifo_full       ;
-	wire                     fifo_empty      ;
-	wire                     fifo_rst        ;
-	wire                     fifo_wr_rst_busy;
-	wire                     fifo_rd_rst_busy;
-	wire                     data_wr_clk     ;
-	wire                     wr_en           ;
-	wire                     wr_full         ;
-	wire [             RD_DATA_COUNT_WIDTH-1:0] rd_data_count   ;
-
-
-// 	ila_0 ila_inst (
-// 	.clk(m00_axi_aclk), // input wire clk
-
-// 	.probe0(wr_in_ddr_start), // input wire [0:0] probe0
-// 	.probe1(rd_data_count), // input wire [0:0] probe0
-// 	.probe2(rd_en)
-// );
-
-
-// Instantiation of Axi Bus Interface M00_AXI
-	w_ddr_v1_0_M00_AXI #(
-		.AXI_RD_FIFO_DATA_WIDTH            (FIFO_RD_WIDTH                     ),
-		.FIFO_WR_WIDTH                     (FIFO_WR_WIDTH                     ),
-		.BURST_BUFFER_NUMS                 (BURST_BUFFER_NUMS),
-		.C_M_TARGET_SLAVE_BASE_ADDR        (C_M00_AXI_TARGET_SLAVE_BASE_ADDR  ),
-		.C_M_TARGET_SLAVE_PER_LINE_INC_ADDR(C_M_TARGET_SLAVE_PER_LINE_INC_ADDR),
-		.CP_LINE_NUMBERS                   (CP_LINE_NUMBERS                   ),
-		.C_M_AXI_BURST_LEN                 (C_M00_AXI_BURST_LEN               ),
-		.C_M_AXI_ID_WIDTH                  (C_M00_AXI_ID_WIDTH                ),
-		.C_M_AXI_ADDR_WIDTH                (C_M00_AXI_ADDR_WIDTH              ),
-		.C_M_AXI_DATA_WIDTH                (FIFO_RD_WIDTH                     ),
-		.C_M_AXI_AWUSER_WIDTH              (C_M00_AXI_AWUSER_WIDTH            ),
-		.C_M_AXI_ARUSER_WIDTH              (C_M00_AXI_ARUSER_WIDTH            ),
-		.C_M_AXI_WUSER_WIDTH               (C_M00_AXI_WUSER_WIDTH             ),
-		.C_M_AXI_RUSER_WIDTH               (C_M00_AXI_RUSER_WIDTH             ),
-		.C_M_AXI_BUSER_WIDTH               (C_M00_AXI_BUSER_WIDTH             )
-	) w_ddr_v1_0_M00_AXI_inst (
-		.rd_data        (rd_data         ),
-		.rd_en          (rd_en           ),
-		.rd_clk         (rd_clk          ),
-		.fifo_empty     (fifo_empty      ),
-		.wr_in_ddr_start(wr_in_ddr_start ),
-		.rd_data_length (data_length     ),
-		.TXN_DONE       (m00_axi_txn_done),
-		.ERROR          (m00_axi_error   ),
-		.M_AXI_ACLK     (m00_axi_aclk    ),
-		.M_AXI_ARESETN  (m00_axi_aresetn ),
-		.M_AXI_AWID     (m00_axi_awid    ),
-		.M_AXI_AWADDR   (m00_axi_awaddr  ),
-		.M_AXI_AWLEN    (m00_axi_awlen   ),
-		.M_AXI_AWSIZE   (m00_axi_awsize  ),
-		.M_AXI_AWBURST  (m00_axi_awburst ),
-		.M_AXI_AWLOCK   (m00_axi_awlock  ),
-		.M_AXI_AWCACHE  (m00_axi_awcache ),
-		.M_AXI_AWPROT   (m00_axi_awprot  ),
-		.M_AXI_AWQOS    (m00_axi_awqos   ),
-		.M_AXI_AWUSER   (m00_axi_awuser  ),
-		.M_AXI_AWVALID  (m00_axi_awvalid ),
-		.M_AXI_AWREADY  (m00_axi_awready ),
-		.M_AXI_WDATA    (m00_axi_wdata   ),
-		.M_AXI_WSTRB    (m00_axi_wstrb   ),
-		.M_AXI_WLAST    (m00_axi_wlast   ),
-		.M_AXI_WUSER    (m00_axi_wuser   ),
-		.M_AXI_WVALID   (m00_axi_wvalid  ),
-		.M_AXI_WREADY   (m00_axi_wready  ),
-		.M_AXI_BID      (m00_axi_bid     ),
-		.M_AXI_BRESP    (m00_axi_bresp   ),
-		.M_AXI_BUSER    (m00_axi_buser   ),
-		.M_AXI_BVALID   (m00_axi_bvalid  ),
-		.M_AXI_BREADY   (m00_axi_bready  ),
-		.M_AXI_ARID     (m00_axi_arid    ),
-		.M_AXI_ARADDR   (m00_axi_araddr  ),
-		.M_AXI_ARLEN    (m00_axi_arlen   ),
-		.M_AXI_ARSIZE   (m00_axi_arsize  ),
-		.M_AXI_ARBURST  (m00_axi_arburst ),
-		.M_AXI_ARLOCK   (m00_axi_arlock  ),
-		.M_AXI_ARCACHE  (m00_axi_arcache ),
-		.M_AXI_ARPROT   (m00_axi_arprot  ),
-		.M_AXI_ARQOS    (m00_axi_arqos   ),
-		.M_AXI_ARUSER   (m00_axi_aruser  ),
-		.M_AXI_ARVALID  (m00_axi_arvalid ),
-		.M_AXI_ARREADY  (m00_axi_arready ),
-		.M_AXI_RID      (m00_axi_rid     ),
-		.M_AXI_RDATA    (m00_axi_rdata   ),
-		.M_AXI_RRESP    (m00_axi_rresp   ),
-		.M_AXI_RLAST    (m00_axi_rlast   ),
-		.M_AXI_RUSER    (m00_axi_ruser   ),
-		.M_AXI_RVALID   (m00_axi_rvalid  ),
-		.M_AXI_RREADY   (m00_axi_rready  )
-	);
-
-	recv_data_wr_fifo #(
-		.RECV_DATA_WIDTH    (FIFO_WR_WIDTH      ),
-		.RD_DATA_WIDTH      (FIFO_RD_WIDTH      ),
-		.WR_DATA_WIDTH      (FIFO_WR_WIDTH      ),
-		.USE_PRE_READ       (USE_PRE_READ),
-		.RD_DATA_COUNT_WIDTH(RD_DATA_COUNT_WIDTH),
-		.WR_DATA_COUNT_WIDTH(WR_DATA_COUNT_WIDTH)
-	) inst_recv_data_wr_fifo (
-		.rstn            (m00_axi_aresetn ),
-		.data            (in_data         ),
-		.data_clk        (in_data_clk     ),
-		.data_valid      (in_data_valid   ),
-		.data_length     (data_length     ),
-		.fifo_full       (fifo_full       ),
-		.fifo_empty      (fifo_empty      ),
-		.data_wr_clk     (data_wr_clk     ),
-		.rd_data_cnt     (rd_data_count   ),
-		.wr_data         (wr_data         ),
-		.wr_en           (wr_en           ),
-		.wr_full         (wr_full         ),
-		.fifo_rst        (fifo_rst        ),
-		.fifo_wr_rst_busy(fifo_wr_rst_busy),
-		.fifo_rd_rst_busy(fifo_rd_rst_busy),
-		.wr_in_ddr_start (wr_in_ddr_start )
-	);
-
-	// wire [12:0] wr_data_count;
-
-// fifo_generator_0 your_instance_name (
-//   .rst(fifo_rst),                      // input wire rst
-//   .wr_clk(data_wr_clk),                // input wire wr_clk
-//   .rd_clk(rd_clk),                // input wire rd_clk
-//   .din(wr_data),                      // input wire [511 : 0] din
-//   .wr_en(wr_en),                  // input wire wr_en
-//   .rd_en(rd_en),                  // input wire rd_en
-//   .dout(rd_data),                    // output wire [63 : 0] dout
-//   .full(fifo_full ),                    // output wire full
-//   .empty( fifo_empty),                  // output wire empty
-//   .rd_data_count(rd_data_count),  // output wire [15 : 0] rd_data_count
-//   .wr_data_count(wr_data_count),  // output wire [12 : 0] wr_data_count
-//   .wr_rst_busy(fifo_wr_rst_busy),      // output wire wr_rst_busy
-//   .rd_rst_busy(fifo_rd_rst_busy)      // output wire rd_rst_busy
-// );
-
-	m_fifo #(
-		.FIFO_DEPTH         (FIFO_DEPTH         ),
-		.FIFO_RD_WIDTH      (FIFO_RD_WIDTH      ),
-		.FIFO_WR_WIDTH      (FIFO_WR_WIDTH      ),
-		.RD_DATA_COUNT_WIDTH(RD_DATA_COUNT_WIDTH),
-		.WR_DATA_COUNT_WIDTH(WR_DATA_COUNT_WIDTH)
-	) inst_m_fifo (
-		.rd_clk       (rd_clk          ),
-		.wr_clk       (data_wr_clk     ),
-		.rd_en        (rd_en           ),
-		.wr_en        (wr_en           ),
-		.din          (wr_data         ),
-		.rst          (fifo_rst        ),
-		.dout         (rd_data         ),
-		.rd_data_count(rd_data_count   ),
-		.rd_rst_busy  (fifo_rd_rst_busy),
-		.wr_rst_busy  (fifo_wr_rst_busy),
-		.fifo_full    (fifo_full       ),
-		.fifo_empty   (fifo_empty      )
-	);
-
-	// Add user logic here
-
-	// User logic ends
-
+    ddr_frame_store #(.FIFO_DEPTH(FIFO_DEPTH)) frame_store_i(
+        .clk_axi(m00_axi_aclk),.rst_n(m00_axi_aresetn),.clk_in(in_data_clk),
+        .in_data(in_data),.in_valid(in_data_valid),.in_header(in_header),
+        .in_last(in_last),.in_busy(in_busy),
+        .ctrl_addr(ctrl_addr),.ctrl_wdata(ctrl_wdata),.ctrl_en(ctrl_en),.ctrl_we(ctrl_we),
+        .ctrl_rdata(ctrl_rdata),.awaddr(m00_axi_awaddr),.awlen(m00_axi_awlen),
+        .awvalid(m00_axi_awvalid),.awready(m00_axi_awready),
+        .wdata(m00_axi_wdata),.wvalid(m00_axi_wvalid),.wready(m00_axi_wready),
+        .wlast(m00_axi_wlast),.bvalid(m00_axi_bvalid),.bresp(m00_axi_bresp),
+        .bready(m00_axi_bready),.frame_done(m00_axi_txn_done));
+    assign m00_axi_awid=0;
+    assign m00_axi_awsize=3;
+    assign m00_axi_awburst=1;
+    assign m00_axi_awlock=0;
+    assign m00_axi_awcache=4'b0011;
+    assign m00_axi_awprot=0;
+    assign m00_axi_awqos=0;
+    assign m00_axi_awuser=0;
+    assign m00_axi_wstrb=8'hff;
+    assign m00_axi_wuser=0;
+    assign m00_axi_arid=0;
+    assign m00_axi_araddr=0;
+    assign m00_axi_arlen=0;
+    assign m00_axi_arsize=3;
+    assign m00_axi_arburst=1;
+    assign m00_axi_arlock=0;
+    assign m00_axi_arcache=0;
+    assign m00_axi_arprot=0;
+    assign m00_axi_arqos=0;
+    assign m00_axi_aruser=0;
+    assign m00_axi_arvalid=0;
+    assign m00_axi_rready=1;
 endmodule

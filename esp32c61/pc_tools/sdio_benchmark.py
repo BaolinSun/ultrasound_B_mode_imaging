@@ -18,6 +18,7 @@ def upstream_idle(status):
 
 def stalled_since(status, now, since, timeout):
     """No frame in either slot despite an armed/handshaken stream. Not TCP loss."""
+    if status.get('sdio',{}).get('source_flags',0)&2:return None,False
     if not upstream_idle(status):return None,False
     since=now if since is None else since
     return since,now-since>=timeout
@@ -40,12 +41,30 @@ def tcp_phase_summary(samples):
             'note':'Unique completed frames observed by status polling, not every frame. Wait/yield/copy are overlapping subsets of stage durations.'}
 
 
+def pipeline_rates(samples):
+    active=samples[1:]
+    result={}
+    for label,key in (('pl_published_fps','source_published'),('sdio_received_fps','received_frames'),
+                      ('wifi_completed_fps','sent_frames')):
+        values=[(s['t'],s['status'].get('sdio',{})) for s in active
+                if key in s['status'].get('sdio',{})]
+        result[label]=None
+        if len(values)>1:
+            dt=values[-1][0]-values[0][0]
+            delta=(values[-1][1][key]-values[0][1][key])&0xffffffff
+            if dt>0 and delta<0x80000000:
+                result[label]=delta/dt
+    result['note']='Sampled counter deltas. PL publication excludes invalid/unbuffered frames. Wi-Fi completion means PC ACK for TCP, local send for UDP; receiver summary is valid-PC-throughput authority.'
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--device-ip', required=True)
     parser.add_argument('--seconds', type=float, default=30)
     parser.add_argument('--log', type=Path, required=True, help=LOG_HELP)
     parser.add_argument('--port', type=int, default=50001)
+    parser.add_argument('--test-pattern', action='store_true', help='only for explicit synthetic source, not imaging DDR')
     parser.add_argument('--stall-timeout',type=float,default=5,
                         help='Fail if stream stays armed with two free slots and idle sender for N seconds')
     args = parser.parse_args()
@@ -82,7 +101,8 @@ def main():
             command = [sys.executable, str(Path(__file__).with_name('sdio_'+transport+'_receiver.py')),
                        '--source-ip', args.device_ip, '--frames', '0', '--seconds', str(args.seconds+10),
                        '--port', str(args.port),
-                       '--test-pattern', '--log', str(args.log),'--managed']
+                       '--log', str(args.log),'--managed']
+            if args.test_pattern: command.append('--test-pattern')
             process = subprocess.Popen(command, stdout=stdout, stderr=stderr,
                                        stdin=subprocess.PIPE,
                                        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
@@ -145,6 +165,7 @@ def main():
             except Exception as exc:
                 control_error=str(exc);result['stop_error']=control_error
         if transport=='tcp':result['tcp_phase_summary']=tcp_phase_summary(samples)
+        result['pipeline_rates']=pipeline_rates(samples)
         args.log.with_suffix('.device.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     summaries = [json.loads(line) for line in args.log.read_text(encoding='utf-8').splitlines()
                  if json.loads(line).get('event') == 'summary']

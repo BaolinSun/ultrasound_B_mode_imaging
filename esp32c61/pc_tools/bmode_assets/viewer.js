@@ -20,11 +20,14 @@ function render(s){
  el('error').textContent=s.error||s.processing_error||'';
  for(const [id,key,suffix] of [['receive-fps','receive_fps',' FPS'],['display-fps','display_fps',' FPS'],['throughput','payload_mbit_s',' Mbit/s']])el(id).textContent=Number(s[key]||0).toFixed(2)+suffix;
  el('coverage').textContent=`${s.lines||0} / 64`;
- el('counters').textContent=`有效载荷 ${s.received_frames||0} · 网络坏帧 ${s.bad_frames||0} · 协议错误 ${s.protocol_errors||0} · 无合法行载荷 ${s.format_errors||0} · 处理丢弃 ${s.queue_drops||0} · 本地 UDP 队列丢包 ${s.local_queue_drops||0} · 非法数据报 ${s.invalid_datagrams||0}`;
+ const source=s.source_status||{};
+ el('pipeline').textContent=`缓存状态采样：PL 完整帧发布 ${Number(s.source_fps||0).toFixed(2)} FPS；SDIO 接收 ${Number(s.sdio_fps||0).toFixed(2)} FPS；源端丢弃 ${source.source_drops||0} / 错误 ${source.source_errors||0}；最近 SDIO ${((source.last_receive_us||0)/1000).toFixed(1)} ms`;
+ el('frame-format').textContent=`当前：${s.sample_rate_mhz??25} MHz · ${s.samples_per_line??6144} 点 × 64 线 · 抽取 2^${s.decimation||0} · Q2.14 · 双线性扫描转换 · TGC 开启 · DR 45 dB · 亮度 +3 dB · 参考灰度 LUT`;
+ el('counters').textContent=`有效载荷 ${s.received_frames||0} · 网络坏帧 ${s.bad_frames||0} · 协议错误 ${s.protocol_errors||0} · 图像整帧格式错误 ${s.format_errors||0} · 处理丢弃 ${s.queue_drops||0} · 本地 UDP 队列丢包 ${s.local_queue_drops||0} · 非法数据报 ${s.invalid_datagrams||0}`;
  const age=s.image_age_s;
  const stale=s.state!=='running'||s.lines!==64||age===null||age>5;
  el('image').classList.toggle('stale',stale);
- el('image-note').textContent=frozen?'画面已冻结；后台继续接收，继续显示时获取最新图像':!available?`等待合法图像线（${s.lines||0}/64）；格式错误时不会强行绘图`:`${stale?'画面非实时 / 行数据过期；':'滚动图像；'}最近发布 ${Number(age).toFixed(1)} 秒前 · 会话 ${s.session??'—'} · 载荷 ${s.image_frame??'—'}`;
+ el('image-note').textContent=frozen?'画面已冻结；后台继续接收，继续显示时获取最新图像':!available?`等待合法图像线（${s.lines||0}/64）；格式错误时不会强行绘图`:`${stale?'画面非实时 / 行数据过期；':'完整帧图像；'}最近发布 ${Number(age).toFixed(1)} 秒前 · 会话 ${s.session??'—'} · 载荷 ${s.image_frame??'—'}`;
  if(!available){clearPicture();el('empty').textContent=`等待完整的 64 条合法图像线（${s.lines||0}/64）`}
 }
 async function pollStatus(){

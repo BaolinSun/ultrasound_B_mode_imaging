@@ -1,7 +1,7 @@
 {
   "design": {
     "design_info": {
-      "boundary_crc": "0x446050527A3F6F21",
+      "boundary_crc": "0x73B62DDA2043F2C4",
       "device": "xc7z030sbg485-2",
       "gen_directory": "../../../../ultrasound_B_mode_imaging.gen/sources_1/bd/bd",
       "name": "pus_ctrl_system",
@@ -234,73 +234,6 @@
             "right": "0"
           }
         }
-      },
-      "para": {
-        "mode": "Master",
-        "vlnv_bus_definition": "xilinx.com:interface:bram:1.0",
-        "vlnv": "xilinx.com:interface:bram_rtl:1.0",
-        "parameters": {
-          "MASTER_TYPE": {
-            "value": "BRAM_CTRL"
-          },
-          "MEM_ECC": {
-            "value": "NONE",
-            "value_src": "user_prop"
-          },
-          "MEM_SIZE": {
-            "value": "16777216",
-            "value_src": "ip_prop"
-          },
-          "MEM_WIDTH": {
-            "value": "32",
-            "value_src": "ip_prop"
-          },
-          "READ_LATENCY": {
-            "value": "1",
-            "value_src": "user_prop"
-          },
-          "READ_WRITE_MODE": {
-            "value": "READ_WRITE"
-          }
-        },
-        "port_maps": {
-          "ADDR": {
-            "physical_name": "para_addr",
-            "direction": "O",
-            "left": "23",
-            "right": "0"
-          },
-          "CLK": {
-            "physical_name": "para_clk",
-            "direction": "O"
-          },
-          "DIN": {
-            "physical_name": "para_din",
-            "direction": "O",
-            "left": "31",
-            "right": "0"
-          },
-          "DOUT": {
-            "physical_name": "para_dout",
-            "direction": "I",
-            "left": "31",
-            "right": "0"
-          },
-          "EN": {
-            "physical_name": "para_en",
-            "direction": "O"
-          },
-          "RST": {
-            "physical_name": "para_rst",
-            "direction": "O"
-          },
-          "WE": {
-            "physical_name": "para_we",
-            "direction": "O",
-            "left": "3",
-            "right": "0"
-          }
-        }
       }
     },
     "ports": {
@@ -518,6 +451,80 @@
       },
       "clk_200m": {
         "direction": "I"
+      },
+      "frame_header": {
+        "direction": "I"
+      },
+      "frame_last": {
+        "direction": "I"
+      },
+      "frame_busy": {
+        "direction": "I"
+      },
+      "frame_ctrl_rdata": {
+        "direction": "O",
+        "left": "31",
+        "right": "0"
+      },
+      "para_addr": {
+        "direction": "O",
+        "left": "23",
+        "right": "0"
+      },
+      "para_din": {
+        "direction": "O",
+        "left": "31",
+        "right": "0"
+      },
+      "para_en": {
+        "direction": "O"
+      },
+      "para_we": {
+        "direction": "O",
+        "left": "3",
+        "right": "0"
+      },
+      "para_clk": {
+        "type": "clk",
+        "direction": "O",
+        "parameters": {
+          "ASSOCIATED_RESET": {
+            "value": "para_rst"
+          },
+          "FREQ_HZ": {
+            "value": "100000000"
+          },
+          "FREQ_TOLERANCE_HZ": {
+            "value": "0",
+            "value_src": "default"
+          },
+          "INSERT_VIP": {
+            "value": "0",
+            "value_src": "default"
+          },
+          "PHASE": {
+            "value": "0.0",
+            "value_src": "default"
+          }
+        }
+      },
+      "para_rst": {
+        "type": "rst",
+        "direction": "O",
+        "parameters": {
+          "INSERT_VIP": {
+            "value": "0",
+            "value_src": "default"
+          },
+          "POLARITY": {
+            "value": "ACTIVE_HIGH"
+          }
+        }
+      },
+      "para_dout": {
+        "direction": "I",
+        "left": "31",
+        "right": "0"
       }
     },
     "components": {
@@ -4134,7 +4141,7 @@
       },
       "w_ddr_0": {
         "vlnv": "xilinx.com:user:w_ddr:1.1",
-        "ip_revision": "3",
+        "ip_revision": "12",
         "xci_name": "pus_ctrl_system_w_ddr_0_0",
         "xci_path": "ip\\pus_ctrl_system_w_ddr_0_0\\pus_ctrl_system_w_ddr_0_0.xci",
         "inst_hier_path": "w_ddr_0",
@@ -4182,12 +4189,6 @@
       }
     },
     "interface_nets": {
-      "axi_bram_ctrl_0_BRAM_PORTA": {
-        "interface_ports": [
-          "para",
-          "axi_bram_ctrl_0/BRAM_PORTA"
-        ]
-      },
       "axi_mem_intercon_M00_AXI": {
         "interface_ports": [
           "axi_mem_intercon/M00_AXI",
@@ -4268,6 +4269,46 @@
           "data_ch"
         ]
       },
+      "axi_bram_ctrl_0_bram_addr_a": {
+        "ports": [
+          "axi_bram_ctrl_0/bram_addr_a",
+          "para_addr",
+          "w_ddr_0/ctrl_addr"
+        ]
+      },
+      "axi_bram_ctrl_0_bram_clk_a": {
+        "ports": [
+          "axi_bram_ctrl_0/bram_clk_a",
+          "para_clk"
+        ]
+      },
+      "axi_bram_ctrl_0_bram_en_a": {
+        "ports": [
+          "axi_bram_ctrl_0/bram_en_a",
+          "para_en",
+          "w_ddr_0/ctrl_en"
+        ]
+      },
+      "axi_bram_ctrl_0_bram_rst_a": {
+        "ports": [
+          "axi_bram_ctrl_0/bram_rst_a",
+          "para_rst"
+        ]
+      },
+      "axi_bram_ctrl_0_bram_we_a": {
+        "ports": [
+          "axi_bram_ctrl_0/bram_we_a",
+          "para_we",
+          "w_ddr_0/ctrl_we"
+        ]
+      },
+      "axi_bram_ctrl_0_bram_wrdata_a": {
+        "ports": [
+          "axi_bram_ctrl_0/bram_wrdata_a",
+          "para_din",
+          "w_ddr_0/ctrl_wdata"
+        ]
+      },
       "clk_200m_1": {
         "ports": [
           "clk_200m",
@@ -4329,6 +4370,24 @@
           "afe5832_adc_14b_16la_0/fclk_p"
         ]
       },
+      "frame_busy_1": {
+        "ports": [
+          "frame_busy",
+          "w_ddr_0/in_busy"
+        ]
+      },
+      "frame_header_1": {
+        "ports": [
+          "frame_header",
+          "w_ddr_0/in_header"
+        ]
+      },
+      "frame_last_1": {
+        "ports": [
+          "frame_last",
+          "w_ddr_0/in_last"
+        ]
+      },
       "in_data_0_1": {
         "ports": [
           "up_data",
@@ -4339,6 +4398,12 @@
         "ports": [
           "up_data_valid",
           "w_ddr_0/in_data_valid"
+        ]
+      },
+      "para_dout_1": {
+        "ports": [
+          "para_dout",
+          "axi_bram_ctrl_0/bram_rddata_a"
         ]
       },
       "processing_system7_0_FCLK_RESET0_N": {
@@ -4385,6 +4450,12 @@
           "processing_system7_0/M_AXI_GP0_ACLK",
           "processing_system7_0/S_AXI_HP0_ACLK",
           "w_ddr_0/m00_axi_aclk"
+        ]
+      },
+      "w_ddr_0_ctrl_rdata": {
+        "ports": [
+          "w_ddr_0/ctrl_rdata",
+          "frame_ctrl_rdata"
         ]
       },
       "xlconstant_0_dout": {

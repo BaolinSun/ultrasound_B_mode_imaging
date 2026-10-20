@@ -57,6 +57,42 @@ python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 -c "BEAM START"
 
 普通扫描运行不附带网络失联自动关高压功能；配置事务的 60 秒看门狗仅保护正在进行的 Wi-Fi 配置。重启 ESP32 也不能当作关闭 Zynq 高压的手段。需要停止时明确发送 HV DISABLE，并核对回执及实际硬件状态。
 
+### 网页下采样设置
+
+ESP32 页“Zynq 控制与配置 → 图像下采样”提供五档选择：
+
+| 抽取倍率 | `T_timing_hex[9]` | 每线传输点数 | 每帧字节数 |
+|---|---:|---:|---:|
+| 1 倍（不抽取） | 0 | 6144 | 787456 |
+| 2 倍 | 1 | 3072 | 394240 |
+| 4 倍 | 2 | 1536 | 197632 |
+| 8 倍 | 3 | 768 | 99328 |
+| 16 倍 | 4 | 384 | 50176 |
+
+选择后点击“停扫并应用下采样”，网页一次提交以下四条命令，复用有界异步任务、配置归属和排空超时：
+
+```text
+CFG BEGIN <随机事务编号>
+BRAM WR t_timing 9 1 <0～4>
+CFG END
+STATUS
+```
+
+先禁止新上传并排空已接受数据，再由 PS 停扫、关闭高压及等待帧缓存 PAUSE 确认，之后才写参数。任一步失败不继续配置，不自动重试；结果未知时先查询状态。安全停止按钮仍可使用。只改第 9 个 32 位字；原始 6144 点、64 线及其他扫描时序不变。
+
+网页核对逐条 ACK 的事务编号、命令及最终 `STATUS` 的 `seq/down/cfg/run/hv`，只有档位匹配、事务结束、扫描与高压关闭才报告成功。成功后上传也保持停止，**不会自动开启高压、扫描或接收**。使用步骤：
+
+1. 在 ESP32 页查询 Zynq 状态，选择倍率并应用，等待“配置成功”。
+2. 按实际安全条件，通过现有按钮手动开启高压（如需要，仍需确认）和开始扫描；二者独立，不由下采样功能代为执行。
+3. 在 PC 图像页重新点击“开始接收”，不要同时点击 ESP32 的 SDIO 按钮；普通接收工具则先启动监听，再点击 SDIO 单帧/连续。
+4. 查看新完整帧的实际档位、点数与帧长。若 PC 正在接收时应用配置，设备会正常排空停流，PC 可能提示“上传已结束”，需要手动重新开始接收。
+
+界面区分待设置倍率、PS 已下发配置和最近完整接收帧。`STATUS down` 是 PS 写入成功路径的软件记录，扫描时序地址不能可靠回读，不代表 PL 已接受。`sdio.last_received_bytes` / `last_received_frame` 仅在完整帧 CRC 通过后更新，SDIO 新会话清零；网页按长度推导最近接收档位，旧帧不会冒充新配置。PC 图像页进一步按线头核验真正的图像格式。
+
+旧 PS 固件没有合法 `down` 字段时禁用下采样应用并提示更新；网页轮询仍只读缓存，不周期性下发串口查询。下采样不写 NVS，重启采用 C 数组默认档位。仅减少输出数据量，不保证采集或显示帧率等比提高；大倍率降低轴向采样密度。
+
+本功能需要更新 PS ELF 与 ESP32 固件，不需要更新 bit/XSA，也不自动修改 BOOT.BIN。软件记录不能代替物理扫描或高压状态确认。
+
 ## 3. 全部原始命令
 
 命令区分大小写，使用单个空格分隔；整数支持无符号十进制或 `0x` 十六进制。Wi-Fi 命令不接受符号、额外参数、嵌入换行或 `*`，每条最多 159 字节。命令文件每行一条，空行和以 `#` 开头的整行注释忽略。
@@ -134,7 +170,7 @@ JSON 全部在 PC 校验并生成命令后才联网；无效文件不会产生�
 @RD <seq> <addr> <AFE数据>
 @RD <seq> TX7332 <addr> <TX数据>
 @NACK <seq> <error>
-@STATUS v=1 cfg=<0/1> owner=<0/1/2> seq=<seq> run=<0/1> hv=<0/1> run_src=ps spi=<0/1>
+@STATUS v=1 cfg=<0/1> owner=<0/1/2> seq=<seq> run=<0/1> hv=<0/1> run_src=ps spi=<0/1> down=<0～4>
 ```
 
 owner：0 为 UART1，1 为 USB，2 为 Wi-Fi，仅在 cfg=1 时代表事务所有者。`run_src=ps` 表示 run 是 **PS 最后下发的扫描请求缓存**，spi 同样是 PS 下发的 SPI 启动请求；hv 是使能 GPIO 读回。它们都不是实际高压电压、PL 扫描活动或事务排空的证明。PL 复位或 JTAG 直接写寄存器也不会同步修改 PS 缓存。
@@ -146,6 +182,8 @@ owner：0 为 UART1，1 为 USB，2 为 Wi-Fi，仅在 cfg=1 时代表事务所�
 运行报告默认生成 `logs/zynq-control-日期时间-随机后缀.json`，不覆盖已有文件；也可指定 `--log example.json`，自动放入 `logs`。返回码 0 为全部命令已收到成功回执，1 为失败或结果未知；参数错误为 2。
 
 常见错误：`NO_CFG`、`CFG_ACTIVE`、`CFG_OWNER`、`AFE_MAP_FAIL`、`AFE_WR_FAIL`、`AFE_RD_FAIL`、`BRAM_RANGE`、`TX7332_RANGE`、`BEAM_ACTIVE_USE_BEAM_STOP`、`FRAME_LAYOUT_6144_REQUIRED`、`HANDSHAKE_REQUIRED`、`STALE_REQUEST`、`REQUEST_CONFLICT`、`DRAIN_TIMEOUT`。参数解析也可能返回 `*_ARGS`、`*_DATA`、`*_OP` 或 `UNKNOWN_CMD`。
+
+2026-10-20 起，帧缓存未初始化、ABI 不匹配或恢复失败时，`BEAM START` 返回 `@NACK <seq> DDR_RESUME_OR_ABI`，而不是在 run=0 时误报成功。失败路径保持扫描、高压关闭；正常 `BEAM START` 仍不自动开启高压。此时应先解决 `@DDR INIT` 错误，不能以反复点击 SDIO 单帧恢复。旧 USB/UART 配置结束时的自动启动若失败，也会返回该 NACK。详见 [DDR 初始化诊断](DDR_INIT_DIAGNOSIS.md)。
 
 失败立即停止后续命令。客户端仅在已确认持有事务且结果明确失败时尝试 ABORT；结果未知时不自动重发。PS Wi-Fi 配置事务连续 60 秒没有有效命令会关闭高压并清理事务，不自动恢复成像。网页状态轮询只读取缓存，不给串口事务续期。
 
@@ -177,6 +215,31 @@ CRC32 为 IEEE/zlib，覆盖 `*` 前所有 ASCII 字节；length 只计内部命
 单条 UART 命令等待最多 20 秒；Python 每批等待默认 300 秒，可通过 `--timeout` 调整。优先关断在尚未确认会话时先按顺序发送只读 STATUS 建立会话，但不等待它的回执，再单次发送 HV DISABLE，避免被额外的查询超时阻挡。CRC 只检测损坏，不提供串口来源认证；当前 HTTP 控制接口也不鉴权，须由可信网络隔离限制访问。
 
 ## 6. 软件验证与板测边界
+
+### 网页下采样配置（2026-10-20）
+
+- 完整主机 C 自检查通过，包含真实 PS 命令解析、MMIO 参数写入/软件记录、ESP 控制排空、CRC 通过后记录最近帧及失败恢复。PS 三个修改文件在规范源和 Vitis 源中逐字节一致。
+- Python 回归运行 169 项，168 项通过、1 项因历史异常样本缺失跳过；网页 30 项通过。覆盖五档长度、TCP/UDP、TXT、切换后的点数/采样率/深度/平滑、无效档位、事务归属、排空失败不写参数、回执不匹配、未知结果、重复点击及不自动启动。
+- 回归同时发现 TCP 接收工具在 Windows 低分辨率计时器下极短接收可能得到 0 秒，导致汇总除零。现返回 null 速率而非崩溃或虚构吞吐，新增固定零时差测试。首次测试环境无 NumPy/Pillow，最终使用已有 `C:\Users\sunbaolin\miniconda3\envs\py-utils\python.exe` 完成全部回归，没有安装或修改系统依赖。故障注入日志中的 “Soak FAILED” 为预期用例，以最终 unittest OK 和进程退出码 0 为准。
+- Vitis 2026.1 USB/SDIO 及日常 workspace 均构建通过，DDR 布局检查通过。SDIO text/data/bss=186075/140604/163312 B，USB=179803/140604/162256 B。既有 USB fall-through、声明与符号比较等警告仍保留，未宣称本次修复。
+- ESP-IDF 6.1 默认/throughput-fast 均构建通过，BIN 分别为 963536/965120 B，应用分区均剩余 37%；静态 DIRAM 123599/135561 B，两档 .bss 均为 31064 B、.data 均为 16187 B。新增最近完整帧统计为两个 uint32 字段，不新增任务或整帧缓冲；静态余量不是运行时堆低水位。内嵌网页较本轮备份增加 5429 B，未改 TCP 缓冲调优。
+- 当前 SDIO ELF 已同步到 `build/output/B_mode_focus_imaging.elf`。本次不连接硬件、不下载/烧录、不更新 bit/XSA 或 BOOT.BIN；真实五档帧率、图像质量和长期稳定性尚未板测。备份与离线日志位于 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\build\verification\web_decimation_20261020_145243`。
+
+本轮可用产物（绝对路径；应用 BIN 不是完整 Flash 镜像，更新 ESP32 应使用原构建脚本）：
+
+```text
+Zynq SDIO / 当前 Vitis:
+D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\workspace\B_mode_focus_imaging\build\B_mode_focus_imaging.elf
+SHA256: 75054DB528A9606FD00260400DF7A081E60DA133F039297387130B1185448D95
+
+ESP32 默认:
+D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build\ultrasound_psram_udp.bin
+SHA256: C6FEC6F4C8B3AA5E82CCA1C8FE1E1FFA2740D78FE8B101E77020BF9B2F998719
+
+ESP32 性能档:
+D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build-throughput-fast-socket\ultrasound_psram_udp.bin
+SHA256: 39730F7FCE591461FFB768115C59BED58A37315B46841FDBD1F19A4CA55362E2
+```
 
 ### 当前版本：移除 USB 口令（2026-10-16）
 

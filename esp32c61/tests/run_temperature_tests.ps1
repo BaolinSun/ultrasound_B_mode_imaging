@@ -22,6 +22,13 @@ try {
  if($LASTEXITCODE -ne 0){throw 'Temperature register adapter compilation failed'}
  & ./test_temperature_hw.exe
  if($LASTEXITCODE -ne 0){throw 'Temperature hardware fault injection failed'}
+ & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic -O0 -g -DTEMPERATURE_TEST_UNPAREN_FREQ=1 `
+   '-I' (Join-Path $PSScriptRoot 'stubs/temperature') '-I' $ps '-I' $bsp `
+   '-include' (Join-Path $PSScriptRoot 'stubs/temperature/preinclude.h') `
+   (Join-Path $PSScriptRoot 'test_temperature_hw.c') (Join-Path $ps 'temp_hw.c') -o test_temperature_bsp_macro.exe
+ if($LASTEXITCODE -ne 0){throw 'Temperature BSP macro regression compilation failed'}
+ & ./test_temperature_bsp_macro.exe
+ if($LASTEXITCODE -ne 0){throw 'Temperature BSP macro/timebase regression failed'}
  & (Join-Path (Split-Path $Compiler -Parent) 'gcov.exe') -b -c test_temperature.gcno temp.gcno temperature_cache.gcno temp_hw.gcno
  if($LASTEXITCODE -ne 0){throw 'Temperature coverage failed'}
 } finally {Pop-Location}

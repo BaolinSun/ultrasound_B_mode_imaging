@@ -494,6 +494,14 @@
       </spirit:view>
     </spirit:views>
     <spirit:ports>
+      <spirit:port><spirit:name>in_header</spirit:name><spirit:wire><spirit:direction>in</spirit:direction></spirit:wire></spirit:port>
+      <spirit:port><spirit:name>in_last</spirit:name><spirit:wire><spirit:direction>in</spirit:direction></spirit:wire></spirit:port>
+      <spirit:port><spirit:name>in_busy</spirit:name><spirit:wire><spirit:direction>in</spirit:direction></spirit:wire></spirit:port>
+      <spirit:port><spirit:name>ctrl_addr</spirit:name><spirit:wire><spirit:direction>in</spirit:direction><spirit:vector><spirit:left>23</spirit:left><spirit:right>0</spirit:right></spirit:vector></spirit:wire></spirit:port>
+      <spirit:port><spirit:name>ctrl_wdata</spirit:name><spirit:wire><spirit:direction>in</spirit:direction><spirit:vector><spirit:left>31</spirit:left><spirit:right>0</spirit:right></spirit:vector></spirit:wire></spirit:port>
+      <spirit:port><spirit:name>ctrl_en</spirit:name><spirit:wire><spirit:direction>in</spirit:direction></spirit:wire></spirit:port>
+      <spirit:port><spirit:name>ctrl_we</spirit:name><spirit:wire><spirit:direction>in</spirit:direction><spirit:vector><spirit:left>3</spirit:left><spirit:right>0</spirit:right></spirit:vector></spirit:wire></spirit:port>
+      <spirit:port><spirit:name>ctrl_rdata</spirit:name><spirit:wire><spirit:direction>out</spirit:direction><spirit:vector><spirit:left>31</spirit:left><spirit:right>0</spirit:right></spirit:vector></spirit:wire></spirit:port>
       <spirit:port>
         <spirit:name>in_data</spirit:name>
         <spirit:wire>
@@ -1389,6 +1397,7 @@
   <spirit:fileSets>
     <spirit:fileSet>
       <spirit:name>xilinx_anylanguagesynthesis_view_fileset</spirit:name>
+      <spirit:file><spirit:name>hdl/ddr_frame_store.sv</spirit:name><spirit:fileType>systemVerilogSource</spirit:fileType></spirit:file>
       <spirit:file>
         <spirit:name>hdl/m_fifo.v</spirit:name>
         <spirit:fileType>verilogSource</spirit:fileType>
@@ -1419,6 +1428,7 @@
     </spirit:fileSet>
     <spirit:fileSet>
       <spirit:name>xilinx_anylanguagebehavioralsimulation_view_fileset</spirit:name>
+      <spirit:file><spirit:name>hdl/ddr_frame_store.sv</spirit:name><spirit:fileType>systemVerilogSource</spirit:fileType></spirit:file>
       <spirit:file>
         <spirit:name>hdl/m_fifo.v</spirit:name>
         <spirit:fileType>verilogSource</spirit:fileType>
@@ -1588,7 +1598,7 @@
       <xilinx:xpmLibraries>
         <xilinx:xpmLibrary>XPM_FIFO</xilinx:xpmLibrary>
       </xilinx:xpmLibraries>
-      <xilinx:coreRevision>3</xilinx:coreRevision>
+      <xilinx:coreRevision>12</xilinx:coreRevision>
       <xilinx:upgrades>
         <xilinx:canUpgradeFrom>xilinx.com:user:w_ddr:1.0</xilinx:canUpgradeFrom>
       </xilinx:upgrades>

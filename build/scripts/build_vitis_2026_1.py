@@ -211,6 +211,9 @@ try:
     linker.regenerate()
     linker.set_stack_size("0x2000")
     linker.set_heap_size("0x2000")
+    # Regeneration must never put heap/stack back into PL-owned DDR slots.
+    shutil.copy2(os.path.join(APP_SOURCE, "lscript.ld"),
+                 os.path.join(WORKSPACE, APP_NAME, "src", "lscript.ld"))
     app_result = application.build()
     if app_result not in (None, 0):
         raise RuntimeError(f"application build failed with result {app_result!r}")

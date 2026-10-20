@@ -17,14 +17,14 @@ button.secondary{color:#263e56;background:#e4eaf1}button:disabled{opacity:.45;cu
 </style><script src="/viewer.js" defer></script></head>
 <body><main>
 <header class="top"><div><p class="muted" style="margin:0">Wi-Fi / SDIO · B-mode</p><h1>超声图像实时显示</h1></div><span id="state" class="badge">等待服务</span></header>
-<p class="notice">按行滚动显示，当前 DDR 无完整帧冻结保证。网络 CRC 正确不等于图像来自同一次采集。</p>
+<p class="notice">完整帧显示：PL 发布后持有 DDR 槽位，CRC 通过且 64 条线格式完整才显示。需要匹配的三缓冲固件。</p>
 <section class="card"><div class="controls"><button id="start">开始接收</button><button id="stop" class="secondary" disabled>停止接收</button><button id="freeze" class="secondary">冻结画面</button></div>
 <p id="connection" class="muted">读取连接信息…</p><p class="muted">开始接收只启动连续 SDIO 上传，不会启动扫描或开启高压。成像需通过现有入口启动；停止接收也不负责关闭扫描或高压。</p><p id="error" class="error" role="alert"></p></section>
 <section class="card"><h2>B-mode · ±45° / 120 mm</h2><div class="image-row"><div class="viewport"><img id="image" alt="实时超声扇形图像" hidden><div id="empty">等待完整的 64 条合法图像线</div></div><div class="axis"><span style="top:0">0 mm</span><span style="top:25%">30</span><span style="top:50%">60</span><span style="top:75%">90</span><span style="top:100%">120</span></div></div>
 <div class="legend"><span>−84.9 mm</span><span>0</span><span>+84.9 mm</span></div><p id="image-note" class="muted" role="status">尚无有效图像</p>
-<small class="muted">固定：25 MHz · 6144 点 × 64 线 · Q2.14 · 双线性扫描转换 · TGC 开启 · DR 45 dB · 亮度 +3 dB · 参考灰度 LUT</small></section>
+<small id="frame-format" class="muted">原始：25 MHz · 6144 点 × 64 线；抽取 1/2/4/8/16 自动适配 · Q2.14 · 双线性扫描转换 · TGC 开启 · DR 45 dB · 亮度 +3 dB · 参考灰度 LUT</small></section>
 <section class="card"><h2>接收与显示状态</h2><div class="stats">
 <div><span class="muted">接收帧率</span><div id="receive-fps" class="value">0.00 FPS</div></div><div><span class="muted">图像发布帧率</span><div id="display-fps" class="value">0.00 FPS</div></div>
 <div><span class="muted">有效吞吐</span><div id="throughput" class="value">0.00 Mbit/s</div></div><div><span class="muted">有效行覆盖</span><div id="coverage" class="value">0 / 64</div></div>
-</div><p id="counters" class="muted">尚未接收</p><p class="muted">图像最多发布 10 FPS；冻结只影响本页面。显示落后时丢弃旧待处理载荷，不阻塞 TCP 回执。默认不保存原始数据或图片。</p></section>
+</div><p id="pipeline" class="muted">等待链路统计</p><p id="counters" class="muted">尚未接收</p><p class="muted">图像最多发布 10 FPS；冻结只影响本页面。显示落后时丢弃旧待处理载荷，不阻塞 TCP 回执。默认不保存原始数据或图片。</p></section>
 </main></body></html>

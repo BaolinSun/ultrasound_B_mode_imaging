@@ -30,11 +30,14 @@ void Beamform_SetControl(u32 beamform_enable, u32 spi_start_enable);
  * write-only in the current bitstream; reading their addresses returns stale data. */
 u32 Beamform_GetRunRequest(void);
 u32 Beamform_GetSpiStartRequest(void);
+/* PS-programmed scan-timing shadow, not a PL acceptance/readback signal. */
+u32 Beamform_GetDownsample(void);
 u32 Rx_SetGainShift(u32 gain_shift);
-void Beamform_Resume(void);
+/* 0 success, -1 frame-store unavailable; failure leaves scan/HV disabled. */
+int Beamform_Resume(void);
 void Beamform_Pause(void);
 void Beamform_Halt(void);
-void Beamform_Start(void);
+int Beamform_Start(void);
 void Beamform_Stop(void);
 u32 Bram_WriteSectionWords(const char *section, u32 offset, const u32 *words, u32 count);
 u32 Tx7332_WriteSectionWords(const char *section, u32 offset, const u32 *words, u32 count);

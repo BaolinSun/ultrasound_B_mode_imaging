@@ -2,6 +2,7 @@
  * This checks application sequencing, not the physical SDPS controller. */
 #include "sdio_host.h"
 #include "xiltimer.h"
+#include "frame_store.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,12 +13,26 @@
 #else
 #include <sys/mman.h>
 #endif
-static u8 regs[52];
+static u8 regs[64];
 static u64 tick;
 static unsigned inits,aborts,blocks,windows,complete,commits,flushes,invalidations;
 static u8 *image_ddr;
 static u8 image_seed;
 static int overwrite_during_send;
+static u32 source_frame, source_length=BR_FRAME_BYTES, source_down;
+static unsigned lease_releases, quiesced;
+static int source_ready=1;
+int frame_store_is_ready(void) { return source_ready; }
+u32 Xil_In32(UINTPTR address) { (void)address;return 0; }
+int sdio_host_quiesce(sdio_host_t *host) { (void)host;quiesced=1;return 0; }
+int frame_store_acquire(frame_lease_t *f,u32 watermark) {
+    (void)watermark;assert(!f->lease);
+    f->data=image_ddr;f->frame=++source_frame;f->bytes=source_length;
+    f->decimation=source_down;f->slot=0;f->lease=source_frame;quiesced=0;return 0;
+}
+int frame_store_release(frame_lease_t *f) {
+    assert(f->lease && quiesced);lease_releases++;f->lease=0;f->data=NULL;return 0;
+}
 static void fill_image(u8 seed) {
     image_seed=seed;
     for(u32 i=0;i<BR_FRAME_BYTES;i++)image_ddr[i]=(u8)(i*37U+(i>>9)+seed);
@@ -29,13 +44,13 @@ static int injected(void) { return operation++==fail_operation; }
 static void put32(unsigned p,u32 n) { for(unsigned i=0;i<4;i++)regs[p+i]=(u8)(n>>(8*i)); }
 static u32 get32(unsigned p) { u32 n=0;for(unsigned i=0;i<4;i++)n|=(u32)regs[p+i]<<(8*i);return n; }
 static void grant(void) {
-    regs[BR_CREDIT]=(u8)br_window(BR_FRAME_BYTES-received,16);
+    regs[BR_CREDIT]=(u8)br_window(source_length-received,16);
     regs[BR_GRANT]=br_next_seq(regs[BR_GRANT]);
 }
 void XTime_GetTime(XTime *n) { *n=tick; }
 void Xil_DCacheFlushRange(UINTPTR p,u32 n) { (void)p;(void)n;flushes++;assert(0); }
 void Xil_DCacheInvalidateRange(UINTPTR p,u32 n) {
-    assert(p==DDR_RING_BASE_ADDR && n==BR_FRAME_BYTES);invalidations++;
+    assert(p==DDR_RING_BASE_ADDR && n==source_length);invalidations++;
 }
 int xil_printf(const char *fmt,...) { (void)fmt;return 0; }
 int sdio_host_init(sdio_host_t *host) {
@@ -45,14 +60,14 @@ int sdio_read_reg(sdio_host_t *host,u32 p,u8 *n) {
     (void)host;assert(p<sizeof(regs));if(io_failure || injected())return -1;*n=regs[p];return 0;
 }
 int sdio_write_reg(sdio_host_t *host,u32 p,u8 n) {
-    (void)host;assert(p<sizeof(regs));if(io_failure || injected())return -1;regs[p]=n;
+    (void)host;assert(p<sizeof(regs) && !(p>=28 && p<=31));if(io_failure || injected())return -1;regs[p]=n;
     if(p==BR_CMD_SEQ && regs[BR_CMD]==BR_ABORT) {
         aborts++;memset(regs,0,sizeof(regs));regs[BR_PROTOCOL]=BR_SDIO_VERSION;
         regs[BR_STATUS]=BR_READY|BR_BACKPRESSURE;put32(BR_SESSION,100+aborts);
     } else if(p==BR_CMD_SEQ && regs[BR_CMD]==BR_BEGIN) {
         assert(get32(BR_SESSION_ECHO)==get32(BR_SESSION));
-        assert(get32(BR_LENGTH)==BR_FRAME_BYTES && get32(BR_FRAME_ID)!=0);
-        assert(get32(BR_CRC)==br_crc32(0,image_ddr,BR_FRAME_BYTES));
+        assert(get32(BR_LENGTH)==source_length && get32(BR_FRAME_ID)!=0);
+        assert(get32(BR_CRC)==br_crc32(0,image_ddr,source_length));
         commits++;received=0;crc=0;regs[BR_RESULT]=BR_ACCEPTED;
         if(!hold_ack)regs[BR_CMD_ACK]=n;
         grant();
@@ -71,7 +86,7 @@ int sdio_host_send_blocks(sdio_host_t *host,const u8 *p,u32 count) {
             assert(p[i]==(u8)(pos*37U+(pos>>9)+image_seed));
     }
     crc=br_crc32(crc,p,count*512);received+=count*512;blocks+=count;windows++;
-    if(received==BR_FRAME_BYTES) {
+    if(received==source_length) {
         assert(count==2);
         if(overwrite_during_send)assert(crc!=get32(BR_CRC));
         else assert(crc==get32(BR_CRC));
@@ -82,7 +97,7 @@ int sdio_host_send_blocks(sdio_host_t *host,const u8 *p,u32 count) {
 int sdio_host_write_window_ack(sdio_host_t *host,u8 seq) {
     if(ack_failure)return -1;
     assert(seq==regs[BR_GRANT]);host->last_grant_seq=seq;regs[BR_WINDOW_ACK]=seq;
-    if(received<BR_FRAME_BYTES)grant();
+    if(received<source_length)grant();
     return 0;
 }
 static void connect(void) {
@@ -113,6 +128,14 @@ int main(void) {
     u32 before_init=br_crc32(0,image_ddr,BR_FRAME_BYTES);
     sdio_bridge_init();assert(sdio_bridge_output_is_sdio());assert(inits==0 && flushes==0 && invalidations==0);
     assert(br_crc32(0,image_ddr,BR_FRAME_BYTES)==before_init); /* No DDR writes on init. */
+    /* Enumeration succeeds but missing frame-store init must NOT advertise
+     * host-ready or acquire a lease. The existing ESP start gate uses mode. */
+    source_ready=0;
+    sdio_bridge_poll();tick+=501;sdio_bridge_poll();
+    assert(regs[BR_HOST_MODE]==0 && regs[BR_SOURCE_FLAGS]==8 && !commits && !source_frame);
+    stream();sdio_bridge_poll();
+    assert(regs[BR_HOST_MODE]==0 && regs[BR_SOURCE_FLAGS]==8 && !commits && !source_frame);
+    source_ready=1;
     connect();unsigned old=commits;
     for(unsigned i=0;i<10;i++)sdio_bridge_poll();assert(commits==old);
     /* Four frames cross the 255 -> 1 window-sequence boundary. */
@@ -127,7 +150,7 @@ int main(void) {
     while(complete<next_complete) { tick++;sdio_bridge_poll(); }
     assert(get32(BR_CRC)!=old_crc && invalidations==prior_invalidations+1);
     sdio_bridge_poll();
-    /* Reproduces the explicitly deferred PL overwrite problem. CRC failure
+    /* Inject a PL contract violation despite the mocked lease. CRC failure
      * must still be reported, not changed into an artificial success. */
     overwrite_during_send=1;next_complete=complete+1;
     while(complete<next_complete) { tick++;sdio_bridge_poll(); }
@@ -179,6 +202,14 @@ int main(void) {
         }
         assert(operation>n);fail_operation=-1;
     }
+    for(unsigned d=0;d<=4;d++) {
+        source_down=d;source_length=((6144U>>d)+8U)*128U;
+        connect();stream();unsigned target=complete+1,before=blocks;
+        while(complete<target) { tick++;sdio_bridge_poll(); }
+        assert(get32(BR_LENGTH)==source_length && blocks-before==source_length/512);
+        sdio_bridge_poll();
+    }
+    assert(lease_releases>0);
     assert(flushes==0);
     puts("PASS: live 0x20000000 DDR / no initialization writes / per-frame CRC / overwrite CRC error / metadata / sequence wrap / backpressure / timeout / no DMA replay / reset");
 #ifdef _WIN32

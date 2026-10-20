@@ -11,12 +11,18 @@
 #define BR_UDP_HEADER 32U
 #define BR_MAGIC UINT32_C(0x55425344)
 #define BR_VERSION 1U
-#define BR_SDIO_VERSION 2U
+#define BR_SDIO_VERSION 3U
+static inline bool br_image_bytes_valid(uint32_t bytes) {
+    for(unsigned d=0;d<=4;d++) if(bytes==((6144U>>d)+8U)*128U) return true;
+    return false;
+}
 /* Logical shared registers, not physical CMD52 addresses. Host-owned fields
  * are committed by changing CMD_SEQ last, and immutable until CMD_ACK. */
 enum { BR_CMD=0, BR_CMD_SEQ=1, BR_DEVICE=2, BR_STATUS=3, BR_CREDIT=4,
        BR_GRANT=5, BR_WINDOW_ACK=6, BR_PROTOCOL=7, BR_CMD_ACK=8,
-       BR_RESULT=9, BR_HOST_MODE=10, BR_SESSION=32, BR_FRAME_ID=36,
+       BR_RESULT=9, BR_HOST_MODE=10, BR_STREAM_KIND=11,
+       BR_SOURCE_FLAGS=12, BR_SOURCE_DOWN=13, BR_SOURCE_SLOT=14, BR_SOURCE_OCCUPANCY=15,
+       BR_SOURCE_DROPS=16, BR_SOURCE_ERRORS=20, BR_SOURCE_LATEST=24, BR_SOURCE_PUBLISHED=52, BR_SESSION=32, BR_FRAME_ID=36,
        BR_LENGTH=40, BR_CRC=44, BR_SESSION_ECHO=48 };
 enum { BR_NOP=0, BR_BEGIN=1, BR_ABORT=2 };
 enum { BR_READY=1, BR_STREAM=0x10, BR_BACKPRESSURE=0x20 };

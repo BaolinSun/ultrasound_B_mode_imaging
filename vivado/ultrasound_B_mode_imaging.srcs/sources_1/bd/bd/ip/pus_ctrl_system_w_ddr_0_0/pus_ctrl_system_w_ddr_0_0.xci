@@ -4,7 +4,7 @@
     "xci_name": "pus_ctrl_system_w_ddr_0_0",
     "cell_name": "w_ddr_0",
     "component_reference": "xilinx.com:user:w_ddr:1.1",
-    "ip_revision": "3",
+    "ip_revision": "12",
     "gen_directory": "../../../../../../ultrasound_B_mode_imaging.gen/sources_1/bd/bd/ip/pus_ctrl_system_w_ddr_0_0",
     "parameters": {
       "component_parameters": {
@@ -61,7 +61,7 @@
       },
       "runtime_parameters": {
         "IPCONTEXT": [ { "value": "IP_Integrator" } ],
-        "IPREVISION": [ { "value": "3" } ],
+        "IPREVISION": [ { "value": "12" } ],
         "MANAGED": [ { "value": "TRUE" } ],
         "OUTPUTDIR": [ { "value": "../../../../../../ultrasound_B_mode_imaging.gen/sources_1/bd/bd/ip/pus_ctrl_system_w_ddr_0_0" } ],
         "SELECTEDSIMMODEL": [ { "value": "" } ],
@@ -72,6 +72,14 @@
     },
     "boundary": {
       "ports": {
+        "in_header": [ { "direction": "in" } ],
+        "in_last": [ { "direction": "in" } ],
+        "in_busy": [ { "direction": "in" } ],
+        "ctrl_addr": [ { "direction": "in", "size_left": "23", "size_right": "0" } ],
+        "ctrl_wdata": [ { "direction": "in", "size_left": "31", "size_right": "0" } ],
+        "ctrl_en": [ { "direction": "in" } ],
+        "ctrl_we": [ { "direction": "in", "size_left": "3", "size_right": "0" } ],
+        "ctrl_rdata": [ { "direction": "out", "size_left": "31", "size_right": "0" } ],
         "in_data": [ { "direction": "in", "size_left": "15", "size_right": "0" } ],
         "in_data_valid": [ { "direction": "in" } ],
         "in_data_clk": [ { "direction": "in" } ],
@@ -263,5 +271,5 @@
       }
     }
   },
-  "checksum": "8d1d6b88"
+  "checksum": "95d6d87e"
 }

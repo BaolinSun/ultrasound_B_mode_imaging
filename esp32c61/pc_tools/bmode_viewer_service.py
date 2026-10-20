@@ -69,7 +69,7 @@ class Transport:
             self.sock.settimeout(.1)
             if protocol == 'tcp':
                 self.sock.listen(1)
-                args = SimpleNamespace(length=FRAME_BYTES, test_pattern=False, source_ip=source_ip,
+                args = SimpleNamespace(length=None, test_pattern=False, source_ip=source_ip,
                                        seconds=0, idle_timeout=30, frame_timeout=30, frames=0, output_dir=None)
                 self.receiver = TCPReceiver(args, self, on_frame=imaging.submit, stop_on_error=True)
             else:
@@ -167,6 +167,7 @@ class ViewerService:
         self.transport = None
         self.started = None
         self.history = deque(maxlen=64)
+        self.device_history = deque(maxlen=8)
         self.closed = False
 
     def _state(self, state, error=''):
@@ -188,6 +189,7 @@ class ViewerService:
             self.transport = None
             self.started = time.monotonic()
             self.history.clear()
+            self.device_history.clear()
             self.imaging.reset()
             self.worker = threading.Thread(target=self._run, name='bmode-control', daemon=True)
             self.worker.start()
@@ -247,7 +249,10 @@ class ViewerService:
                 if time.monotonic()-transport.last_data >= 30:
                     raise RuntimeError('30 秒未收到有效载荷；请检查上传及网络连接')
                 if time.monotonic() >= next_poll:
-                    if not self.api('/api/status').get('sdio', {}).get('running'):
+                    device=self.api('/api/status').get('sdio', {})
+                    with self.lock:
+                        self.device_history.append((time.monotonic(),dict(device)))
+                    if not device.get('running'):
                         raise RuntimeError('ESP32 上传已结束，请检查设备后手动重新开始')
                     next_poll = time.monotonic()+1
         except Exception as exc:
@@ -290,6 +295,17 @@ class ViewerService:
             samples = [sample for sample in self.history if now-sample[0] <= 5]
             baseline = samples[0] if samples else (now, 0, 0, 0)
         elapsed = now-baseline[0]
+        with self.lock:
+            device_samples=list(self.device_history)
+        source_fps=sdio_fps=0.
+        if len(device_samples)>1:
+            dt=device_samples[-1][0]-device_samples[0][0]
+            if dt>0:
+                source_delta=(device_samples[-1][1].get('source_published',0)-device_samples[0][1].get('source_published',0))&0xffffffff
+                sdio_delta=(device_samples[-1][1].get('received_frames',0)-device_samples[0][1].get('received_frames',0))&0xffffffff
+                if source_delta<0x80000000: source_fps=source_delta/dt
+                if sdio_delta<0x80000000: sdio_fps=sdio_delta/dt
+        result.update(source_fps=source_fps,sdio_fps=sdio_fps,source_status=device_samples[-1][1] if device_samples else {})
         result.update(net)
         result.update(image)
         result.update(receive_fps=max(0., (net['received_frames']-baseline[1])/elapsed) if elapsed else 0.,

@@ -76,6 +76,8 @@ wire							para_rdvalid_unused;
 wire	[511:0]					data_ch;
 wire							data_clk;
 
+wire up_header, up_last, capture_busy;
+wire [31:0] frame_ctrl_rdata;
 reg								proc_en;
 reg			[511:0]				proc_in;
 wire							up_dataen;
@@ -99,6 +101,8 @@ clk_gen							clk_gen_i
 //--------------------------------------------------------------------------------------------------
 pus_ctrl_system_wrapper	pus_ctrl_system_wrapper_i
 (
+    .frame_header(up_header), .frame_last(up_last), .frame_busy(capture_busy),
+    .frame_ctrl_rdata(frame_ctrl_rdata),
 	.clk_100m				(clk_100m	),
 	.pll_locked				(rst_n		),
     .clk_200m           (clk_200m),
@@ -165,6 +169,8 @@ begin
 	begin
 		if (para_addr == PARA_TX_CFG_RDDATA_ADDR)
 			para_dout <= tx_cfg_rddata_debug;
+		else if (para_addr[23:8] == 16'h4c02)
+            para_dout <= frame_ctrl_rdata;
 		else
 			para_dout <= 32'd0;
 	end
@@ -219,6 +225,7 @@ ila_bf						ila_bf_i
 //--------------------------------------------------------------------------------------------------
 proc_top					proc_top_i
 (
+    .up_header(up_header), .up_last(up_last), .capture_busy(capture_busy),
 	.clk_para				(para_clk		),
 	.clk_200				(clk_200m		),
 	.clk_25					(data_clk		),

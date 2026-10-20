@@ -1,7 +1,7 @@
 """Read-only, fixed B-mode processing adapted from ultrasound_dev_kit.
 
-The payloads are overlapping DDR snapshots, NOT consecutive stream fragments.
-Transport CRC integrity cannot certify acquisition coherence.
+Each payload is an immutable, complete PL-published frame. Never compose
+lines from separate transport frames. Requires the UBF1 frame-store hardware.
 """
 from collections import deque
 from io import BytesIO
@@ -21,44 +21,35 @@ MAX_FPS = 10
 LUT_PATH = Path(__file__).with_name('bmode_assets') / 'graymap_lut.txt'
 
 
-def parse_lines(payload):
-    """Return complete, neighbour-confirmed lines; last duplicate wins.
-
-    Never carry partial bytes into the next overlapping DDR snapshot. Candidate
-    headers embedded in data do not invalidate a correctly spaced real pair.
-    The final line needs no following header if its predecessor confirms it.
-    """
-    if len(payload) % 2 or len(payload) > 1048576:
-        return {}
+def parse_frame(payload):
+    if len(payload) < LINES * HEADER_WORDS * 2 or len(payload) % 2:
+        raise ValueError('invalid complete-frame size')
     words = np.frombuffer(payload, dtype='<u2')
-    if words.size < LINE_WORDS:
+    if words[1] != SAMPLES:
+        raise ValueError('raw sample count must be 6144')
+    down = int(words[3] & 15)
+    if down > 4:
+        raise ValueError('unsupported decimation')
+    samples = SAMPLES >> down
+    stride = HEADER_WORDS + samples
+    if words.size != LINES * stride:
+        raise ValueError('frame size does not match line descriptors')
+    matrix = words.reshape(LINES, stride)
+    if (not np.all(matrix[:, 0] == 0x1c00) or
+        not np.all(matrix[:, 1] == SAMPLES) or
+        not np.array_equal(matrix[:, 2] & 127, np.arange(LINES)) or
+        not np.all((matrix[:, 3] & 15) == down)):
+        raise ValueError('missing, duplicate, out-of-order or mixed-configuration line')
+    return down, matrix[:, HEADER_WORDS:].copy()
+
+
+def parse_lines(payload):
+    """Compatibility helper; only a complete, validated frame is accepted."""
+    try:
+        _, data = parse_frame(payload)
+        return dict(enumerate(data))
+    except ValueError:
         return {}
-    candidates = np.flatnonzero((words[:-2] == 0x1c00) &
-                               (words[1:-1] == 0x1800) & (words[2:] < LINES))
-    positions = set(map(int, candidates))
-    result = {}
-    for base in candidates:
-        base = int(base)
-        if base + LINE_WORDS > words.size:
-            continue
-        if base-LINE_WORDS not in positions and base+LINE_WORDS not in positions:
-            continue
-        result[int(words[base+2])] = words[base+HEADER_WORDS:base+LINE_WORDS].copy()
-    return result
-
-
-class LineCache:
-    def __init__(self):
-        self.data = np.zeros((LINES, SAMPLES), dtype=np.uint16)
-        self.updated = np.full(LINES, -np.inf)
-
-    def update(self, lines, arrived):
-        for line, values in lines.items():
-            self.data[line] = values
-            self.updated[line] = arrived
-
-    def coverage(self, now):
-        return int(np.count_nonzero(now-self.updated <= LINE_TTL))
 
 
 def tgc_gain():
@@ -82,9 +73,10 @@ def load_lut(path=LUT_PATH):
     return lut.astype(np.uint8)
 
 
-def precompute_scan_converter():
+def precompute_scan_converter(down=0):
     # Same float32 geometry and bilinear weights as the reference pipeline.
-    c, fc, fs = 1540., 4e6, 25e6
+    c, fc, fs = 1540., 4e6, 25e6/(1 << down)
+    sample_count = SAMPLES >> down
     step = (c/fc)/2.
     range_step = c/(2.*fs)
     angles = np.deg2rad(np.linspace(-45., 45., LINES)).astype(np.float32)
@@ -97,7 +89,7 @@ def precompute_scan_converter():
     tp, rp = (theta-angles[0])/(angles[1]-angles[0]), r/range_step
     t0, r0 = np.floor(tp).astype(np.int32), np.floor(rp).astype(np.int32)
     t1, r1 = t0+1, r0+1
-    valid = ((t0 >= 0) & (t1 < LINES) & (r0 >= 0) & (r1 < SAMPLES) &
+    valid = ((t0 >= 0) & (t1 < LINES) & (r0 >= 0) & (r1 < sample_count) &
              (theta >= angles[0]) & (theta <= angles[-1]) & (r <= radius))
     wt, wr = np.clip(tp-t0, 0., 1.).astype(np.float32), np.clip(rp-r0, 0., 1.).astype(np.float32)
     return {'shape': xx.shape, 'valid_flat': valid.ravel(),
@@ -119,6 +111,14 @@ class Renderer:
     def __init__(self):
         self.scan, self.lut, self.gain = precompute_scan_converter(), load_lut(), tgc_gain()
         self.reference = None
+        self.down = 0
+
+    def configure(self, down):
+        if down != self.down:
+            self.down = down
+            self.scan = precompute_scan_converter(down)
+            self.gain = tgc_gain()[::1 << down]
+            self.reset()
 
     def reset(self):
         self.reference = None
@@ -158,6 +158,7 @@ class ImagingWorker:
         self.image_at = None
         self.image_frame = None
         self.lines = self.format_errors = self.queue_drops = self.images = 0
+        self.decimation = 0
         self.error = ''
         self.thread = threading.Thread(target=self._run, name='bmode-render', daemon=True)
         self.thread.start()
@@ -198,8 +199,8 @@ class ImagingWorker:
             self.cv.notify()
 
     def _run(self):
-        cache, local_generation, dirty, rendered = LineCache(), -1, False, 0.
-        last_valid_frame = None
+        local_generation, rendered, dirty = -1, 0., False
+        data, arrived, last_valid_frame = None, -float('inf'), None
         try:
             while True:
                 with self.cv:
@@ -210,30 +211,38 @@ class ImagingWorker:
                     generation = self.generation
                     item = self.pending.popleft() if self.pending else None
                 if generation != local_generation:
-                    cache = LineCache()
                     self.renderer.reset()
                     local_generation, dirty, rendered = generation, False, 0.
-                    last_valid_frame = None
+                    data, arrived, last_valid_frame = None, -float('inf'), None
                 if item and item[0] == generation:
-                    _, frame, payload, arrived = item
-                    lines = parse_lines(payload)
-                    cache.update(lines, arrived)
-                    dirty |= bool(lines)
-                    if lines:
-                        last_valid_frame = frame
-                    with self.cv:
-                        if generation == self.generation and not lines:
-                            self.format_errors += 1
+                    _, frame, payload, received_at = item
+                    try:
+                        down, complete = parse_frame(payload)
+                    except ValueError:
+                        with self.cv:
+                            if generation == self.generation:
+                                self.format_errors += 1
+                    else:
+                        if hasattr(self.renderer, 'configure'):
+                            self.renderer.configure(down)
+                        data, arrived, last_valid_frame = complete, received_at, frame
+                        dirty = True
+                        with self.cv:
+                            if generation == self.generation:
+                                if self.decimation != down:
+                                    self.image = self.image_at = self.image_frame = None
+                                    self.lines = 0
+                                self.decimation = down
                 now = time.monotonic()
-                coverage = cache.coverage(now)
+                coverage = LINES if data is not None and now-arrived <= LINE_TTL else 0
                 with self.cv:
                     if generation == self.generation:
                         self.lines = coverage
-                if coverage != LINES or not dirty or now-rendered < 1./MAX_FPS:
+                if not coverage or not dirty or now-rendered < 1./MAX_FPS:
                     continue
-                png = self.renderer.png(cache.data)
+                png = self.renderer.png(data)
                 with self.cv:
-                    if generation == self.generation and self.accepting and cache.coverage(time.monotonic()) == LINES:
+                    if generation == self.generation and self.accepting and time.monotonic()-arrived <= LINE_TTL:
                         self.image, self.image_at = png, time.monotonic()
                         self.image_frame = last_valid_frame
                         self.sequence += 1
@@ -245,7 +254,8 @@ class ImagingWorker:
 
     def snapshot(self):
         with self.cv:
-            return {'lines': self.lines, 'total_lines': LINES, 'format_errors': self.format_errors,
+            return {'decimation': self.decimation, 'sample_rate_mhz': 25/(1 << self.decimation),
+                    'samples_per_line': SAMPLES >> self.decimation, 'frame_coherent': True, 'lines': self.lines, 'total_lines': LINES, 'format_errors': self.format_errors,
                     'queue_drops': self.queue_drops, 'queue_size': len(self.pending), 'images': self.images,
                     'image_available': self.image is not None, 'image_sequence': self.sequence,
                     'image_age_s': None if self.image_at is None else max(0., time.monotonic()-self.image_at),

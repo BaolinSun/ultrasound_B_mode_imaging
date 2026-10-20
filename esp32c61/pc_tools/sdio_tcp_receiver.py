@@ -17,13 +17,13 @@ HEADER = struct.Struct('!IBBHIIII')
 ACK = struct.Struct('!IBBHIII')
 MAGIC, ACK_MAGIC, MAX_BYTES = 0x55425354, 0x55425341, 1048576
 
-def parse_header(data, expected_bytes=787456):
+def parse_header(data, expected_bytes=None):
     if len(data) != HEADER.size:
         raise ValueError('short TCP header')
     magic, version, size, flags, session, frame, length, crc = HEADER.unpack(data)
     if (magic, version, size, flags) != (MAGIC, 1, HEADER.size, 0):
         raise ValueError('invalid TCP magic/version/header/flags')
-    if not session or not frame or not 0 < length <= MAX_BYTES or length != expected_bytes:
+    if not session or not frame or not 0 < length <= MAX_BYTES or (expected_bytes is not None and length != expected_bytes):
         raise ValueError('invalid TCP identity/frame length')
     return session, frame, length, crc
 
@@ -58,7 +58,7 @@ class TCPReceiver:
         self.on_frame, self.stop_on_error = on_frame, stop_on_error
         self.stop = threading.Event()
         self.quiescing = threading.Event()  # Expect device cancellation; keep socket open until STOP.
-        self.expected = test_pattern(args.length) if args.test_pattern else None
+        self.expected = test_pattern(args.length) if args.test_pattern and args.length else None
         self.valid_frames = self.valid_bytes = self.dropped_frames = self.received_bytes = 0
         self.connections = self.ignored_connections = self.invalid_headers = self.ack_errors = 0
         self.integrity_errors = 0
@@ -130,7 +130,7 @@ class TCPReceiver:
                         self.last_data = last_activity
                         validation_start=time.monotonic()
                         crc = zlib.crc32(data)
-                        status = 1 if crc != expected_crc else 2 if self.expected is not None and data != self.expected else 0
+                        status = 1 if crc != expected_crc else 2 if self.args.test_pattern and data != (self.expected if self.expected is not None else test_pattern(length)) else 0
                         validation_elapsed=time.monotonic()-validation_start
                         if status:
                             self.integrity_errors += 1; self.dropped_frames += 1
@@ -175,7 +175,10 @@ class TCPReceiver:
                 'invalid_headers': self.invalid_headers, 'ack_errors': self.ack_errors,
                 'integrity_errors': self.integrity_errors, 'elapsed_s': elapsed,
                 'incomplete_errors': self.incomplete_errors,
-                'valid_fps': self.valid_frames/elapsed, 'payload_mbit_s': self.valid_bytes*8/elapsed/1e6,
+                # Some Windows/Python clocks cannot resolve a very short
+                # loopback transfer. Unknown rate is not a fabricated infinity.
+                'valid_fps': self.valid_frames/elapsed if elapsed > 0 else None,
+                'payload_mbit_s': self.valid_bytes*8/elapsed/1e6 if elapsed > 0 else None,
                 'data_elapsed_s': data_elapsed,
                 'data_payload_mbit_s': self.valid_bytes*8/data_elapsed/1e6 if data_elapsed else None,
                 'pattern_checked': self.args.test_pattern, 'error': self.error}
@@ -185,7 +188,7 @@ def main(argv=None):
     parser.add_argument('--bind', default='0.0.0.0')
     parser.add_argument('--port', type=int, default=50001)
     parser.add_argument('--source-ip')
-    parser.add_argument('--length', type=int, default=787456)
+    parser.add_argument('--length', type=int, default=None, help='strict frame bytes; default: use header length')
     parser.add_argument('--frames', type=int, default=1)
     parser.add_argument('--seconds', type=float, default=0)
     parser.add_argument('--frame-timeout', type=float, default=30)
@@ -197,10 +200,10 @@ def main(argv=None):
     parser.add_argument('--log', type=Path, help=LOG_HELP)
     parser.add_argument('--managed', action='store_true', help='benchmark stdin STOP command')
     args = parser.parse_args(argv)
-    if not 1 <= args.port <= 65535 or not 0 < args.length <= MAX_BYTES or args.frames < 0 or \
+    if not 1 <= args.port <= 65535 or (args.length is not None and not 0 < args.length <= MAX_BYTES) or args.frames < 0 or \
        args.seconds < 0 or args.frame_timeout <= 0 or args.idle_timeout <= 0:
         parser.error('invalid receiver limits')
-    if args.output_dir and args.length % args.word_bytes:
+    if args.output_dir and args.length is not None and args.length % args.word_bytes:
         parser.error('--length must be divisible by --word-bytes when saving TXT')
     if args.output_dir: args.output_dir.mkdir(parents=True, exist_ok=True)
     writer = EventWriter(args.log, args.output_dir, word_bytes=args.word_bytes)

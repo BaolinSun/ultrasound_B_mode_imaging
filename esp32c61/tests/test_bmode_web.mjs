@@ -78,5 +78,5 @@ test('backend status is text, not markup; no parameter widgets',async()=>{
  const t=setup();await t.settle();t.b.state.error='<img src=x onerror=alert(1)>';
  await t.context.pollStatus();assert.equal(t.e.error.textContent,t.b.state.error);
  assert.doesNotMatch(html,/<(?:input|select|textarea)\b/i);
- assert.match(html,/完整帧冻结保证/);
+ assert.match(html,/完整帧显示/);
 });

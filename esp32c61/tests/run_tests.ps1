@@ -151,6 +151,19 @@ try {
 } finally { Pop-Location }
 }
 # Invalid mode must fail at compile time, not silently select a data path.
+& $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic '-I' $hostSources '-I' (Join-Path $PSScriptRoot 'stubs/host') `
+    (Join-Path $PSScriptRoot 'test_frame_store.c') (Join-Path $hostSources 'frame_store.c') `
+    -o (Join-Path $testOutput 'frame_store.exe')
+if($LASTEXITCODE -ne 0) { throw 'Frame store MMIO test compile failed' }
+& (Join-Path $testOutput 'frame_store.exe')
+if($LASTEXITCODE -ne 0) { throw 'Frame store MMIO self-check failed' }
+& $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic -DFRAME_STORE_TEST_UNPAREN_FREQ=1 `
+    '-I' $hostSources '-I' (Join-Path $PSScriptRoot 'stubs/host') `
+    (Join-Path $PSScriptRoot 'test_frame_store.c') (Join-Path $hostSources 'frame_store.c') `
+    -o (Join-Path $testOutput 'frame_store_bsp_macro.exe')
+if($LASTEXITCODE -ne 0) { throw 'BSP frequency macro regression compile failed' }
+& (Join-Path $testOutput 'frame_store_bsp_macro.exe')
+if($LASTEXITCODE -ne 0) { throw 'BSP frequency macro elapsed-time regression failed' }
 Push-Location $testOutput
 try {
     & $Compiler -std=c11 -DDATA_OUTPUT_MODE=99 '-I' $hostSources `

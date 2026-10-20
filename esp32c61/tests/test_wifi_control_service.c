@@ -14,6 +14,8 @@ static int64_t clock_us;
 static const char *fault="";
 static bool inject_off_when_wait;
 static uint32_t injected_id;
+static unsigned ps_down,down_writes;
+static bool nack_down;
 SemaphoreHandle_t xSemaphoreCreateMutex(void) { return !strcmp(fault,"mutex")?NULL:(void*)1; }
 int xSemaphoreTake(SemaphoreHandle_t s,unsigned wait) { (void)wait;assert(s&&!held);held=1;return 1; }
 int xSemaphoreGive(SemaphoreHandle_t s) { assert(s&&held);held=0;return 1; }
@@ -53,10 +55,15 @@ void cJSON_AddStringToObject(cJSON *j,const char *key,const char *v) { (void)j;(
 esp_err_t zynq_uart_bridge_send(const char *data,size_t length) {
     (void)length;sends++;
     wc_message m;assert(wc_decode(data,false,&m));char result[128];
-    if(!strcmp(m.text,"STATUS")) snprintf(result,sizeof(result),"@STATUS v=1 cfg=%u owner=2 seq=1 run=0 hv=%u",ps_cfg,ps_hv);
+    if(!strcmp(m.text,"STATUS")) snprintf(result,sizeof(result),"@STATUS v=1 cfg=%u owner=2 seq=1 run=0 hv=%u down=%u",ps_cfg,ps_hv,ps_down);
     else if(!strncmp(m.text,"CFG BEGIN ",10)) { assert(gate&&drained);ps_cfg=1;ps_hv=0;strcpy(result,"@ACK 1 CFG_BEGIN"); }
     else if(!strcmp(m.text,"CFG END")||!strcmp(m.text,"CFG ABORT")) { ps_cfg=0;ps_hv=0;strcpy(result,"@ACK 1 CFG_END"); }
     else if(!strncmp(m.text,"AFE",3)&&nack_afe) strcpy(result,"@NACK 1 AFE_WR_FAIL");
+    else if(!strncmp(m.text,"BRAM WR t_timing 9 1 ",21)) {
+        assert(gate&&drained&&lease&&ps_cfg&&!ps_hv);
+        if(nack_down) strcpy(result,"@NACK 1 BRAM_RANGE");
+        else { assert(sscanf(m.text,"BRAM WR t_timing 9 1 %u",&ps_down)==1&&ps_down<=4);down_writes++;strcpy(result,"@ACK 1 BRAM_WR"); }
+    }
     else { if(!strcmp(m.text,"HV ENABLE"))ps_hv=1;if(!strcmp(m.text,"HV DISABLE")){ps_hv=0;off_sends++;}strcpy(result,"@ACK 1 OK"); }
     if(drop_reply && strcmp(m.text,"STATUS") && strcmp(m.text,"HV DISABLE")) return ESP_OK;
     if(reset_during_reply && strcmp(m.text,"STATUS")) { zynq_control_uart_lost();return ESP_OK; }
@@ -110,6 +117,24 @@ int main(int argc,char **argv) {
     run_worker();drop_reply=false;
     assert(off_sends==2&&!ps_hv&&clock_us-before_stop<1000000);
     assert(zynq_control_job_get(injected_id,&result)&&!strcmp(result.state,"succeeded"));
+    for(unsigned d=0;d<=4;d++) {
+        memset(&job,0,sizeof(job));job.client=1;job.request=100+d;job.count=4;
+        strcpy(job.commands[0],"CFG BEGIN 40");snprintf(job.commands[1],WC_COMMAND,"BRAM WR t_timing 9 1 %u",d);
+        strcpy(job.commands[2],"CFG END");strcpy(job.commands[3],"STATUS");
+        ps_hv=1;drained=false;drain_steps=2;
+        assert(zynq_control_submit(&job,false,&id)==ESP_OK);run_worker();
+        assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"succeeded")&&result.completed==4);
+        assert(ps_down==d&&down_writes==d+1&&!ps_cfg&&!ps_hv&&!gate&&!lease);
+    }
+    job.request=110;drained=false;unsigned old_writes=down_writes;
+    assert(zynq_control_submit(&job,false,&id)==ESP_OK);run_worker();
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"failed")&&result.completed==1);
+    assert(down_writes==old_writes&&gate);drained=true;
+    (void)submit(1,111,"STATUS",NULL);assert(!gate);
+    job.request=112;nack_down=true;
+    assert(zynq_control_submit(&job,false,&id)==ESP_OK);run_worker();nack_down=false;
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"failed")&&result.completed==2);
+    assert(down_writes==old_writes&&!ps_cfg&&!ps_hv&&!gate);
     cJSON json;zynq_control_status_json(&json);
     puts("PASS ESP worker: no NVS/USB credential dependency; bounded queue/segmented+late replies/dedup/owner/drain/timeout/reset/watchdog/cleanup");
     return 0;

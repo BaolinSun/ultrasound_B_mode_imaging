@@ -27,6 +27,7 @@
 #include "system_ctrl/temp.h"
 #include "bram/bram.h"
 #include "data_transfer/sdio_bridge.h"
+#include "data_transfer/frame_store.h"
 #include "uart/uart_log.h"
 
 XScuGic xInterruptController;
@@ -61,6 +62,26 @@ int main() {
 	sleep(0.2);
 	para_down();
 
+	int frame_init_rc=frame_store_init();
+	const volatile frame_store_init_diag_t *fd=frame_store_init_diagnostic();
+	xil_printf("@DDR INIT rc=%d stage=%u version=%08x seq=%u ack=%u result=%u flags=%08x\r\n",
+	    frame_init_rc,(unsigned)fd->stage,(unsigned)fd->version,(unsigned)fd->sequence,
+	    (unsigned)fd->ack,(unsigned)fd->result,(unsigned)fd->flags);
+	xil_printf("@DDR SD1 clock_before=%08x present_before=%08x clock_after=%08x present_after=%08x reset=%02x elapsed_ms=%u cleanup=%u clock_ready=%08x\r\n",
+	    (unsigned)fd->sd_clock_before,(unsigned)fd->sd_present_before,
+	    (unsigned)fd->sd_clock_after,(unsigned)fd->sd_present_after,
+	    (unsigned)fd->sd_reset_after,(unsigned)fd->dma_elapsed_ms,
+	    (unsigned)fd->sd_cleanup_phase,(unsigned)fd->sd_clock_ready);
+	if(frame_init_rc!=0) xil_printf("@DDR ERROR frame-store ABI/init; image upload disabled\r\n");
+	if(Xil_In32(FS_BASE+FS_DIAG_VERSION)==FS_DIAG_MAGIC_VALUE) {
+	    xil_printf("@DDR PL_DIAG axi=%08x seq=%u cmd=%u pending=%u parser=%08x\r\n",
+	        (unsigned)Xil_In32(FS_BASE+FS_DIAG_AXI),(unsigned)Xil_In32(FS_BASE+FS_DIAG_SEQUENCE),
+	        (unsigned)Xil_In32(FS_BASE+FS_DIAG_COMMAND),(unsigned)Xil_In32(FS_BASE+FS_DIAG_PENDING),
+	        (unsigned)Xil_In32(FS_BASE+FS_DIAG_PARSER));
+	    xil_printf("@DDR PL_SOURCE flags=%08x samples=%u age_cycles=%u\r\n",
+	        (unsigned)Xil_In32(FS_BASE+FS_DIAG_INPUT),(unsigned)Xil_In32(FS_BASE+FS_DIAG_SAMPLES),
+	        (unsigned)Xil_In32(FS_BASE+FS_DIAG_AGE));
+	}
 	usb_init();
 	sdio_bridge_init();
 	temperature_service_init();
