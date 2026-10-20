@@ -29,9 +29,11 @@ configure_para_ports
 save_reload_para_ports
 generate_target all [get_files [get_property FILE_NAME [current_bd_design]]]
 make_wrapper -files [get_files [get_property FILE_NAME [current_bd_design]]] -top
-foreach name {heart_top.sv proc_top.sv} {
+foreach name {heart_top.sv proc_top.sv capture_drain_tracker.sv process_top/bproc_top.sv} {
     set src [file join $fs_root build src imports sources $name]
-    foreach dst [get_files -quiet -all $name] {
+    set matches [get_files -quiet -all [file tail $name]]
+    if {![llength $matches]} {add_files -norecurse -fileset sources_1 $src}
+    foreach dst $matches {
         if {[file normalize $src] ne [file normalize $dst]} {file copy -force $src $dst}
     }
 }

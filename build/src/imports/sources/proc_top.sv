@@ -2,7 +2,7 @@ module proc_top
 (
     output reg up_header,
     output reg up_last,
-    output reg capture_busy,
+    output wire capture_busy,
 	input								clk_para,
 	input								clk_200,
 	input								clk_25,
@@ -329,8 +329,13 @@ bf_top									bf_top_i
 	.rf_data							(rf_data			)
 );
 //--------------------------------------------------------------------------------------------------
+wire drain_shot_done, drain_line_start, capture_drain_fault;
+// Hold the PI FIFO enabled until accepted RF/log work drains. capture_busy
+// is registered in clk_25: no combinational feedback and no new CDC.
+wire processing_enable = beamform_active_sync_ff2 | capture_busy;
 bproc_top								bproc_top_i
 (
+    .drain_shot_done(drain_shot_done), .drain_line_start(drain_line_start),
 	.clk_25								(clk_25				),
 	.reset								(reset				),
 	.rtc_trig							(rtc_trig			),
@@ -351,8 +356,8 @@ bproc_top								bproc_top_i
 	.filter_coef_rden					(filter_coef_rden	),
 	.filter_coef_rdaddr					(filter_coef_rdaddr	),
 	.filter_coef_rddata					(filter_coef_rddata	),
-	.scan_enable						(beamform_active_sync_ff2),
-	.rtc_enable							(beamform_active_sync_ff2),
+	.scan_enable						(processing_enable),
+	.rtc_enable							(processing_enable),
 	.rtc_rfdot							(rtc_rfdot			),
 	.rtc_period							(rtc_period			),
 	.rt_length							(rt_length			),
@@ -374,19 +379,20 @@ bproc_top								bproc_top_i
 	.log_data							(log_data			)
 );
 
-// capture_busy crosses as a held single-bit level into the AXI domain.
-// Track the processing tail after physical scanning becomes inactive.
+// Held window CDC: only bf_sync1 receives an asynchronous input. New work is
+// counted on edges, never re-armed just because the last BF window stays high.
 (* ASYNC_REG="TRUE", SHREG_EXTRACT="NO" *) reg bf_sync1, bf_sync2;
-reg tail_pending;
 always_ff @(posedge clk_25) begin
-    if(reset) begin bf_sync1<=0;bf_sync2<=0;tail_pending<=0;capture_busy<=0;end
-    else begin
-        bf_sync1<=rtc_bfen;bf_sync2<=bf_sync1;
-        capture_busy<=beamform_active_sync_ff2 | tail_pending | up_dataen | up_last;
-        if(bf_sync2) tail_pending<=1;
-        else if(log_last) tail_pending<=0;
-    end
+    if(reset) begin bf_sync1<=0;bf_sync2<=0;end
+    else begin bf_sync1<=rtc_bfen;bf_sync2<=bf_sync1;end
 end
+capture_drain_tracker capture_drain_i (
+    .clk_25(clk_25), .reset(reset),
+    .scan_active(beamform_active_sync_ff2), .bf_window(bf_sync2),
+    .shot_done(drain_shot_done), .line_start(drain_line_start),
+    .line_done(log_last), .output_valid(up_dataen | up_last),
+    .busy(capture_busy), .fault(capture_drain_fault)
+);
 always@(posedge clk_25)
 begin
     up_header <= !reset && log_headen;

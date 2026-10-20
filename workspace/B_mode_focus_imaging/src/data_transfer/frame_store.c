@@ -10,13 +10,17 @@
 static u32 sequence;
 static int initialized;
 static volatile frame_store_init_diag_t init_diag;
+static volatile frame_store_pause_diag_t pause_diag;
+static u32 command_reason,command_version;
+const volatile frame_store_pause_diag_t *frame_store_pause_diagnostic(void) { return &pause_diag; }
 const volatile frame_store_init_diag_t *frame_store_init_diagnostic(void) {
     return &init_diag;
 }
 static int command(u32 op, u32 timeout_ms) {
     u32 version=Xil_In32(FS_BASE+FS_VERSION);
+    command_version=version;command_reason=FS_DRAIN_OK;
     if(op==FS_INIT) { init_diag.stage=FS_INIT_COMMAND_VERSION; init_diag.version=version; }
-    if(version!=FS_MAGIC) return -1;
+    if(version!=FS_MAGIC) { command_reason=FS_DRAIN_ABI;return -1; }
     u32 seq=++sequence; if(!seq) seq=++sequence;
     if(op==FS_INIT) { init_diag.stage=FS_INIT_ACK; init_diag.sequence=seq; }
     Xil_Out32(FS_BASE+FS_CMD,op);
@@ -26,13 +30,14 @@ static int command(u32 op, u32 timeout_ms) {
     for(unsigned polls=0;polls<10000000U;polls++) {
         if(Xil_In32(FS_BASE+FS_ACK)==seq) {
             int result=(int)Xil_In32(FS_BASE+FS_RESULT);
+            if(result!=FS_OK) command_reason=FS_DRAIN_RESULT;
             if(op==FS_INIT) init_diag.stage=FS_INIT_RESULT;
             return result;
         }
         XTime_GetTime(&now);
         if((now-start)>=((u64)(COUNTS_PER_SECOND)*timeout_ms)/1000U) break;
     }
-    initialized=0; return -1;
+    command_reason=FS_DRAIN_TIMEOUT;initialized=0; return -1;
 }
 /* CPU-only reset/JTAG reload may leave SD1 ADMA reading an old lease.
  * Stop the LOCAL controller before INIT can reclaim a previous CPU's slot.
@@ -128,5 +133,22 @@ int frame_store_release(frame_lease_t *f) {
     if(command(FS_RELEASE,100)!=FS_OK) return -1;
     f->lease=0; f->data=0; return 0;
 }
-int frame_store_pause(void) { return initialized && command(FS_PAUSE,3000)==FS_OK ? 0:-1; }
+int frame_store_pause(void) {
+    pause_diag=(frame_store_pause_diag_t){0};
+    if(!initialized) { pause_diag.reason=FS_DRAIN_NOT_READY;return -1; }
+    int rc=command(FS_PAUSE,3000);
+    pause_diag.reason=command_reason;pause_diag.version=command_version;pause_diag.sequence=sequence;
+    if(command_version==FS_MAGIC) {
+        pause_diag.ack=Xil_In32(FS_BASE+FS_ACK);pause_diag.result=Xil_In32(FS_BASE+FS_RESULT);
+        pause_diag.flags=Xil_In32(FS_BASE+FS_FLAGS);
+        if(Xil_In32(FS_BASE+FS_DIAG_VERSION)==FS_DIAG_MAGIC_VALUE) {
+            pause_diag.axi=Xil_In32(FS_BASE+FS_DIAG_AXI);
+            pause_diag.input=Xil_In32(FS_BASE+FS_DIAG_INPUT);
+            pause_diag.parser=Xil_In32(FS_BASE+FS_DIAG_PARSER);
+            pause_diag.samples=Xil_In32(FS_BASE+FS_DIAG_SAMPLES);
+            pause_diag.age=Xil_In32(FS_BASE+FS_DIAG_AGE);
+        }
+    }
+    return rc==FS_OK ? 0:-1;
+}
 int frame_store_resume(void) { return initialized && command(FS_RESUME,100)==FS_OK ? 0:-1; }

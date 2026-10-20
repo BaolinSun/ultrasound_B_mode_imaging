@@ -2,6 +2,7 @@
 #include "xscugic.h"
 #include "xiltimer.h"
 #include "wifi_control_protocol.h"
+#include "../../build/src/ps/data_transfer/frame_store.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,6 +11,9 @@ static XUartPs_Config config={0xe0000000U,59U};
 static uint64_t clock_ticks;
 static unsigned hv,run,enables,writes,afe_fail,tx_full,resume_failure,downsample,pause_failure;
 int frame_store_pause(void) { assert(!hv&&!run);return pause_failure?-1:0; }
+const volatile frame_store_pause_diag_t *frame_store_pause_diagnostic(void) {
+    static const frame_store_pause_diag_t d={.reason=FS_DRAIN_TIMEOUT,.version=FS_MAGIC,.flags=13,.axi=0x2e101};return &d;
+}
 static char received[1024],transmitted[1024],answer[128];
 static size_t receive_at,receive_len,transmit_len;
 static void (*irq_handler)(void*);
@@ -125,7 +129,7 @@ int main(void) {
     }
     unsigned previous=writes;
     pause_failure=1;hv=run=1;
-    uart_handle_wifi_line("CFG BEGIN 31",12,capture);assert(strstr(answer,"DDR_DRAIN_OR_ABI")&&!hv&&!run);
+    uart_handle_wifi_line("CFG BEGIN 31",12,capture);assert(strstr(answer,"DDR_DRAIN_BUSY")&&!hv&&!run);
     uart_handle_wifi_line("BRAM WR t_timing 9 1 1",12,capture);assert(strstr(answer,"NO_CFG")&&writes==previous&&downsample==4);
     pause_failure=0;
     uart_handle_wifi_line("CFG BEGIN 32",12,capture);

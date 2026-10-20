@@ -102,9 +102,19 @@ int main(void) {
     regfile[FS_RESULT/4]=0;regfile[FS_BYTES/4]=1;regfile[FS_LEASE/4]=9;
     assert(frame_store_acquire(&f,0)==-1 && !f.lease);
     assert(frame_store_pause()==0 && frame_store_resume()==0);
+    const volatile frame_store_pause_diag_t *pd=frame_store_pause_diagnostic();
+    assert(pd->reason==FS_DRAIN_OK && pd->ack==pd->sequence);
+    regfile[FS_DIAG_VERSION/4]=FS_DIAG_MAGIC_VALUE;regfile[FS_DIAG_AXI/4]=0x2e101;
+    regfile[FS_FLAGS/4]=13;regfile[FS_DIAG_INPUT/4]=0x201;
     hold=1;assert(frame_store_pause()==-1);
+    assert(pd->reason==FS_DRAIN_TIMEOUT&&pd->sequence!=pd->ack&&pd->axi==0x2e101&&pd->flags==13&&pd->input==0x201);
+    assert(frame_store_pause()==-1 && pd->reason==FS_DRAIN_NOT_READY);
     assert(frame_store_acquire(&f,0)==-1 && frame_store_resume()==-1);
     hold=0;assert(frame_store_init()==0);
+    magic=0;assert(frame_store_pause()==-1&&pd->reason==FS_DRAIN_ABI&&pd->version==0);magic=FS_MAGIC;
+    regfile[FS_RESULT/4]=FS_INVALID;
+    assert(frame_store_pause()==-1&&pd->reason==FS_DRAIN_RESULT&&pd->result==FS_INVALID);
+    regfile[FS_RESULT/4]=0;assert(frame_store_pause()==0&&pd->reason==FS_DRAIN_OK);
     puts("PASS cold/warm SD1 clock-before-reset, delayed reset, clock/reset/busy failure, no premature PL INIT, ready gate, ABI, five lengths, leases, timeouts/reinit");
     return 0;
 }

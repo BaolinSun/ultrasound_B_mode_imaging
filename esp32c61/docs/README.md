@@ -6,6 +6,7 @@
 
 - [DDR 完整帧三缓冲与动态长度](DDR_FRAME_STORE.md)
 - [DDR 初始化诊断与停机对照结果](DDR_INIT_DIAGNOSIS.md)
+- [扫描后下采样配置 PAUSE 排空修复](DDR_PAUSE_FIX.md)
 - [build.ps1 命令使用说明](BUILD_COMMANDS.md)
 - [Wi-Fi 超声图像实时网页显示](WIFI_IMAGE_VIEWER.md)
 - [Wi-Fi 下发全部 Zynq 命令](WIFI_COMMANDS.md)

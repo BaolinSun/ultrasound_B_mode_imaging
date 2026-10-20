@@ -254,7 +254,18 @@ static void uart_handle_cfg(char **ctx)
 		}
 		uart_cfg_seq = value;
 		Beamform_Stop();
-        if(frame_store_pause()!=0) { uart_nack(value,"DDR_DRAIN_OR_ABI"); return; }
+        if(frame_store_pause()!=0) {
+            const volatile frame_store_pause_diag_t *d=frame_store_pause_diagnostic();
+            xil_printf("@DDR PAUSE reason=%u version=%08x seq=%u ack=%u result=%u flags=%08x\r\n",
+                (unsigned)d->reason,(unsigned)d->version,(unsigned)d->sequence,
+                (unsigned)d->ack,(unsigned)d->result,(unsigned)d->flags);
+            xil_printf("@DDR PAUSE_DIAG axi=%08x parser=%08x input=%08x samples=%u age=%u\r\n",
+                (unsigned)d->axi,(unsigned)d->parser,(unsigned)d->input,(unsigned)d->samples,(unsigned)d->age);
+            const char *why=d->reason==FS_DRAIN_NOT_READY?"DDR_NOT_READY":
+                d->reason==FS_DRAIN_ABI?"DDR_ABI":
+                d->reason==FS_DRAIN_TIMEOUT?((d->flags&4U)?"DDR_DRAIN_BUSY":"DDR_DRAIN_TIMEOUT"):"DDR_DRAIN_RESULT";
+            uart_nack(value,why); return;
+        }
 		uart_cfg_active = 1;
 		cfg_owner=command_source; cfg_session=wifi_session; cfg_activity=command_ms();
 		uart_cfg_done = 0;

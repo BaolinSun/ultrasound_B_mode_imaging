@@ -5,6 +5,12 @@ module tb_ddr_frame_store;
     always #20 clk_in=~clk_in;
     reg [15:0] in_data=0;
     reg in_valid=0,in_header=0,in_last=0,in_busy=0;
+    reg tracked=0,scan_active=0,bf_window=0,shot_done=0,line_start=0,line_done=0;
+    wire tracked_busy,tracked_fault;
+    capture_drain_tracker capture_tracker(
+        .clk_25(clk_in),.reset(!rst_n),.scan_active(scan_active),.bf_window(bf_window),
+        .shot_done(shot_done),.line_start(line_start),.line_done(line_done),
+        .output_valid(in_valid|in_last),.busy(tracked_busy),.fault(tracked_fault));
     reg [23:0] ctrl_addr=0;
     reg [31:0] ctrl_wdata=0;
     reg ctrl_en=0;reg [3:0] ctrl_we=0;
@@ -14,7 +20,8 @@ module tb_ddr_frame_store;
     reg awready=0,wready=0,bvalid=0;
     reg [1:0] bresp=0;
     reg inject_error=0,block_axi=0;
-    ddr_frame_store #(.FIFO_DEPTH(512),.FRAME_TIMEOUT_CYCLES(3000000)) dut(.*);
+    ddr_frame_store #(.FIFO_DEPTH(512),.FRAME_TIMEOUT_CYCLES(3000000)) dut(
+        .in_busy(tracked ? tracked_busy : in_busy),.*);
     reg [63:0] memory[0:393215];
     integer remaining=0,address=0,publications=0,bursts=0,short_bursts=0;
     reg previous_w_stall=0,previous_aw_stall=0;
@@ -89,6 +96,23 @@ module tb_ddr_frame_store;
         for(integer line_no=0;line_no<64;line_no=line_no+1) send_line(line_no,decimation);
         in_busy=0;
     endtask
+    task send_tracked_frame(input integer decimation);
+        scan_active=1;
+        for(integer l=0;l<64;l++) begin
+            for(integer phase=0;phase<4;phase++) begin
+                @(negedge clk_in);bf_window=1;line_start=(phase==3);
+                @(negedge clk_in);line_start=0;
+                if(phase==3)send_line(l,decimation);
+                @(negedge clk_in);shot_done=1;line_done=(phase==3);
+                @(negedge clk_in);shot_done=0;line_done=0;
+                // log_last completed BEFORE the BF level drops: the exact
+                // old tail_pending condition seen by DDR after real scanning.
+                repeat(5) @(negedge clk_in);
+                bf_window=0;repeat(3) @(negedge clk_in);
+            end
+        end
+        scan_active=0;
+    endtask
     task await_publication(input integer count);
         for(integer tries=0;tries<100000;tries=tries+1) begin
             @(negedge clk_axi);if(publications==count) return;
@@ -152,7 +176,20 @@ module tb_ddr_frame_store;
         repeat(4000) @(negedge clk_axi);
         if(dut.errors==0) $fatal(1,"overflow not counted");
         old_publications=publications;send_frame(4);await_publication(old_publications+1);
-        command(4);if(!dut.paused || dut.result) $fatal(1,"configuration drain");
+        // Actual tracker + async FIFO + AXI: request PAUSE during the LAST
+        // line, with randomized write backpressure. ACK cannot precede drain.
+        tracked=1;
+        fork
+            send_tracked_frame(4);
+            begin
+                wait(dut.active && dut.line_number==63);
+                command(4);
+                if(tracked_busy||tracked_fault||dut.issuing||dut.active||!dut.empty)
+                    $fatal(1,"PAUSE acknowledged before real processing/AXI/FIFO drain");
+            end
+        join
+        if(!dut.paused || dut.result) $fatal(1,"configuration drain");
+        tracked=0;
         command(5);if(dut.paused) $fatal(1,"resume");
         // A truncated frame times out, is invalidated, then next SOF recovers.
         old_publications=publications;send_line(0,4);

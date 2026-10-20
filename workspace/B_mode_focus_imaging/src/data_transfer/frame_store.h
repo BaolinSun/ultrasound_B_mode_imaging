@@ -34,5 +34,12 @@ int frame_store_is_ready(void);
 int frame_store_acquire(frame_lease_t *frame, u32 watermark);
 int frame_store_release(frame_lease_t *frame);
 int frame_store_pause(void); /* only succeeds after hardware pipeline/AXI drain */
+enum { FS_DRAIN_OK=0, FS_DRAIN_NOT_READY=1, FS_DRAIN_ABI=2,
+       FS_DRAIN_TIMEOUT=3, FS_DRAIN_RESULT=4 };
+typedef struct {
+    u32 reason,version,sequence,ack,result,flags;
+    u32 axi,input,parser,samples,age;
+} frame_store_pause_diag_t;
+const volatile frame_store_pause_diag_t *frame_store_pause_diagnostic(void);
 int frame_store_resume(void);
 #endif

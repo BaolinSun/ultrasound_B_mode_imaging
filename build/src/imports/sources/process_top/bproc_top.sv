@@ -3,6 +3,9 @@
 //--------------------------------------------------------------------------------------------------
 module bproc_top
 (
+	// clk_25-domain drain events; no image payload or arithmetic changes.
+	output wire drain_shot_done,
+	output wire drain_line_start,
 	input										clk_25,
 	input										reset,
 	input										rtc_trig,
@@ -60,6 +63,15 @@ wire											trans_last;
 wire											trans_dataen;
 wire	[20:0]									trans_data;
 wire	[1:0]									trans_phase;
+reg trans_headen_drain_d;
+always_ff @(posedge clk_25) begin
+    if(reset) trans_headen_drain_d <= 1'b0;
+    else trans_headen_drain_d <= trans_headen;
+end
+assign drain_shot_done = trans_last;
+// Match apt_add's phase capture at the FIRST header word. Phases 0/1/2
+// accumulate only; phase 3 creates one logical line and exactly one log_last.
+assign drain_line_start = trans_headen && !trans_headen_drain_d && trans_phase == 2'd3;
 
 add_rf_head										add_rf_head_i
 (

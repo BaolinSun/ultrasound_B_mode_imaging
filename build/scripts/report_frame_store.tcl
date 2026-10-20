@@ -21,7 +21,7 @@ set fh [open [file join $out frame_store_all_cdc.rpt] r]
 set cdc_text [read $fh]
 close $fh
 foreach line [split $cdc_text "\n"] {
-    if {[regexp {CDC-(1|4|10|13)\s+Critical.*(frame_store_i/|proc_top_i/(bf_sync|capture_busy))} $line]} {
+    if {[regexp {CDC-(1|4|10|13)\s+Critical.*(frame_store_i/|proc_top_i/(bf_sync|capture_drain_i/))} $line]} {
         error "Unresolved CDC Critical in new frame-store crossing: $line"
     }
 }

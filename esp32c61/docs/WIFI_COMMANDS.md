@@ -59,6 +59,10 @@ python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 -c "BEAM START"
 
 ### 网页下采样设置
 
+扫描后出现 `DDR_DRAIN_OR_ABI` / `DDR_DRAIN_BUSY` 的 PL 排空修复见
+[PAUSE 修复说明](DDR_PAUSE_FIX.md)。该修复需同时更新 bit 与 PS ELF，不能只更新 PS 或 ESP32；
+下面“首次网页下采样功能无需改 bit”的说明针对原功能入口，不包含此次 PL 忙状态修复。
+
 ESP32 页“Zynq 控制与配置 → 图像下采样”提供五档选择：
 
 | 抽取倍率 | `T_timing_hex[9]` | 每线传输点数 | 每帧字节数 |

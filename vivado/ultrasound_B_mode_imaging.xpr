@@ -303,6 +303,13 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
+      <File Path="$PPRDIR/../build/src/imports/sources/capture_drain_tracker.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
       <File Path="$PSRCDIR/sources_1/imports/imports/sources/process_top/demod_iq.sv">
         <FileInfo>
           <Attr Name="ImportPath" Val="$PPRDIR/../build/src/imports/sources/process_top/demod_iq.sv"/>
