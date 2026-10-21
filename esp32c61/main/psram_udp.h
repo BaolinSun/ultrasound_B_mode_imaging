@@ -21,6 +21,7 @@ typedef struct {
     unsigned tcp_send_buffer_actual; /* Last successfully tuned socket, 0 before first connect. */
     unsigned tcp_heap_guard_waits;
     unsigned tcp_adaptive_writes;
+    unsigned tcp_cooperative_waits;
     uint64_t tcp_queue_us,tcp_idle_us; /* Last frame: submit->worker; previous ACK completion->worker. */
     int tcp_error;
     int tcp_phase;

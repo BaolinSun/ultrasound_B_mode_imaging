@@ -36,10 +36,30 @@ def tcp_phase_summary(samples):
     fields=('tcp_header_us','tcp_payload_us','tcp_ack_us','tcp_write_wait_us',
             'tcp_read_wait_us','tcp_yield_us','tcp_copy_us','tcp_write_calls',
             'tcp_partial_writes','tcp_send_waits','tcp_ack_waits','tcp_resource_waits','tcp_heap_guard_waits',
-            'tcp_adaptive_writes','tcp_queue_us','tcp_idle_us')
+            'tcp_adaptive_writes','tcp_cooperative_waits','tcp_queue_us','tcp_idle_us')
     return {'sampled_complete_frames':len(frames),
             'mean':{f:sum(s.get(f,0) for s in frames.values())/len(frames) for f in fields} if frames else {},
             'note':'Unique completed frames observed by status polling, not every frame. Wait/yield/copy are overlapping subsets of stage durations.'}
+
+
+def sdio_phase_summary(samples):
+    """New copy+CRC timing only; do not reinterpret old pure-CRC logs."""
+    frames={}
+    initial=samples[0]['status'].get('sdio',{}).get('received_frames') if samples else None
+    for sample in samples[1:]:
+        s=sample['status'].get('sdio',{})
+        # A new START changes session before the first new frame completes.
+        # Do not relabel the previous run's retained last-frame metrics.
+        if initial is not None:
+            count=s.get('received_frames')
+            if count is None or not 0<((count-initial)&0xffffffff)<0x80000000:
+                continue
+        if s.get('session') and s.get('last_received_frame') and 'last_copy_crc_us' in s:
+            frames[(s['session'],s['last_received_frame'])]=s
+    return {'sampled_complete_frames':len(frames),
+            'mean':{key:sum(s.get(key,0) for s in frames.values())/len(frames)
+                    for key in ('last_receive_us','last_copy_crc_us')} if frames else {},
+            'note':'Copy+CRC wall time overlaps receive and may include preemption. Not comparable to legacy pure last_crc_us; polling samples only.'}
 
 
 def pipeline_rates(samples):
@@ -166,6 +186,7 @@ def main():
             except Exception as exc:
                 control_error=str(exc);result['stop_error']=control_error
         if transport=='tcp':result['tcp_phase_summary']=tcp_phase_summary(samples)
+        result['sdio_phase_summary']=sdio_phase_summary(samples)
         result['pipeline_rates']=pipeline_rates(samples)
         args.log.with_suffix('.device.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     summaries = [json.loads(line) for line in args.log.read_text(encoding='utf-8').splitlines()

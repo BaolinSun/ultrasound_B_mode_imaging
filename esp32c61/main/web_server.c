@@ -179,6 +179,7 @@ static esp_err_t get_status(httpd_req_t *req)
         cJSON_AddNumberToObject(json,"tcp_default_send_buffer",CONFIG_LWIP_TCP_SND_BUF_DEFAULT);
         cJSON_AddNumberToObject(json,"tcp_heap_guard_waits",udp.tcp_heap_guard_waits);
         cJSON_AddNumberToObject(json,"tcp_adaptive_writes",udp.tcp_adaptive_writes);
+        cJSON_AddNumberToObject(json,"tcp_cooperative_waits",udp.tcp_cooperative_waits);
         cJSON_AddNumberToObject(json,"tcp_queue_us",udp.tcp_queue_us);
         cJSON_AddNumberToObject(json,"tcp_idle_us",udp.tcp_idle_us);
         cJSON_AddNumberToObject(json,"tcp_heap_headroom",CONFIG_PSRAM_TCP_HEAP_HEADROOM);
@@ -251,6 +252,8 @@ static esp_err_t get_status(httpd_req_t *req)
             cJSON_AddNumberToObject(sdio,"progress_idle_us",s.progress_idle_us);
             cJSON_AddNumberToObject(sdio,"last_receive_us",s.last_receive_us);
             cJSON_AddNumberToObject(sdio,"last_crc_us",s.last_crc_us);
+            cJSON_AddNumberToObject(sdio,"last_copy_crc_us",s.last_copy_crc_us);
+            cJSON_AddBoolToObject(sdio,"crc_copy_fused",s.crc_sram_table);
             cJSON_AddBoolToObject(sdio,"crc_sram_table",s.crc_sram_table);
             cJSON_AddNumberToObject(sdio,"crc_rom_bench_us",s.crc_rom_bench_us);
             cJSON_AddNumberToObject(sdio,"crc_table_bench_us",s.crc_table_bench_us);

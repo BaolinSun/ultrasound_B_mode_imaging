@@ -110,6 +110,16 @@ foreach ($suite in @('framed','tcp_transfer','sdio_bridge','bridge_crc')) {
         if ($LASTEXITCODE -ne 0) { throw 'CRC allocator variation compile failed' }
         & ./test_crc_alloc.exe
         if ($LASTEXITCODE -ne 0) { throw 'CRC allocation fallback tests failed' }
+        # Firmware hot path uses -O2. Repeat alignment, exact-copy and ROM
+        # fallback checks under that optimizer, not only the O0 coverage build.
+        & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic -O2 -fstrict-aliasing `
+            -DCRC_TEST_ALLOC=1 -DCRC_TEST_ORACLE=1 `
+            '-I' (Join-Path $projectRoot 'main') '-I' (Join-Path $PSScriptRoot 'stubs') `
+            (Join-Path $PSScriptRoot 'test_bridge_crc.c') (Join-Path $projectRoot 'main/bridge_crc.c') `
+            (Join-Path $projectRoot 'main/raw_transfer.c') -o test_crc_optimized.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Optimized fused CRC compile failed' }
+        & ./test_crc_optimized.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Optimized fused CRC self-check failed' }
     }
     } finally { Pop-Location }
 }

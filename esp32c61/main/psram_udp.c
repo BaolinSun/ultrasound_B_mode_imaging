@@ -286,6 +286,7 @@ static void upload_worker(void *arg)
             status.tcp_resource_waits=metrics.resource_waits;
             status.tcp_heap_guard_waits=ctx.heap_waits;
             status.tcp_adaptive_writes=ctx.adaptive_writes;
+            status.tcp_cooperative_waits=metrics.cooperative_waits;
             status.tcp_queue_us=(uint64_t)started-submitted_at;
             status.tcp_idle_us=idle_us;
             status.tcp_metric_session=frame.session_id;status.tcp_metric_frame=frame.frame_id;

@@ -33,4 +33,21 @@ class FrameRateContract(unittest.TestCase):
         self.assertIn('status.tcp_queue_us=',source)
         self.assertIn('status.tcp_idle_us=',source)
 
+    def test_receive_fuses_copy_crc_without_changing_frame_ownership(self):
+        source=(ROOT/'esp32c61/main/sdio_bridge.c').read_text(encoding='utf-8')
+        self.assertIn('bridge_crc32_copy(crc,s->data+offset,p,length)',source)
+        self.assertNotIn('memcpy(s->data+offset,p,length)',source)
+        self.assertLess(source.index('bridge_crc32_copy('),source.index('if(crc!=s->meta.crc32)'))
+        self.assertIn('if(crc!=s->meta.crc32)',source)
+        crc=(ROOT/'esp32c61/main/bridge_crc.c').read_text(encoding='utf-8')
+        self.assertIn('__builtin_assume_aligned(p,4)',crc)
+        self.assertIn('memcpy(dest,p,n)',crc)  # ROM/allocation fallback still copies.
+
+    def test_fairness_credit_requires_real_wait_and_retains_byte_budget(self):
+        source=(ROOT/'esp32c61/main/tcp_transfer.c').read_text(encoding='utf-8')
+        self.assertIn('if(!reading && spent>=1000)',source)
+        self.assertIn('since_yield>=TCP_YIELD_BYTES',source)
+        self.assertIn('io->yield_ms(io->ctx,1)',source)
+        self.assertIn('r=check(io,deadline)',source)
+
 if __name__=='__main__':unittest.main()

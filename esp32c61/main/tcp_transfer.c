@@ -22,7 +22,7 @@ static raw_result_t check(const tcp_io_t*io,uint64_t deadline) {
     return r!=RAW_OK?r:io->now_ms(io->ctx)>=deadline?RAW_TIMEOUT:RAW_OK;
 }
 static raw_result_t exact(const tcp_io_t*io,uint8_t*p,size_t n,bool reading,bool payload,size_t prefix,
-                          uint64_t deadline,tcp_metrics_t*m) {
+                          uint64_t deadline,tcp_metrics_t*m,size_t *since_yield) {
     while(n) {
         raw_result_t r=check(io,deadline);
         if(r!=RAW_OK) {
@@ -38,6 +38,12 @@ static raw_result_t exact(const tcp_io_t*io,uint8_t*p,size_t n,bool reading,bool
             uint64_t start=io->now_us(io->ctx);
             io->wait(io->ctx,reading,got==-3,100);
             uint64_t spent=io->now_us(io->ctx)-start;
+            /* An actual scheduler/socket wait already gave other tasks CPU.
+             * Do not add a second fairness sleep for bytes preceding it.
+             * Immediate readiness/spurious wakeups get no credit. */
+            if(!reading && spent>=1000) {
+                *since_yield=0;m->cooperative_waits++;
+            }
             if(reading)m->read_wait_us+=spent;else m->write_wait_us+=spent;
             if(got==-3)m->yield_us+=spent;
             continue;
@@ -70,9 +76,10 @@ raw_result_t tcp_frame_send(const uint8_t*data,size_t length,const bridge_frame_
     m->copy_us+=io->now_us(io->ctx)-copy_start;
     /* One stream write starts with header+payload. Partial writes crossing
      * the prefix must count only payload bytes, including error paths. */
-    raw_result_t r=exact(io,staging,TCP_FRAME_HEADER+first,false,true,TCP_FRAME_HEADER,deadline,m);
+    size_t since_yield=0;
+    raw_result_t r=exact(io,staging,TCP_FRAME_HEADER+first,false,true,TCP_FRAME_HEADER,deadline,m,&since_yield);
     m->header_us=io->now_us(io->ctx)-start;
-    size_t since_yield=r==RAW_OK?first:0;
+    since_yield=r==RAW_OK?first:0;
     if(r==RAW_OK) { m->chunks++;io->progress(io->ctx,m->sent,m->chunks,m->waits); }
     start=io->now_us(io->ctx);
     if(r==RAW_OK)io->phase(io->ctx,TCP_PHASE_PAYLOAD);
@@ -81,7 +88,7 @@ raw_result_t tcp_frame_send(const uint8_t*data,size_t length,const bridge_frame_
         copy_start=io->now_us(io->ctx);
         memcpy(staging,data+m->sent,n);
         m->copy_us+=io->now_us(io->ctx)-copy_start;
-        r=exact(io,staging,n,false,true,0,deadline,m);
+        r=exact(io,staging,n,false,true,0,deadline,m,&since_yield);
         if(r==RAW_OK) {
             m->chunks++;
             if(m->chunks%8==0 || m->sent==length)io->progress(io->ctx,m->sent,m->chunks,m->waits);
@@ -97,7 +104,7 @@ raw_result_t tcp_frame_send(const uint8_t*data,size_t length,const bridge_frame_
     if(r==RAW_OK) {
         io->phase(io->ctx,TCP_PHASE_ACK);
         uint64_t ack_start=io->now_us(io->ctx);
-        r=exact(io,ack,sizeof(ack),true,false,0,deadline,m);
+        r=exact(io,ack,sizeof(ack),true,false,0,deadline,m,&since_yield);
         m->ack_us=io->now_us(io->ctx)-ack_start;m->ack_ms=m->ack_us/1000;
         if(r==RAW_OK) {
             if(be32(ack)!=TCP_ACK_MAGIC || ack[4]!=1 || ack[5]!=TCP_FRAME_ACK ||

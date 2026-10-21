@@ -148,15 +148,15 @@ static void consume(const uint8_t *p,size_t length) {
     if(receiving<0 || !window_size || window_received>=window_size || length!=BR_BLOCK_BYTES ||
        (receiving>=0 && offset+length>slots[receiving].meta.frame_bytes)) { stats.errors++; reset_requested=true; return; }
     slot_t *s=&slots[receiving];
-    memcpy(s->data+offset,p,length);
     int64_t crc_start=esp_timer_get_time();
-    crc=bridge_crc32(crc,p,length);
+    crc=bridge_crc32_copy(crc,s->data+offset,p,length);
     crc_us+=(uint64_t)(esp_timer_get_time()-crc_start);
     offset+=length; window_received++;
     last_progress=esp_timer_get_time();
     if(offset==s->meta.frame_bytes) {
         stats.last_receive_us=(uint64_t)(esp_timer_get_time()-frame_start);
         stats.last_crc_us=crc_us;
+        stats.last_copy_crc_us=crc_us;
         if(crc!=s->meta.crc32) {
             stats.crc_errors++; stats.dropped_frames++; s->state=FREE;
             write8(BR_RESULT,BR_BAD_CRC); reset_requested=true;

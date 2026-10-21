@@ -22,6 +22,7 @@ typedef enum { TCP_ERROR_NONE, TCP_ERROR_IO, TCP_ERROR_CLOSED,
 typedef struct { size_t sent; unsigned chunks, waits; uint64_t ack_ms;
     uint64_t header_us,payload_us,ack_us,write_wait_us,read_wait_us,yield_us,copy_us;
     unsigned write_calls,read_calls,partial_writes,send_waits,ack_waits,resource_waits;
+    unsigned cooperative_waits; /* Socket/resource waits >=1 ms during send. */
     tcp_error_t error; } tcp_metrics_t;
 
 typedef enum { TCP_PHASE_IDLE, TCP_PHASE_CONNECT, TCP_PHASE_HEADER,

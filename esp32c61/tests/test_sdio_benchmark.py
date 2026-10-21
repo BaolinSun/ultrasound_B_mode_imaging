@@ -12,6 +12,21 @@ import sdio_benchmark as b
 
 
 class BenchmarkTests(unittest.TestCase):
+    def test_sdio_copy_crc_summary_deduplicates_and_excludes_legacy_history(self):
+        def metric(frame,value,session=7,count=None):
+            return {'status':{'sdio':{'session':session,'last_received_frame':frame,
+                'received_frames':10+frame if count is None else count,
+                'last_copy_crc_us':value,'last_receive_us':value*3}}}
+        history=metric(99,9999,count=10)
+        legacy={'status':{'sdio':{'session':7,'last_received_frame':4,'last_crc_us':99}}}
+        retained=metric(99,9999,count=10)
+        result=b.sdio_phase_summary([history,retained,metric(1,10),metric(1,10),metric(2,30),legacy,metric(0,99)])
+        self.assertEqual(result['sampled_complete_frames'],2)
+        self.assertEqual(result['mean'],{'last_receive_us':60,'last_copy_crc_us':20})
+        self.assertEqual(b.sdio_phase_summary([history,legacy])['mean'],{})
+        history['status']['sdio']['received_frames']=0xffffffff
+        wrapped=metric(1,10,count=0)
+        self.assertEqual(b.sdio_phase_summary([history,wrapped])['sampled_complete_frames'],1)
     def test_stream_stall_fails_and_stops_device_even_if_receiver_reports_pass(self):
         with tempfile.TemporaryDirectory() as folder:
             log=pathlib.Path(folder)/'stall.jsonl';clock=[0.0];running=[False];calls=[]
@@ -64,6 +79,7 @@ class BenchmarkTests(unittest.TestCase):
         result=b.tcp_phase_summary(samples)
         self.assertEqual(result['sampled_complete_frames'],2)
         self.assertEqual(result['mean']['tcp_payload_us'],150)
+        self.assertIn('tcp_cooperative_waits',result['mean'])
         self.assertEqual(b.tcp_phase_summary([metric(99)])['mean'],{})
     def run_fixture(self, folder, fault=None):
         log = pathlib.Path(folder)/'run.jsonl'

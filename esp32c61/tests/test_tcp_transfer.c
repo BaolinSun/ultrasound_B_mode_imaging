@@ -10,15 +10,18 @@ typedef struct {
     unsigned part,blocked,read_blocked,resource_blocked,yields,progress,phases;
     size_t heap_available;
     unsigned adaptive;
+    unsigned write_attempts,block_every,wait_cost_us;
+    uint64_t fine_us;
     tcp_phase_t phase;
     size_t fail_at; int failure; raw_result_t abort;
 } fixture_t;
-static uint64_t now(void*p) { return ((fixture_t*)p)->clock; }
-static uint64_t now_us(void*p) { return ((fixture_t*)p)->clock*1000; }
+static uint64_t now(void*p) { fixture_t*f=p;return f->clock+f->fine_us/1000; }
+static uint64_t now_us(void*p) { fixture_t*f=p;return f->clock*1000+f->fine_us; }
 static void phase_io(void*p,tcp_phase_t phase) { fixture_t*f=p;f->phase=phase;f->phases++; }
 static raw_result_t aborting(void*p) { return ((fixture_t*)p)->abort; }
 static int write_bytes(void*p,const uint8_t*b,size_t n) {
     fixture_t*f=p;
+    if(f->block_every && ++f->write_attempts%f->block_every==0)return -2;
     if(f->blocked) { f->blocked--;return -2; }
     if(f->resource_blocked) { f->resource_blocked--;return -3; }
     if(f->written>=f->fail_at)return f->failure;
@@ -43,7 +46,7 @@ static int read_bytes(void*p,uint8_t*b,size_t n) {
     return (int)n;
 }
 static void wait_io(void*p,bool reading,bool resource,unsigned ms) {
-    fixture_t*f=p;assert(ms<=100);f->clock++;
+    fixture_t*f=p;assert(ms<=100);f->fine_us+=f->wait_cost_us?f->wait_cost_us:1000;
     if(resource)assert(!reading);
     /* Must keep SENDING ownership throughout header/body/ACK waits. */
     if(reading)assert(f->written>=25);
@@ -104,6 +107,23 @@ int main(void) {
     assert(!memcmp(wire+24,data,sizeof(data)) && !memcmp(wire,"UBST\1\30\0\0",8));
     uint8_t header[24];tcp_frame_header(header,&meta);assert(!memcmp(header,wire,24));
     assert(m.ack_ms==150 && m.error==TCP_ERROR_NONE && f.progress>1);
+    /* Repeated genuinely blocking waits already provide CPU fairness. A
+     * spurious-ready loop (<1ms per wait) must retain explicit byte yields. */
+    f=fresh();f.part=TCP_STAGE_BYTES;f.block_every=4;
+    assert(run(&f,&m,10000)==RAW_OK && m.cooperative_waits>0 && f.yields==0);
+    assert(m.sent==sizeof(data) && !memcmp(wire+24,data,sizeof(data)));
+    f=fresh();f.part=TCP_STAGE_BYTES;f.block_every=4;f.wait_cost_us=100;
+    assert(run(&f,&m,10000)==RAW_OK && !m.cooperative_waits && f.yields>0);
+    f=fresh();f.part=TCP_STAGE_BYTES;
+    assert(run(&f,&m,10000)==RAW_OK && !m.cooperative_waits && f.yields==yields);
+    f=fresh();f.part=7;f.block_every=4;
+    assert(run(&f,&m,10)==RAW_TIMEOUT && m.error==TCP_ERROR_SEND_TIMEOUT && m.sent<sizeof(data));
+    for(unsigned down=0;down<5;down++) {
+        meta.frame_bytes=64U*(8U+(6144U>>down))*2U;f=fresh();f.part=TCP_STAGE_BYTES;
+        assert(run(&f,&m,10000)==RAW_OK && m.sent==meta.frame_bytes);
+        assert(!memcmp(wire+24,data,meta.frame_bytes));
+    }
+    meta.frame_bytes=sizeof(data);
     /* Full stages cannot fit the old gate; bounded MSS writes still progress.
      * Production exact() must retain prefix/tail accounting and one final ACK. */
     f=fresh();f.part=TCP_STAGE_BYTES;f.heap_available=16384+2*1440;

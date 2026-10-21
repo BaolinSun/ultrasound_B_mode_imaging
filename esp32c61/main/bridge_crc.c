@@ -3,6 +3,7 @@
 #include "esp_timer.h"
 #include "esp_log.h"
 #include <stdlib.h>
+#include <string.h>
 #if defined(ESP_PLATFORM) || defined(CRC_TEST_ALLOC)
 #include "esp_heap_caps.h"
 #endif
@@ -22,13 +23,33 @@ static bool use_table;
 static uint32_t benchmark_rom_us, benchmark_table_us;
 bool bridge_crc_using_table(void) { return use_table; }
 uint32_t bridge_crc_benchmark_us(bool byte_table) { return byte_table?benchmark_table_us:benchmark_rom_us; }
+static inline __attribute__((always_inline)) uint32_t load_le32(const uint8_t *p) {
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+    if(((uintptr_t)p&3U)==0) {
+        uint32_t word;
+        /* Known alignment enables a single RV32 LW without aliasing UB or
+         * an unaligned trap; never read beyond the supplied span. */
+        memcpy(&word,__builtin_assume_aligned(p,4),sizeof(word));
+        return word;
+    }
+#endif
+    /* Do not let GCC fold this fallback back into an unaligned LW. */
+    const volatile uint8_t *bytes=p;
+    return (uint32_t)bytes[0]|(uint32_t)bytes[1]<<8|
+           (uint32_t)bytes[2]<<16|(uint32_t)bytes[3]<<24;
+}
+static inline __attribute__((always_inline)) uint32_t slice_word(uint32_t crc,uint32_t word) {
+    crc^=word;
+    return table[3][crc&255U]^table[2][(crc>>8)&255U]^
+           table[1][(crc>>16)&255U]^table[0][crc>>24];
+}
 static uint32_t IRAM_ATTR table_crc(uint32_t crc,const uint8_t *p,size_t n) {
     crc=~crc;
+    while(n && ((uintptr_t)p&3U)) {
+        crc=(crc>>8)^table[0][(crc^*p++)&255U];n--;
+    }
     while(n>=4) {
-        /* Explicit byte loads also support unaligned DMA/subspan pointers. */
-        crc^=(uint32_t)p[0]|(uint32_t)p[1]<<8|(uint32_t)p[2]<<16|(uint32_t)p[3]<<24;
-        crc=table[3][crc&255U]^table[2][(crc>>8)&255U]^
-            table[1][(crc>>16)&255U]^table[0][crc>>24];
+        crc=slice_word(crc,load_le32(__builtin_assume_aligned(p,4)));
         p+=4;n-=4;
     }
     while(n--) crc=(crc>>8)^table[0][(crc^*p++)&255U];
@@ -36,6 +57,34 @@ static uint32_t IRAM_ATTR table_crc(uint32_t crc,const uint8_t *p,size_t n) {
 }
 uint32_t bridge_crc32(uint32_t crc,const uint8_t *p,size_t n) {
     return use_table ? table_crc(crc,p,n) : esp_rom_crc32_le(crc,p,(uint32_t)n);
+}
+uint32_t IRAM_ATTR bridge_crc32_copy(uint32_t crc,uint8_t *dest,const uint8_t *p,size_t n) {
+    if(!use_table) {
+        memcpy(dest,p,n);
+        return esp_rom_crc32_le(crc,p,(uint32_t)n);
+    }
+    crc=~crc;
+    /* DMA buffers and frame slots are naturally aligned. Check once, not
+     * on every word. Unusual external subspans use the exact byte path. */
+    if((((uintptr_t)dest|(uintptr_t)p)&3U)==0) {
+        while(n>=4) {
+            uint32_t word=load_le32(__builtin_assume_aligned(p,4));
+            crc=slice_word(crc,word);
+#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+            memcpy(__builtin_assume_aligned(dest,4),&word,sizeof(word));
+#else
+            volatile uint8_t *bytes=dest;
+            bytes[0]=(uint8_t)word;bytes[1]=(uint8_t)(word>>8);
+            bytes[2]=(uint8_t)(word>>16);bytes[3]=(uint8_t)(word>>24);
+#endif
+            p+=4;dest+=4;n-=4;
+        }
+    }
+    while(n--) {
+        uint8_t byte=*p++;
+        crc=(crc>>8)^table[0][(crc^byte)&255U];*dest++=byte;
+    }
+    return ~crc;
 }
 bool bridge_crc_init(void) {
 #if defined(ESP_PLATFORM) || defined(CRC_TEST_ALLOC)
@@ -70,6 +119,19 @@ bool bridge_crc_init(void) {
     int64_t table_us=esp_timer_get_time()-start;
     bool valid=rom==reference && (!table || fast==reference);
     use_table=valid && table && table_us<=rom_us;
+    /* Boot-time check of the selected copy kernel before any DMA descriptor
+     * is accepted. Stack scratch only, no persistent/third frame allocation. */
+    if(valid) {
+        uint8_t copied[sizeof(sample)+4];
+        for(unsigned off=0;off<4;off++) {
+            size_t n=sizeof(sample)-off;
+            memset(copied,0x5a,sizeof(copied));
+            uint32_t actual=bridge_crc32_copy(42,copied+off,sample+off,n);
+            if(actual!=br_crc32(42,sample+off,n) || memcmp(copied+off,sample+off,n) ||
+               copied[off+n]!=0x5a)valid=false;
+        }
+        if(!valid)use_table=false;
+    }
     benchmark_rom_us=(uint32_t)rom_us;
     benchmark_table_us=table?(uint32_t)table_us:0;
 #if defined(ESP_PLATFORM) || defined(CRC_TEST_ALLOC)

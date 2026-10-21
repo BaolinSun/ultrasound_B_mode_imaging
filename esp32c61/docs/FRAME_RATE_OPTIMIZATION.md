@@ -125,3 +125,89 @@ python .\pc_tools\bmode_web_viewer.py --device-ip 192.168.3.27
 
 保留相同完整新帧口径，不与USB滚动行缓存的刷新次数直接混比。
 本轮 **BOOT.BIN未更新**；从旧SD卡启动不会自动得到新PS应用。
+
+## 第二轮：ESP32 接收热路径及 TCP 调度（2026-10-21）
+
+修改前已将上一轮全部相关改动提交为 `e0a2e68`：
+`perf: checkpoint CRC and frame transport scheduling optimizations`。
+本节是其后的独立工作区改动，不表示已经上板验证。
+
+### 原因与改动
+
+最近一次不抽取测速为787456 B/帧、106个完整有效帧、10.98 Mbit/s、1.74 FPS。
+不能与4倍抽取197632 B/帧的5.84 FPS直接比较；比较优化前后时必须保持抽取档位、
+采集参数和网络条件一致。不自动改变用户的下采样系数或显示深度。
+
+- SDIO接收原先先`memcpy`到PSRAM，再读取DMA数据计算CRC；新增
+  `bridge_crc32_copy()`，在SRAM切片表路径一次读取DMA字，同时计算CRC并存入PSRAM。
+  对齐检查放在循环外，非对齐输入/输出及短尾走精确字节路径；不读写范围以外的数据。
+- 保留启动时ROM/切片表测速选择。表分配失败或ROM更快时仍使用原复制+ROM CRC路径；
+  新内核在接受SDIO数据前进行小块复制/CRC自检，失败则保持SDIO不可用，网页继续运行。
+- TCP因资源或socket背压已经等待至少1 ms时，清除之前累计的连续发送字节额度，
+  避免随后又重复执行一次公平性休眠。无实际等待时，仍保留每约64 KiB至少一次让出CPU；
+  立即就绪、短于1 ms的等待不能获得这个额度。停止、断网、30秒截止时间和回执检查不变。
+- 不放大TCP发送缓冲、不降低16 KiB准入余量、不添加第三份PSRAM帧、不提高PSRAM时钟。
+  TCP staging仍为5760 B（fast档），整帧CRC、PC应用回执及两槽位所有权不变。
+
+### 新诊断字段
+
+| 字段 | 含义 |
+|---|---|
+| `tcp_cooperative_waits` | 本帧发送时已等待至少1 ms、可替代额外公平性休眠的次数，不是重传次数 |
+| `sdio.last_copy_crc_us` | 最近完整帧的复制+CRC累计墙钟时间，包含任务抢占，属于接收时间的子集 |
+| `sdio.crc_copy_fused` | 是否使用SRAM切片表的融合复制路径；false时使用ROM回退 |
+| `sdio_phase_summary` | 测速工具按会话/帧号去重抽样的接收及复制CRC均值，不是全量逐帧统计 |
+
+`sdio.last_crc_us`为兼容保留，**本版是复制+CRC时间的别名**；不能直接与旧版纯CRC字段
+比较。新工具不会把缺少`last_copy_crc_us`的旧固件日志当作融合路径测量。
+以上各项仍不能与TCP发送时间简单相加：两个PSRAM槽位允许接收与发送重叠。
+
+### 更新与复测
+
+此次只需更新ESP32固件和PC测速脚本，**Zynq ELF、bit、XSA、BSP、FSBL及BOOT.BIN不变**。
+图像显示软件本轮不改变发布上限，不靠重复图像增加计数。
+
+在`esp32c61`目录手动更新（COM端口请自行核对，本文不是板测授权）：
+
+```powershell
+.\build.ps1 -Profile throughput -Action flash -Port COM3
+```
+
+保持与对照日志相同的下采样倍率，停止其他接收程序释放端口后测速：
+
+```powershell
+python .\pc_tools\sdio_benchmark.py --device-ip 192.168.3.27 --seconds 60 --log throughput_fused_60s_01.jsonl
+```
+
+该命令只启停上传，不启停扫描或高压。日志自动进入`esp32c61/logs`；使用新文件名，
+避免覆盖基线。重点比较PC `payload_mbit_s`/`valid_fps`、CRC/ACK错误、内部堆低水位、
+`tcp_yield_us`、`tcp_cooperative_waits`及`sdio_phase_summary`。
+实际成像帧率还受完整源帧及图像处理影响，不能把本机单元测试当作板测提速结果。
+
+### 本轮离线验证与产物
+
+- 原生C回归通过，融合CRC覆盖黄金向量、非零种子、五档帧长、512 B增量、
+  输入/输出不同对齐、短尾、范围哨兵、ROM选择与分配失败；同时以固件使用的`-O2`
+  和严格别名规则复测。SDIO真实任务替身仍验证槽位所有权、CRC错误、停止和复位。
+- TCP测试覆盖无阻塞时保留公平性休眠、有真实等待时避免重复休眠、短等待不抵扣、
+  部分写入、五档长度、资源短缺、CRC回执、断网、取消及截止时间。
+- Python全套181项（180通过，1项因缺少历史样本跳过），网页30项及原生C回归通过；
+  最后补充的测速统计测试10项通过，覆盖旧会话残留及32位接收计数回绕。
+- ESP-IDF 6.1 TCP/UDP × 默认/性能四组最终构建及size检查通过，应用分区剩余约37%。
+  默认/性能静态DIRAM分别123923/135885 B，比检查点各增加292 B（其中BSS增加16 B）。
+  这是静态占用，不是运行时堆余量；既有堆低水位风险仍需板测观察。
+- 已检查C61反汇编：融合路径在循环外检查对齐，热循环使用32位LW/SW；
+  源字加载与存储之间有CRC运算，不引入相邻加载/存储捷径；未对齐分支使用字节路径。
+- 新增启动自检使用约516 B临时栈空间，不新增常驻堆缓冲；主任务栈配置仍为6144 B。
+
+性能固件：
+`D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build-throughput-fast-socket\ultrasound_psram_udp.bin`，
+966224 B，SHA256：`455F9C6574C40636D16DE49DCFBC41CC8C17F468912CA98ECB7F678CB53279B0`。
+
+默认固件：
+`D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build\ultrasound_psram_udp.bin`，
+964656 B，SHA256：`444258B90306B33D5998228A4A1D03B0E526A9B6E23FAE8E312F295BAEA49A4D`。
+
+固件应使用所属构建目录的分区表、bootloader及flash_args；应用bin不是整片Flash镜像。
+本轮构建、测试和反汇编记录位于`build/verification/transport_opt_20261021`。
+未烧录、JTAG下载、覆盖BOOT.BIN、操作扫描或高压；未进行板级吞吐或48小时测试。
