@@ -143,6 +143,7 @@ class TCPReceiver:
                             self.valid_payload_read_s += max(0.0, elapsed)
                             self.emit({'event': 'frame', 'session': session, 'frame': frame, 'bytes': length,
                                        'crc32': f'{crc:08x}', 'passed': True, 'elapsed_s': elapsed,
+                                       'completed_t_s': time.monotonic()-self.started,
                                        'validation_elapsed_s': validation_elapsed,
                                        'mbit_s': length*8/elapsed/1e6 if elapsed else None},
                                       ((session, frame), data) if self.args.output_dir else None)

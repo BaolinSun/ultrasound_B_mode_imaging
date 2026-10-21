@@ -16,6 +16,14 @@ config PSRAM_UDP_TIMEOUT_MS
     default 30000
 endmenu
 menu "SDIO TCP frame performance"
+config PSRAM_TCP_DIRECT
+    bool "Submit TCP body directly from leased PSRAM to copying socket API"
+    default n
+    help
+        Experimental: skip the application staging copy after the coalesced
+        header/first payload. IDF 6.1 send() still uses NETCONN_COPY; this is
+        NOT zero-copy DMA. Retain the frame lease through the PC CRC ACK.
+        UDP/selftest retain internal staging. Compare in an isolated build.
 config PSRAM_TCP_SEND_BYTES
     int "Send buffer bytes for the upload TCP socket only"
     range 2880 65535

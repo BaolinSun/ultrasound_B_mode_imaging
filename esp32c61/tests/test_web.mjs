@@ -7,6 +7,19 @@ import {readFileSync} from 'node:fs';
 
 const html = readFileSync(new URL('../main/index.html', import.meta.url), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+test('data-path status distinguishes direct copy, allocation, core lock and fused CRC from legacy firmware',async()=>{
+ const e=setup();await e.settle();
+ e.backend.status.tcp_direct_psram=true;e.backend.status.tcp_staging_alloc_bytes=1472;
+ e.backend.status.tcp_stage_bytes=5760;e.backend.status.lwip_core_locking=true;e.backend.status.psram_speed_mhz=40;
+ e.backend.status.sdio={last_crc_us:999999,last_copy_crc_us:1234,last_receive_us:5000};
+ await e.context.refresh();
+ assert.match(e.elements['tcp-timing'].textContent,/PSRAM直接提交（协议栈仍复制）/);
+ assert.match(e.elements['tcp-timing'].textContent,/实际内部 staging 1472 B/);
+ assert.match(e.elements['tcp-timing'].textContent,/核心锁 开启，PSRAM 40 MHz/);
+ assert.match(e.elements['sdio-timing'].textContent,/复制＋CRC 1.2 ms/);
+ delete e.backend.status.sdio.last_copy_crc_us;
+ await e.context.refresh();assert.match(e.elements['sdio-timing'].textContent,/CRC 1000.0 ms/);
+});
 function setup() {
   const elements = {};
   for (const match of html.matchAll(/<[^>]*\bid="([^"]+)"[^>]*>/g)) {

@@ -126,7 +126,20 @@ idf.py -B .\build-throughput-fast-socket -p COM3 monitor
 
 显式选择 `-TcpTuning` 或 `-Transport` 也会启用隔离目录。一般目录名为 `build-<Profile>-<TcpTuning>-socket`；显式协议时为 `build-<Profile>-<Transport>-<TcpTuning>-socket`。烧录或 monitor 同样需要带上对应参数。
 
-## 6. ESP-IDF 安装路径
+## 6. 独立数据路径实验（可选）
+
+新增`-Experiment none|core|direct|combined|psram80`，默认none，不改变原命令选择。
+例如仅编译“核心锁+减少应用复制”、保持40 MHz：
+
+```powershell
+.\build.ps1 -Profile throughput -Experiment combined
+```
+
+使用`build-throughput-fast-socket-exp-combined`，不会改原性能目录的sdkconfig。
+flash/monitor也必须带同一个Experiment。80 MHz仅是隔离实验配置，未确认器件及PCB前不要烧录。
+全部档位、测速及回退流程见[TCP 数据路径实验](TCP_DATA_PATH_EXPERIMENTS.md)。
+
+## 7. ESP-IDF 安装路径
 
 脚本默认使用：
 

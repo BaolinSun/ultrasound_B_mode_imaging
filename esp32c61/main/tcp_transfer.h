@@ -5,6 +5,16 @@
 #ifdef ESP_PLATFORM
 #include "sdkconfig.h"
 #endif
+#ifndef TCP_DIRECT_PSRAM
+#ifdef CONFIG_PSRAM_TCP_DIRECT
+#define TCP_DIRECT_PSRAM 1
+#else
+#define TCP_DIRECT_PSRAM 0
+#endif
+#endif
+#if TCP_DIRECT_PSRAM != 0 && TCP_DIRECT_PSRAM != 1
+#error "TCP_DIRECT_PSRAM must be 0 or 1"
+#endif
 #ifndef TCP_STAGE_BYTES
 #ifdef ESP_PLATFORM
 #define TCP_STAGE_BYTES CONFIG_PSRAM_TCP_STAGE_BYTES
@@ -13,6 +23,12 @@
 #endif
 #endif
 _Static_assert(TCP_STAGE_BYTES>=1472 && TCP_STAGE_BYTES<=16384,"invalid TCP staging size");
+/* Direct mode keeps one MSS header+prefix and a shared UDP-sized allocation.
+ * All later TCP offers remain bounded by TCP_STAGE_BYTES, not frame length. */
+#define TCP_FIRST_WRITE_BYTES (TCP_DIRECT_PSRAM ? RAW_UDP_BYTES : TCP_STAGE_BYTES)
+#define TCP_STAGING_ALLOC_BYTES (TCP_DIRECT_PSRAM ? BR_UDP_HEADER+RAW_UDP_BYTES : TCP_STAGE_BYTES)
+_Static_assert(TCP_FIRST_WRITE_BYTES<=TCP_STAGING_ALLOC_BYTES,"TCP prefix exceeds staging allocation");
+_Static_assert(BR_UDP_HEADER+RAW_UDP_BYTES<=TCP_STAGING_ALLOC_BYTES,"UDP staging too small");
 #define TCP_YIELD_BYTES 65536U
 #define TCP_FRAME_MAGIC UINT32_C(0x55425354)
 #define TCP_ACK_MAGIC UINT32_C(0x55425341)
@@ -23,6 +39,7 @@ typedef struct { size_t sent; unsigned chunks, waits; uint64_t ack_ms;
     uint64_t header_us,payload_us,ack_us,write_wait_us,read_wait_us,yield_us,copy_us;
     unsigned write_calls,read_calls,partial_writes,send_waits,ack_waits,resource_waits;
     unsigned cooperative_waits; /* Socket/resource waits >=1 ms during send. */
+    size_t staged_bytes,direct_bytes; /* Copied payload vs direct accepted payload. */
     tcp_error_t error; } tcp_metrics_t;
 
 typedef enum { TCP_PHASE_IDLE, TCP_PHASE_CONNECT, TCP_PHASE_HEADER,

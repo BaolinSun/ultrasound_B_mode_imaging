@@ -21,8 +21,9 @@ static raw_result_t check(const tcp_io_t*io,uint64_t deadline) {
     raw_result_t r=io->abort_reason(io->ctx);
     return r!=RAW_OK?r:io->now_ms(io->ctx)>=deadline?RAW_TIMEOUT:RAW_OK;
 }
-static raw_result_t exact(const tcp_io_t*io,uint8_t*p,size_t n,bool reading,bool payload,size_t prefix,
+static raw_result_t exact(const tcp_io_t*io,uint8_t*read_dest,const uint8_t*write_src,size_t n,bool payload,size_t prefix,
                           uint64_t deadline,tcp_metrics_t*m,size_t *since_yield) {
+    bool reading=read_dest!=NULL;
     while(n) {
         raw_result_t r=check(io,deadline);
         if(r!=RAW_OK) {
@@ -30,7 +31,7 @@ static raw_result_t exact(const tcp_io_t*io,uint8_t*p,size_t n,bool reading,bool
             return r;
         }
         if(reading)m->read_calls++;else m->write_calls++;
-        int got=reading?io->read(io->ctx,p,n):io->write(io->ctx,p,n);
+        int got=reading?io->read(io->ctx,read_dest,n):io->write(io->ctx,write_src,n);
         if(got==-2 || got==-3) {
             m->waits++;
             if(reading)m->ack_waits++;else m->send_waits++;
@@ -52,7 +53,8 @@ static raw_result_t exact(const tcp_io_t*io,uint8_t*p,size_t n,bool reading,bool
             m->error=got==0?TCP_ERROR_CLOSED:TCP_ERROR_IO;return RAW_SEND_ERROR;
         }
         if(!reading && (size_t)got<n)m->partial_writes++;
-        p+=got;n-=(size_t)got;
+        if(reading)read_dest+=got;else write_src+=got;
+        n-=(size_t)got;
         if(payload) {
             size_t skipped=(size_t)got<prefix?(size_t)got:prefix;
             prefix-=skipped;m->sent+=(size_t)got-skipped;
@@ -70,14 +72,15 @@ raw_result_t tcp_frame_send(const uint8_t*data,size_t length,const bridge_frame_
     uint64_t start=io->now_us(io->ctx);
     tcp_frame_header(staging,frame);
     size_t first=length;
-    if(first>TCP_STAGE_BYTES-TCP_FRAME_HEADER)first=TCP_STAGE_BYTES-TCP_FRAME_HEADER;
+    if(first>TCP_FIRST_WRITE_BYTES-TCP_FRAME_HEADER)first=TCP_FIRST_WRITE_BYTES-TCP_FRAME_HEADER;
     uint64_t copy_start=io->now_us(io->ctx);
     memcpy(staging+TCP_FRAME_HEADER,data,first);
+    m->staged_bytes+=first;
     m->copy_us+=io->now_us(io->ctx)-copy_start;
     /* One stream write starts with header+payload. Partial writes crossing
      * the prefix must count only payload bytes, including error paths. */
     size_t since_yield=0;
-    raw_result_t r=exact(io,staging,TCP_FRAME_HEADER+first,false,true,TCP_FRAME_HEADER,deadline,m,&since_yield);
+    raw_result_t r=exact(io,NULL,staging,TCP_FRAME_HEADER+first,true,TCP_FRAME_HEADER,deadline,m,&since_yield);
     m->header_us=io->now_us(io->ctx)-start;
     since_yield=r==RAW_OK?first:0;
     if(r==RAW_OK) { m->chunks++;io->progress(io->ctx,m->sent,m->chunks,m->waits); }
@@ -85,10 +88,19 @@ raw_result_t tcp_frame_send(const uint8_t*data,size_t length,const bridge_frame_
     if(r==RAW_OK)io->phase(io->ctx,TCP_PHASE_PAYLOAD);
     while(r==RAW_OK && m->sent<length) {
         size_t n=length-m->sent;if(n>TCP_STAGE_BYTES)n=TCP_STAGE_BYTES;
+        const uint8_t *source=data+m->sent;
+        /* IDF 6.1 lwip_send() uses NETCONN_COPY: its accepted prefix is copied
+         * synchronously into lwIP storage. No raw tcp_write(..., flags=0), no
+         * Wi-Fi DMA from PSRAM. The full frame lease still lasts through ACK. */
+#if !TCP_DIRECT_PSRAM
         copy_start=io->now_us(io->ctx);
-        memcpy(staging,data+m->sent,n);
+        memcpy(staging,source,n);source=staging;
+        m->staged_bytes+=n;
         m->copy_us+=io->now_us(io->ctx)-copy_start;
-        r=exact(io,staging,n,false,true,0,deadline,m,&since_yield);
+#endif
+        size_t previously_sent=m->sent;
+        r=exact(io,NULL,source,n,true,0,deadline,m,&since_yield);
+        if(TCP_DIRECT_PSRAM)m->direct_bytes+=m->sent-previously_sent;
         if(r==RAW_OK) {
             m->chunks++;
             if(m->chunks%8==0 || m->sent==length)io->progress(io->ctx,m->sent,m->chunks,m->waits);
@@ -104,7 +116,7 @@ raw_result_t tcp_frame_send(const uint8_t*data,size_t length,const bridge_frame_
     if(r==RAW_OK) {
         io->phase(io->ctx,TCP_PHASE_ACK);
         uint64_t ack_start=io->now_us(io->ctx);
-        r=exact(io,ack,sizeof(ack),true,false,0,deadline,m,&since_yield);
+        r=exact(io,ack,NULL,sizeof(ack),false,0,deadline,m,&since_yield);
         m->ack_us=io->now_us(io->ctx)-ack_start;m->ack_ms=m->ack_us/1000;
         if(r==RAW_OK) {
             if(be32(ack)!=TCP_ACK_MAGIC || ack[4]!=1 || ack[5]!=TCP_FRAME_ACK ||

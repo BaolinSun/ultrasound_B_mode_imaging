@@ -22,6 +22,8 @@ typedef struct {
     unsigned tcp_heap_guard_waits;
     unsigned tcp_adaptive_writes;
     unsigned tcp_cooperative_waits;
+    size_t tcp_staged_bytes,tcp_direct_bytes;
+    unsigned tcp_task_stack_min_bytes; /* IDF high-water mark units are bytes. */
     uint64_t tcp_queue_us,tcp_idle_us; /* Last frame: submit->worker; previous ACK completion->worker. */
     int tcp_error;
     int tcp_phase;

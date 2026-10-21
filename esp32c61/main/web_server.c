@@ -185,6 +185,19 @@ static esp_err_t get_status(httpd_req_t *req)
         cJSON_AddNumberToObject(json,"tcp_heap_headroom",CONFIG_PSRAM_TCP_HEAP_HEADROOM);
         cJSON_AddNumberToObject(json,"tcp_receive_window",CONFIG_LWIP_TCP_WND_DEFAULT);
         cJSON_AddNumberToObject(json,"tcp_stage_bytes",TCP_STAGE_BYTES);
+        cJSON_AddNumberToObject(json,"tcp_staging_alloc_bytes",TCP_STAGING_ALLOC_BYTES);
+        cJSON_AddBoolToObject(json,"tcp_direct_psram",TCP_DIRECT_PSRAM);
+#ifdef CONFIG_LWIP_TCPIP_CORE_LOCKING
+        cJSON_AddBoolToObject(json,"lwip_core_locking",true);
+#else
+        cJSON_AddBoolToObject(json,"lwip_core_locking",false);
+#endif
+#ifdef CONFIG_LWIP_TCPIP_CORE_LOCKING_INPUT
+        cJSON_AddBoolToObject(json,"lwip_core_locking_input",true);
+#else
+        cJSON_AddBoolToObject(json,"lwip_core_locking_input",false);
+#endif
+        cJSON_AddNumberToObject(json,"psram_speed_mhz",CONFIG_SPIRAM_SPEED);
         cJSON_AddNumberToObject(json,"tcp_metric_session",udp.tcp_metric_session);
         cJSON_AddNumberToObject(json,"tcp_metric_frame",udp.tcp_metric_frame);
         cJSON_AddNumberToObject(json,"tcp_metric_bytes",udp.tcp_metric_bytes);
@@ -195,6 +208,9 @@ static esp_err_t get_status(httpd_req_t *req)
         cJSON_AddNumberToObject(json,"tcp_read_wait_us",udp.tcp_read_wait_us);
         cJSON_AddNumberToObject(json,"tcp_yield_us",udp.tcp_yield_us);
         cJSON_AddNumberToObject(json,"tcp_copy_us",udp.tcp_copy_us);
+        cJSON_AddNumberToObject(json,"tcp_staged_bytes",udp.tcp_staged_bytes);
+        cJSON_AddNumberToObject(json,"tcp_direct_bytes",udp.tcp_direct_bytes);
+        cJSON_AddNumberToObject(json,"tcp_task_stack_min_bytes",udp.tcp_task_stack_min_bytes);
         cJSON_AddNumberToObject(json,"tcp_write_calls",udp.tcp_write_calls);
         cJSON_AddNumberToObject(json,"tcp_read_calls",udp.tcp_read_calls);
         cJSON_AddNumberToObject(json,"tcp_partial_writes",udp.tcp_partial_writes);

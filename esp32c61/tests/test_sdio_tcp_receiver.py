@@ -108,6 +108,11 @@ class ReceiverTests(unittest.TestCase):
         self.assertFalse(thread.is_alive());self.assertEqual(rx.connections,1)
         self.assertTrue(rx.summary()['passed']);self.assertEqual(rx.valid_frames,2)
         self.assertEqual([bytes(item[1]) for item in w.outputs],[data,data])
+        completed = [e['completed_t_s'] for e in w.events if e.get('event') == 'frame']
+        self.assertEqual(len(completed), 2)
+        self.assertEqual(completed, sorted(completed))
+        self.assertGreaterEqual(completed[0], 0)
+        self.assertLessEqual(completed[-1], rx.summary()['elapsed_s'])
 
     def test_crc_pattern_rejection_then_manual_new_connection(self):
         for pattern_error in (False,True):

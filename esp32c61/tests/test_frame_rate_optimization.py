@@ -50,4 +50,24 @@ class FrameRateContract(unittest.TestCase):
         self.assertIn('io->yield_ms(io->ctx,1)',source)
         self.assertIn('r=check(io,deadline)',source)
 
+    def test_direct_body_stays_bounded_and_uses_the_same_ack_and_socket_guard(self):
+        source=(ROOT/'esp32c61/main/tcp_transfer.c').read_text(encoding='utf-8')
+        self.assertIn('const uint8_t *source=data+m->sent',source)
+        self.assertIn('#if !TCP_DIRECT_PSRAM',source)
+        self.assertIn('exact(io,NULL,source,n,true,0,deadline,m,&since_yield)',source)
+        self.assertIn('if(n>TCP_STAGE_BYTES)n=TCP_STAGE_BYTES',source)
+        self.assertIn('be32(ack+16)!=frame->crc32',source)
+        sender=(ROOT/'esp32c61/main/psram_udp.c').read_text(encoding='utf-8')
+        self.assertIn('heap_caps_malloc(TCP_STAGING_ALLOC_BYTES, MALLOC_CAP_INTERNAL',sender)
+        self.assertLess(sender.index('result=tcp_frame_send('),sender.index('raw_finish(&session'))
+
+    def test_experiment_defaults_are_orthogonal_and_keep_regular_psram_at_40(self):
+        base=ROOT/'esp32c61'
+        for name in ('core','direct','combined','psram80'):
+            text=(base/f'sdkconfig.experiment-{name}.defaults').read_text()
+            self.assertEqual('CONFIG_PSRAM_TCP_DIRECT=y' in text,name!='core')
+            self.assertEqual('CONFIG_LWIP_TCPIP_CORE_LOCKING=y' in text,name!='direct')
+            self.assertIn('CONFIG_SPIRAM_SPEED_80M=y' if name=='psram80' else 'CONFIG_SPIRAM_SPEED_40M=y',text)
+        self.assertIn('CONFIG_SPIRAM_SPEED_40M=y',(base/'sdkconfig.defaults').read_text())
+
 if __name__=='__main__':unittest.main()

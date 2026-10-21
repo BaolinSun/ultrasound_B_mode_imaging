@@ -8,8 +8,28 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from log_paths import LOG_HELP, resolve_log_path
+
+
+def sample_status(api, errors, elapsed):
+    """One read-only attempt. Never retry a mutating control request here."""
+    try:
+        return api('/api/status')
+    except urllib.error.HTTPError as exc:
+        if not 500 <= exc.code <= 599:
+            raise
+        detail = f'HTTP {exc.code}'
+        # Keep the diagnostic response, but never record request headers/tokens.
+        body = exc.read(256).decode('utf-8', errors='replace')
+        if body:
+            detail += ': ' + body
+    except (urllib.error.URLError, TimeoutError) as exc:
+        detail = str(exc)
+    errors.append({'t': elapsed, 'error': detail})
+    print('Status sample unavailable: '+detail, file=sys.stderr, flush=True)
+    return None
 
 def upstream_idle(status):
     s=status.get('sdio',{})
@@ -36,7 +56,7 @@ def tcp_phase_summary(samples):
     fields=('tcp_header_us','tcp_payload_us','tcp_ack_us','tcp_write_wait_us',
             'tcp_read_wait_us','tcp_yield_us','tcp_copy_us','tcp_write_calls',
             'tcp_partial_writes','tcp_send_waits','tcp_ack_waits','tcp_resource_waits','tcp_heap_guard_waits',
-            'tcp_adaptive_writes','tcp_cooperative_waits','tcp_queue_us','tcp_idle_us')
+            'tcp_adaptive_writes','tcp_cooperative_waits','tcp_staged_bytes','tcp_direct_bytes','tcp_queue_us','tcp_idle_us')
     return {'sampled_complete_frames':len(frames),
             'mean':{f:sum(s.get(f,0) for s in frames.values())/len(frames) for f in fields} if frames else {},
             'note':'Unique completed frames observed by status polling, not every frame. Wait/yield/copy are overlapping subsets of stage durations.'}
@@ -88,9 +108,13 @@ def main():
     parser.add_argument('--test-pattern', action='store_true', help='only for explicit synthetic source, not imaging DDR')
     parser.add_argument('--stall-timeout',type=float,default=5,
                         help='Fail if stream stays armed with two free slots and idle sender for N seconds')
+    parser.add_argument('--recover-stalls', action='store_true',
+                        help='Explicit fixed-duration experiment: stop/start upload after an idle stall; keep receiver and clock running')
+    parser.add_argument('--max-recoveries', type=int, default=12,
+                        help='Bound recovery control writes; after this limit keep measuring zero throughput until the deadline')
     args = parser.parse_args()
     args.log = resolve_log_path(args.log)
-    if not 1 <= args.seconds <= 3600 or not 1 <= args.port <= 65535 or not 1<=args.stall_timeout<=120:
+    if not 1 <= args.seconds <= 3600 or not 1 <= args.port <= 65535 or not 1<=args.stall_timeout<=120 or not 1<=args.max_recoveries<=60:
         parser.error('invalid seconds or TCP/UDP port')
     base = 'http://' + args.device_ip
     def api(path, payload=None):
@@ -116,6 +140,12 @@ def main():
     process = None
     armed = False
     control_error = None
+    monitor_error = None
+    monitoring = False
+    status_poll_errors = []
+    consecutive_poll_errors = 0
+    recoveries = []
+    recovery_limit_reached = False
     started = time.monotonic()
     try:
         with stdout_path.open('w', encoding='utf-8') as stdout, args.log.with_suffix('.stderr.log').open('w') as stderr:
@@ -123,6 +153,10 @@ def main():
                        '--source-ip', args.device_ip, '--frames', '0', '--seconds', str(args.seconds+10),
                        '--port', str(args.port),
                        '--log', str(args.log),'--managed']
+            if args.recover_stalls:
+                # One receiver, one monotonic time base across ALL sessions.
+                # A long source outage must not end the measurement early.
+                command += ['--idle-timeout', str(args.seconds+10)]
             if args.test_pattern: command.append('--test-pattern')
             process = subprocess.Popen(command, stdout=stdout, stderr=stderr,
                                        stdin=subprocess.PIPE,
@@ -135,13 +169,58 @@ def main():
             armed = True
             api('/api/sdio/start', {'frames': 0})
             active_started=time.monotonic()
+            monitoring = True
             print('Fixed DDR benchmark running; do not press device start/stop buttons.', flush=True)
             while process.poll() is None:
                 if time.monotonic()-active_started>=args.seconds: break
-                state = api('/api/status')
+                state = sample_status(api,status_poll_errors,time.monotonic()-started)
+                if state is None:
+                    consecutive_poll_errors += 1
+                    if consecutive_poll_errors >= 3:
+                        raise RuntimeError('Three consecutive status queries failed; stopping test')
+                    time.sleep(.5)
+                    continue
+                consecutive_poll_errors = 0
                 samples.append({'t': time.monotonic()-started, 'status': state})
                 idle_since,upstream_stall=stalled_since(state,time.monotonic(),idle_since,args.stall_timeout)
                 if upstream_stall:
+                    if args.recover_stalls:
+                        if len(recoveries) >= args.max_recoveries:
+                            recovery_limit_reached = True
+                            time.sleep(.5)
+                            continue
+                        if args.seconds-(time.monotonic()-active_started) < 15:
+                            time.sleep(.5)
+                            continue
+                        event = {'detected_t':time.monotonic()-started,
+                                 'old_session':state.get('sdio',{}).get('session'),
+                                 'restart_accepted':False}
+                        recoveries.append(event)
+                        print('Idle stall: recording upload stop/start recovery '+str(len(recoveries)),flush=True)
+                        # Only this upload is controlled; never scan, HV or CFG.
+                        # POSTs are never retried after an unknown outcome.
+                        api('/api/sdio/stop', {})
+                        drain_deadline=min(time.monotonic()+10,active_started+args.seconds)
+                        while True:
+                            drained=api('/api/status')
+                            ds=drained.get('sdio',{})
+                            # STOP merely queues a reset. Old idle fields may
+                            # still be visible before bridge_task processes it.
+                            # A NEW session plus host handshake proves that
+                            # reset and re-enumeration actually completed.
+                            if (not drained.get('busy') and not ds.get('running') and ds.get('free_slots')==2 and
+                                    ds.get('session')!=event['old_session'] and ds.get('session') and
+                                    ds.get('ready',True) and ds.get('host_sdio') and not ds.get('raw_busy')):
+                                break
+                            if time.monotonic()>=drain_deadline:
+                                raise RuntimeError('Recovery stop did not release both frame slots')
+                            time.sleep(.05)
+                        event['drained_t']=time.monotonic()-started
+                        api('/api/sdio/start', {'frames':0})
+                        event['restarted_t']=time.monotonic()-started
+                        event['restart_accepted']=True  # Actual resumed frames are evidenced by the receiver log.
+                        idle_since=None
+                        continue
                     unexpected_stop=True
                     print('Upstream stalled: stream armed, two free slots, no sender activity.',file=sys.stderr)
                     break
@@ -151,6 +230,14 @@ def main():
                 time.sleep(.5)
             if process.poll() is not None and time.monotonic()-active_started < args.seconds:
                 unexpected_stop = True  # e.g. receiver idle timeout while device claims running
+    except Exception as exc:
+        monitor_error = str(exc)
+        unexpected_stop = True
+        print('Benchmark monitoring failed: '+monitor_error,file=sys.stderr)
+        # A start timeout is an unknown control outcome, not a skipped sample.
+        # Preserve the original caller-visible failure and finally-stop path.
+        if not monitoring:
+            raise
     finally:
         try:
             if armed:
@@ -179,6 +266,9 @@ def main():
         result = {'before': before, 'samples': samples, 'unexpected_stop': unexpected_stop,
                   'upstream_stall':upstream_stall,'stall_timeout_s':args.stall_timeout,
                   'transport':transport,
+                  'monitor_error':monitor_error,'status_poll_errors':status_poll_errors,
+                  'recover_stalls':args.recover_stalls,'recoveries':recoveries,
+                  'recovery_limit_reached':recovery_limit_reached,
                   'stop_error': control_error,
                   'receiver_exit': process.returncode if process else None}
         if armed and not control_error:

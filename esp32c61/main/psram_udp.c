@@ -274,6 +274,7 @@ static void upload_worker(void *arg)
         if(!tcp && ctx.socket>=0)close(ctx.socket);
         raw_completion_t done = NULL;
         void *done_ctx = NULL;
+        unsigned stack_min=(unsigned)uxTaskGetStackHighWaterMark(NULL);
         xSemaphoreTake(lock, portMAX_DELAY);
         status.result = result;
         if(tcp) {
@@ -287,6 +288,8 @@ static void upload_worker(void *arg)
             status.tcp_heap_guard_waits=ctx.heap_waits;
             status.tcp_adaptive_writes=ctx.adaptive_writes;
             status.tcp_cooperative_waits=metrics.cooperative_waits;
+            status.tcp_staged_bytes=metrics.staged_bytes;status.tcp_direct_bytes=metrics.direct_bytes;
+            status.tcp_task_stack_min_bytes=stack_min;
             status.tcp_queue_us=(uint64_t)started-submitted_at;
             status.tcp_idle_us=idle_us;
             status.tcp_metric_session=frame.session_id;status.tcp_metric_frame=frame.frame_id;
@@ -310,7 +313,7 @@ static void upload_worker(void *arg)
 esp_err_t psram_udp_init(void)
 {
     lock = xSemaphoreCreateMutex();
-    staging = heap_caps_malloc(TCP_STAGE_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    staging = heap_caps_malloc(TCP_STAGING_ALLOC_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (!lock || !staging) return ESP_ERR_NO_MEM;
     status.result = RAW_NOT_READY;
     status.tcp_send_buffer_actual=0;

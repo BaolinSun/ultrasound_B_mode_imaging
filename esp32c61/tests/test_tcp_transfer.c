@@ -4,13 +4,18 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-static uint8_t data[787456],wire[787456+24],stage[TCP_STAGE_BYTES];
+static uint8_t data[787456],wire[787456+24];
+static struct { uint8_t bytes[TCP_STAGING_ALLOC_BYTES],guard[16]; } stage_area;
+#define stage stage_area.bytes
 typedef struct {
     uint64_t clock,final_clock; size_t written,read; uint8_t ack[20];
     unsigned part,blocked,read_blocked,resource_blocked,yields,progress,phases;
     size_t heap_available;
     unsigned adaptive;
     unsigned write_attempts,block_every,wait_cost_us;
+    unsigned direct_calls,staged_calls;
+    size_t abort_at;
+    raw_result_t abort_later;
     uint64_t fine_us;
     tcp_phase_t phase;
     size_t fail_at; int failure; raw_result_t abort;
@@ -18,13 +23,25 @@ typedef struct {
 static uint64_t now(void*p) { fixture_t*f=p;return f->clock+f->fine_us/1000; }
 static uint64_t now_us(void*p) { fixture_t*f=p;return f->clock*1000+f->fine_us; }
 static void phase_io(void*p,tcp_phase_t phase) { fixture_t*f=p;f->phase=phase;f->phases++; }
-static raw_result_t aborting(void*p) { return ((fixture_t*)p)->abort; }
+static raw_result_t aborting(void*p) {
+    fixture_t*f=p;
+    return f->abort ? f->abort : f->abort_at && f->written>=f->abort_at ? f->abort_later : RAW_OK;
+}
 static int write_bytes(void*p,const uint8_t*b,size_t n) {
     fixture_t*f=p;
     if(f->block_every && ++f->write_attempts%f->block_every==0)return -2;
     if(f->blocked) { f->blocked--;return -2; }
     if(f->resource_blocked) { f->resource_blocked--;return -3; }
     if(f->written>=f->fail_at)return f->failure;
+    uintptr_t address=(uintptr_t)b;
+    if(address>=(uintptr_t)data && address<(uintptr_t)data+sizeof(data)) {
+        assert(TCP_DIRECT_PSRAM && f->written>=TCP_FIRST_WRITE_BYTES);
+        assert(address-(uintptr_t)data==f->written-TCP_FRAME_HEADER);
+        assert(n<=TCP_STAGE_BYTES);f->direct_calls++;
+    } else {
+        assert(address>=(uintptr_t)stage && address+n<=(uintptr_t)stage+sizeof(stage));
+        f->staged_calls++;
+    }
     if(n>f->part)n=f->part;
     if(f->heap_available) {
         size_t limited=tcp_memory_write_limit(f->heap_available,n,16384,1440);
@@ -65,7 +82,14 @@ static fixture_t fresh(void) {
 static raw_result_t run(fixture_t*f,tcp_metrics_t*m,uint64_t deadline) {
     tcp_io_t io={.ctx=f,.now_ms=now,.now_us=now_us,.abort_reason=aborting,
         .write=write_bytes,.read=read_bytes,.wait=wait_io,.yield_ms=yield_io,.progress=progress_io,.phase=phase_io};
-    return tcp_frame_send(data,meta.frame_bytes,&meta,stage,deadline,&io,m);
+    memset(stage_area.guard,0x6d,sizeof(stage_area.guard));
+    raw_result_t result=tcp_frame_send(data,meta.frame_bytes,&meta,stage,deadline,&io,m);
+    for(unsigned i=0;i<sizeof(stage_area.guard);i++)assert(stage_area.guard[i]==0x6d);
+    return result;
+}
+static unsigned expected_chunks(size_t length) {
+    size_t first=TCP_FIRST_WRITE_BYTES-TCP_FRAME_HEADER;
+    return length<=first ? 1U : 1U+(unsigned)((length-first+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES);
 }
 int main(void) {
     assert(!tcp_memory_headroom(16383,1,16384));
@@ -96,9 +120,9 @@ int main(void) {
     raw_pattern_fill(data,sizeof(data));assert(br_crc32(0,data,sizeof(data))==meta.crc32);
     tcp_metrics_t m;fixture_t f=fresh();f.blocked=150;f.read_blocked=150;
     assert(run(&f,&m,10000)==RAW_OK);assert(m.waits==300 && m.sent==sizeof(data));
-    unsigned chunks=(sizeof(data)+TCP_FRAME_HEADER+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES;
+    unsigned chunks=expected_chunks(sizeof(data));
     unsigned yield_chunks=(TCP_YIELD_BYTES+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES;
-    unsigned first_yield=(TCP_YIELD_BYTES+TCP_FRAME_HEADER+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES;
+    unsigned first_yield=1U+(TCP_YIELD_BYTES-(TCP_FIRST_WRITE_BYTES-TCP_FRAME_HEADER)+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES;
     unsigned yields=chunks>first_yield?1+(chunks-1-first_yield)/yield_chunks:0;
     assert(f.read==20 && f.written==sizeof(data)+24 && m.chunks==chunks && f.yields==yields);
     assert(f.phases==3 && f.phase==TCP_PHASE_ACK && m.send_waits==150 && m.ack_waits==150);
@@ -107,6 +131,9 @@ int main(void) {
     assert(!memcmp(wire+24,data,sizeof(data)) && !memcmp(wire,"UBST\1\30\0\0",8));
     uint8_t header[24];tcp_frame_header(header,&meta);assert(!memcmp(header,wire,24));
     assert(m.ack_ms==150 && m.error==TCP_ERROR_NONE && f.progress>1);
+    assert(m.staged_bytes==(TCP_DIRECT_PSRAM?TCP_FIRST_WRITE_BYTES-TCP_FRAME_HEADER:sizeof(data)));
+    assert(m.direct_bytes==(TCP_DIRECT_PSRAM?sizeof(data)-m.staged_bytes:0));
+    assert(TCP_DIRECT_PSRAM ? f.direct_calls>0 : f.direct_calls==0);
     /* Repeated genuinely blocking waits already provide CPU fairness. A
      * spurious-ready loop (<1ms per wait) must retain explicit byte yields. */
     f=fresh();f.part=TCP_STAGE_BYTES;f.block_every=4;
@@ -124,6 +151,13 @@ int main(void) {
         assert(!memcmp(wire+24,data,meta.frame_bytes));
     }
     meta.frame_bytes=sizeof(data);
+    for(unsigned reason=RAW_CANCELLED;reason<=RAW_LINK_DOWN;reason++) {
+        f=fresh();f.part=113;f.abort_at=TCP_FIRST_WRITE_BYTES+100;
+        f.abort_later=(raw_result_t)reason;
+        assert(run(&f,&m,10000)==(raw_result_t)reason && m.sent<sizeof(data));
+        assert(!memcmp(wire+TCP_FRAME_HEADER,data,m.sent));
+        if(TCP_DIRECT_PSRAM)assert(m.direct_bytes==m.sent-m.staged_bytes);
+    }
     /* Full stages cannot fit the old gate; bounded MSS writes still progress.
      * Production exact() must retain prefix/tail accounting and one final ACK. */
     f=fresh();f.part=TCP_STAGE_BYTES;f.heap_available=16384+2*1440;
@@ -133,9 +167,11 @@ int main(void) {
     assert(run(&f,&m,30)==RAW_TIMEOUT && !m.sent && !f.written && m.resource_waits);
     for(unsigned n=1;n<=TCP_STAGE_BYTES*2+1;n++) {
         if(n>4 && n!=TCP_STAGE_BYTES-TCP_FRAME_HEADER && n!=TCP_STAGE_BYTES-TCP_FRAME_HEADER+1 &&
+           n!=TCP_FIRST_WRITE_BYTES-TCP_FRAME_HEADER-1 && n!=TCP_FIRST_WRITE_BYTES-TCP_FRAME_HEADER &&
+           n!=TCP_FIRST_WRITE_BYTES-TCP_FRAME_HEADER+1 &&
            n!=TCP_STAGE_BYTES-1 && n!=TCP_STAGE_BYTES && n!=TCP_STAGE_BYTES+1 && n!=TCP_STAGE_BYTES*2+1)continue;
         meta.frame_bytes=n;f=fresh();f.part=TCP_STAGE_BYTES;
-        assert(run(&f,&m,10000)==RAW_OK && m.sent==n && m.chunks==(n+TCP_FRAME_HEADER+TCP_STAGE_BYTES-1)/TCP_STAGE_BYTES);
+        assert(run(&f,&m,10000)==RAW_OK && m.sent==n && m.chunks==expected_chunks(n));
         assert(!memcmp(wire+24,data,n));
     }
     meta.frame_bytes=sizeof(data);

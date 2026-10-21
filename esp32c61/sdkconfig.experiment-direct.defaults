@@ -1,0 +1,5 @@
+# Application copy removal only; keep the existing network task model.
+# CONFIG_LWIP_TCPIP_CORE_LOCKING is not set
+# CONFIG_LWIP_CHECK_THREAD_SAFETY is not set
+CONFIG_PSRAM_TCP_DIRECT=y
+CONFIG_SPIRAM_SPEED_40M=y

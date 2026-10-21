@@ -92,6 +92,11 @@ foreach ($suite in @('framed','tcp_transfer','sdio_bridge','bridge_crc')) {
             throw 'Invalid transport failed for unexpected reason'
         }
         Write-Host 'PASS: invalid Wi-Fi transport macro rejected'
+        & $Compiler -std=c11 -DTCP_DIRECT_PSRAM=99 '-I' (Join-Path $projectRoot 'main') `
+            -c (Join-Path $PSScriptRoot 'test_tcp_transfer.c') -o invalid_direct.o 2> invalid_direct.log
+        if ($LASTEXITCODE -eq 0 -or -not (Select-String -LiteralPath invalid_direct.log -SimpleMatch 'TCP_DIRECT_PSRAM must be' -Quiet)) {
+            throw 'Invalid direct TCP selector not rejected correctly'
+        }
         foreach ($tcpStage in @(4096,11520)) {
             & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic "-DTCP_STAGE_BYTES=$tcpStage" `
                 '-I' (Join-Path $projectRoot 'main') (Join-Path $PSScriptRoot 'test_tcp_transfer.c') `
@@ -100,6 +105,16 @@ foreach ($suite in @('framed','tcp_transfer','sdio_bridge','bridge_crc')) {
             if ($LASTEXITCODE -ne 0) { throw 'TCP stage variation compile failed' }
             & "./test_stage_$tcpStage.exe"
             if ($LASTEXITCODE -ne 0) { throw 'TCP stage variation test failed' }
+        }
+        foreach ($tcpStage in @(1472,4096,5760,11520)) {
+            & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic -O2 -fstrict-aliasing `
+                -DTCP_DIRECT_PSRAM=1 "-DTCP_STAGE_BYTES=$tcpStage" `
+                '-I' (Join-Path $projectRoot 'main') (Join-Path $PSScriptRoot 'test_tcp_transfer.c') `
+                (Join-Path $projectRoot 'main/tcp_transfer.c') (Join-Path $projectRoot 'main/raw_transfer.c') `
+                -o "test_direct_$tcpStage.exe"
+            if ($LASTEXITCODE -ne 0) { throw 'TCP direct body compilation failed' }
+            & "./test_direct_$tcpStage.exe"
+            if ($LASTEXITCODE -ne 0) { throw 'TCP direct body regression failed' }
         }
     }
     if ($suite -eq 'bridge_crc') {
