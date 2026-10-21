@@ -70,4 +70,17 @@ class FrameRateContract(unittest.TestCase):
             self.assertIn('CONFIG_SPIRAM_SPEED_80M=y' if name=='psram80' else 'CONFIG_SPIRAM_SPEED_40M=y',text)
         self.assertIn('CONFIG_SPIRAM_SPEED_40M=y',(base/'sdkconfig.defaults').read_text())
 
+    def test_project_defaults_match_tested_combined_fast_mode(self):
+        base=ROOT/'esp32c61'
+        text=(base/'sdkconfig.defaults').read_text()
+        for key in ('PSRAM_TCP_DIRECT','LWIP_TCPIP_CORE_LOCKING',
+                    'LWIP_TCPIP_CORE_LOCKING_INPUT','LWIP_CHECK_THREAD_SAFETY',
+                    'LWIP_IRAM_OPTIMIZATION'):
+            self.assertIn(f'CONFIG_{key}=y',text)
+        self.assertIn('CONFIG_PSRAM_TCP_SEND_BYTES=23040',text)
+        self.assertIn('CONFIG_LWIP_TCP_SND_BUF_DEFAULT=5760',text)
+        script=(base/'build.ps1').read_text()
+        self.assertIn("[string]$Profile = 'throughput'",script)
+        self.assertIn("[string]$Experiment = 'combined'",script)
+
 if __name__=='__main__':unittest.main()

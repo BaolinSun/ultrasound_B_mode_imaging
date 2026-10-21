@@ -3,13 +3,13 @@ param(
     [string]$Action = 'build',
     [string]$Port = '',
     [ValidateSet('default', 'throughput')]
-    [string]$Profile = 'default',
+    [string]$Profile = 'throughput',
     [ValidateSet('auto', 'tcp', 'udp')]
     [string]$Transport = 'auto',
     [ValidateSet('auto', 'baseline', 'mid', 'fast', 'faster', 'large', 'xlarge')]
     [string]$TcpTuning = 'auto',
     [ValidateSet('none', 'core', 'direct', 'combined', 'psram80')]
-    [string]$Experiment = 'none',
+    [string]$Experiment = 'combined',
     [string]$IdfPath = 'D:\Program Files\esp\v6.1\esp-idf',
     [string]$ActivationScript = 'C:\Espressif\tools\Microsoft.v6.1.PowerShell_profile.ps1'
 )

@@ -1,5 +1,9 @@
 # TCP 数据路径分项优化与回退（2026-10-21）
 
+默认选择更新：四档测试后，用户指定combined作为工程默认。当前脚本默认`throughput + fast + combined`，
+新建sdkconfig及本机根sdkconfig也采用combined 40 MHz/23040 B上传发送缓冲。
+下文“none为默认/不烧录”是最初独立实验阶段的记录，不代表当前默认选择；日常命令见[构建说明](BUILD_COMMANDS.md)。
+
 后续经用户另行授权完成的四档实际板测、异常轮和最终回退状态见
 [2026-10-21 板测报告](TCP_DATA_PATH_BOARD_TEST_20261021.md)。下面“不烧录”描述的是最初离线实现阶段的边界。
 

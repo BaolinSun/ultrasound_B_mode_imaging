@@ -18,7 +18,7 @@ def ps_quote(value):
                      (IDF_ENV / "Scripts/python.exe").exists(),
                      "Requires Windows PowerShell and installed IDF Python")
 class BuildActionsTests(unittest.TestCase):
-    def run_action(self, action, tail="", version="ESP-IDF v6.1", experiment="none", tamper=False):
+    def run_action(self, action, tail="", version="ESP-IDF v6.1", experiment=None, tamper=False):
         with tempfile.TemporaryDirectory(prefix="ubmi-build-actions-") as folder:
             base = Path(folder)
             project = base / "project with spaces"
@@ -31,8 +31,9 @@ class BuildActionsTests(unittest.TestCase):
             (project / "build/config/sdkconfig.h").write_text("// fixture\n")
             for path in ROOT.glob('sdkconfig.experiment-*.defaults'):
                 shutil.copyfile(path,project/path.name)
-            direct=experiment in ('direct','combined','psram80')
-            core=experiment in ('core','combined','psram80')
+            selected=experiment or 'combined'
+            direct=selected in ('direct','combined','psram80')
+            core=selected in ('core','combined','psram80')
             config='CONFIG_IDF_TARGET="esp32c61"\n'+f'CONFIG_SPIRAM_SPEED={80 if experiment=="psram80" else 40}\n'
             for key,on in (('PSRAM_TCP_DIRECT',direct),('LWIP_TCPIP_CORE_LOCKING',core),
                            ('LWIP_TCPIP_CORE_LOCKING_INPUT',core),('LWIP_CHECK_THREAD_SAFETY',core)):
@@ -64,8 +65,8 @@ class BuildActionsTests(unittest.TestCase):
             command = (
                 "$ErrorActionPreference='Stop'; "
                 f"Set-Location {ps_quote(base)}; $before=(Get-Location).Path; "
-                f"& {ps_quote(project / 'build.ps1')} -Action {action} "
-                f"-Experiment {experiment} "
+                f"& {ps_quote(project / 'build.ps1')} -Action {action} " +
+                (f"-Experiment {experiment} " if experiment is not None else "") +
                 f"-ActivationScript {ps_quote(activation)} -IdfPath {ps_quote(tool.parent)}; "
                 "if ((Get-Location).Path -ne $before) { throw 'Location changed' }; "
                 + tail)
@@ -89,8 +90,22 @@ class BuildActionsTests(unittest.TestCase):
         result, calls, _ = self.run_action("monitor -Port COM_TEST")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(calls[0], ["--version"])
-        self.assertEqual(calls[-1], ["-DWIFI_FRAME_TRANSPORT_OVERRIDE=", "-p", "COM_TEST", "monitor"])
-        self.assertEqual(len(calls), 2)
+        self.assertIn('build-throughput-fast-socket-exp-combined',calls[-1][1])
+        self.assertEqual(calls[-1][-4:], ["-DWIFI_FRAME_TRANSPORT_OVERRIDE=", "-p", "COM_TEST", "monitor"])
+        self.assertFalse(any('flash' in call for call in calls))
+
+    def test_no_arguments_choose_combined_fast_40_profile(self):
+        result,calls,builds=self.run_action('build')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('build-throughput-fast-socket-exp-combined',builds)
+        self.assertTrue(any('sdkconfig.tcp-fast.defaults' in x and
+                            'sdkconfig.experiment-combined.defaults' in x for x in calls[-1]))
+        self.assertFalse(any('flash' in call for call in calls))
+
+    def test_explicit_legacy_root_directory_remains_selectable(self):
+        result,calls,_=self.run_action('monitor -Profile default -Port COM_TEST',experiment='none')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(calls[-1],['-DWIFI_FRAME_TRANSPORT_OVERRIDE=','-p','COM_TEST','monitor'])
 
     def test_monitor_requires_port_before_project_configuration(self):
         result, calls, _ = self.run_action("monitor")

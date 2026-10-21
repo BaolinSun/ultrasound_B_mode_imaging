@@ -1,5 +1,12 @@
 # ESP32-C61 PSRAM UDP 自测与 SDIO TCP/UDP 帧上传
 
+当前默认构建为 **combined 40 MHz**：核心锁＋TCP PSRAM直接提交，上传TCP发送缓冲23040 B。
+日常直接使用`.\build.ps1`、`.\build.ps1 -Action flash -Port COM3`、`.\build.ps1 -Action monitor -Port COM3`，
+无需再写`-Profile throughput -Experiment combined`。本机裸`idf.py build`的配置也已同步；目录区别及旧配置说明见[构建说明](BUILD_COMMANDS.md)。
+这一默认修改本身不代表已烧录板卡。
+
+临时实验构建、测试输出及重复控制台日志已集中清理；正式测速JSON/JSONL和采集数据保留，历史构建配置/镜像的备份位置见[清理记录](LOGS.md#2026-10-21-临时生成物清理)。
+
 ## 文档位置与索引
 
 工程说明统一放在 `esp32c61/docs/`。除非另有说明，本文及同目录文档中的 PC 接收、ESP32 构建命令仍在 `esp32c61` 目录执行，不是在 `docs` 目录执行；明确要求在成像工程根目录执行的命令保持原要求。代码、脚本、固件和图像文件均未移动。
