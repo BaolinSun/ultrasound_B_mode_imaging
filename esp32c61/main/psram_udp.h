@@ -20,6 +20,8 @@ typedef struct {
     unsigned tcp_chunks, tcp_waits;
     unsigned tcp_send_buffer_actual; /* Last successfully tuned socket, 0 before first connect. */
     unsigned tcp_heap_guard_waits;
+    unsigned tcp_adaptive_writes;
+    uint64_t tcp_queue_us,tcp_idle_us; /* Last frame: submit->worker; previous ACK completion->worker. */
     int tcp_error;
     int tcp_phase;
     uint32_t tcp_metric_session,tcp_metric_frame;

@@ -133,6 +133,15 @@ class RendererTests(unittest.TestCase):
 
 
 class WorkerTests(unittest.TestCase):
+    def test_display_limit_allows_more_than_ten_but_never_repeats_a_frame(self):
+        self.assertEqual(b.MAX_FPS,20)
+        worker=self.make_worker()
+        worker.submit(3,7,payload())
+        wait_for(lambda: worker.snapshot()['image_available'])
+        sequence=worker.snapshot()['image_sequence']
+        time.sleep(.16)
+        self.assertEqual(worker.snapshot()['image_sequence'],sequence)
+
     def make_worker(self, renderer=None):
         worker = b.ImagingWorker(renderer)
         self.addCleanup(worker.close)

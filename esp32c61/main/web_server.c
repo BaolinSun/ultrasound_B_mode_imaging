@@ -178,6 +178,9 @@ static esp_err_t get_status(httpd_req_t *req)
         cJSON_AddNumberToObject(json,"tcp_send_buffer_actual",udp.tcp_send_buffer_actual);
         cJSON_AddNumberToObject(json,"tcp_default_send_buffer",CONFIG_LWIP_TCP_SND_BUF_DEFAULT);
         cJSON_AddNumberToObject(json,"tcp_heap_guard_waits",udp.tcp_heap_guard_waits);
+        cJSON_AddNumberToObject(json,"tcp_adaptive_writes",udp.tcp_adaptive_writes);
+        cJSON_AddNumberToObject(json,"tcp_queue_us",udp.tcp_queue_us);
+        cJSON_AddNumberToObject(json,"tcp_idle_us",udp.tcp_idle_us);
         cJSON_AddNumberToObject(json,"tcp_heap_headroom",CONFIG_PSRAM_TCP_HEAP_HEADROOM);
         cJSON_AddNumberToObject(json,"tcp_receive_window",CONFIG_LWIP_TCP_WND_DEFAULT);
         cJSON_AddNumberToObject(json,"tcp_stage_bytes",TCP_STAGE_BYTES);

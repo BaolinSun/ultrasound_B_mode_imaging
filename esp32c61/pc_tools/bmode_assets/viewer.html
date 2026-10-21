@@ -26,5 +26,5 @@ button.secondary{color:#263e56;background:#e4eaf1}button:disabled{opacity:.45;cu
 <section class="card"><h2>接收与显示状态</h2><div class="stats">
 <div><span class="muted">接收帧率</span><div id="receive-fps" class="value">0.00 FPS</div></div><div><span class="muted">图像发布帧率</span><div id="display-fps" class="value">0.00 FPS</div></div>
 <div><span class="muted">有效吞吐</span><div id="throughput" class="value">0.00 Mbit/s</div></div><div><span class="muted">有效行覆盖</span><div id="coverage" class="value">0 / 64</div></div>
-</div><p id="pipeline" class="muted">等待链路统计</p><p id="counters" class="muted">尚未接收</p><p class="muted">图像最多发布 10 FPS；冻结只影响本页面。显示落后时丢弃旧待处理载荷，不阻塞 TCP 回执。默认不保存原始数据或图片。</p></section>
+</div><p id="pipeline" class="muted">等待链路统计</p><p id="counters" class="muted">尚未接收</p><p class="muted">图像最多发布 20 FPS，仅发布新完整帧；冻结只影响本页面。显示落后时丢弃旧待处理载荷，不阻塞 TCP 回执。默认不保存原始数据或图片。</p></section>
 </main></body></html>

@@ -35,6 +35,19 @@ class ReceiverTests(unittest.TestCase):
         self.assertIsNone(summary['valid_fps'])
         self.assertIsNone(summary['payload_mbit_s'])
         self.assertIsNone(summary['data_payload_mbit_s'])
+        self.assertIsNone(summary['payload_read_mbit_s'])
+        self.assertEqual(summary['outside_valid_payload_s'],0)
+
+    def test_payload_read_accounting_keeps_overall_rate_authoritative(self):
+        args=types.SimpleNamespace(length=None,test_pattern=False,seconds=0,frames=0)
+        with patch.object(t.time,'monotonic',return_value=100.):
+            rx=t.TCPReceiver(args,Writer())
+        rx.valid_frames=2;rx.valid_bytes=200000;rx.valid_payload_read_s=.1
+        with patch.object(t.time,'monotonic',return_value=100.4):
+            s=rx.summary()
+        self.assertAlmostEqual(s['payload_mbit_s'],4.0)
+        self.assertAlmostEqual(s['payload_read_mbit_s'],16.0)
+        self.assertAlmostEqual(s['outside_valid_payload_s'],.3)
 
     def make_server(self,**overrides):
         args=types.SimpleNamespace(length=8193,test_pattern=True,source_ip='127.0.0.1',
@@ -76,6 +89,7 @@ class ReceiverTests(unittest.TestCase):
         thread.join(2)
         self.assertFalse(thread.is_alive())
         self.assertEqual(rx.valid_frames,5)
+        self.assertGreaterEqual(rx.valid_payload_read_s,0)
         self.assertEqual(rx.connections,1)
         self.assertEqual([len(data) for _,data in w.outputs],[787456,394240,197632,99328,50176])
 

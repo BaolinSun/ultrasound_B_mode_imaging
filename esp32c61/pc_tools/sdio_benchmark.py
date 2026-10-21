@@ -35,7 +35,8 @@ def tcp_phase_summary(samples):
         frames[(session,frame)]=s
     fields=('tcp_header_us','tcp_payload_us','tcp_ack_us','tcp_write_wait_us',
             'tcp_read_wait_us','tcp_yield_us','tcp_copy_us','tcp_write_calls',
-            'tcp_partial_writes','tcp_send_waits','tcp_ack_waits','tcp_resource_waits','tcp_heap_guard_waits')
+            'tcp_partial_writes','tcp_send_waits','tcp_ack_waits','tcp_resource_waits','tcp_heap_guard_waits',
+            'tcp_adaptive_writes','tcp_queue_us','tcp_idle_us')
     return {'sampled_complete_frames':len(frames),
             'mean':{f:sum(s.get(f,0) for s in frames.values())/len(frames) for f in fields} if frames else {},
             'note':'Unique completed frames observed by status polling, not every frame. Wait/yield/copy are overlapping subsets of stage durations.'}

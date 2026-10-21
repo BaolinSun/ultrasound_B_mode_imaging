@@ -56,5 +56,6 @@ async function action(name){
 el('start').addEventListener('click',()=>action('start'));
 el('stop').addEventListener('click',()=>action('stop'));
 el('freeze').addEventListener('click',()=>{frozen=!frozen;revision++;el('freeze').textContent=frozen?'继续显示':'冻结画面';if(!frozen)pollImage();pollStatus()});
-async function imageLoop(){try{await pollImage()}finally{setTimeout(imageLoop,100)}}
+// Target a 50 ms period including fetch time; never overlap image requests.
+async function imageLoop(){const started=performance.now();try{await pollImage()}finally{setTimeout(imageLoop,Math.max(0,50-(performance.now()-started)))}}
 pollStatus();setInterval(pollStatus,1000);imageLoop();

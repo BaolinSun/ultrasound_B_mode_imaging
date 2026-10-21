@@ -28,6 +28,7 @@ static psram_udp_status_t status;
 static bool cancel_requested;
 static uint32_t link_generation, accepted_generation;
 static uint64_t accepted_deadline;
+static uint64_t accepted_at_us;
 static struct sockaddr_in accepted_dest;
 static bool accepted_framed;
 static bridge_frame_t accepted_frame;
@@ -36,10 +37,12 @@ static bool accepted_tcp, close_requested, tcp_continuous;
 static int tcp_socket=-1;
 static struct sockaddr_in tcp_dest;
 static uint32_t tcp_generation;
+static uint64_t last_tcp_finished_us;
+static uint32_t last_tcp_session;
 
 typedef struct {
     int socket; uint32_t generation; struct sockaddr_in dest;
-    unsigned fast_ready_count,heap_waits; uint64_t extra_yield_us;
+    unsigned fast_ready_count,heap_waits,adaptive_writes; uint64_t extra_yield_us;
 } send_ctx_t;
 static uint64_t now_ms(void *ctx) { (void)ctx; return esp_timer_get_time() / 1000ULL; }
 static uint64_t now_us(void *ctx) { (void)ctx; return (uint64_t)esp_timer_get_time(); }
@@ -87,6 +90,7 @@ static void progress(void *ctx, size_t sent, unsigned packets, unsigned retries)
 static void drop_tcp(void)
 {
     if(tcp_socket>=0) { shutdown(tcp_socket,SHUT_RDWR); close(tcp_socket); tcp_socket=-1; }
+    last_tcp_finished_us=0;last_tcp_session=0;
     xSemaphoreTake(lock,portMAX_DELAY);status.tcp_connected=false;xSemaphoreGive(lock);
 }
 static void tcp_progress(void *ctx,size_t sent,unsigned chunks,unsigned waits)
@@ -108,11 +112,13 @@ static int tcp_io_result(send_ctx_t *ctx,int n)
 }
 static int tcp_socket_write(void *p,const uint8_t *data,size_t n) {
     send_ctx_t *ctx=p;
-    if(!tcp_memory_headroom(heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
-                            n,CONFIG_PSRAM_TCP_HEAP_HEADROOM)) {
+    size_t allowed=tcp_memory_write_limit(heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT),
+                                          n,CONFIG_PSRAM_TCP_HEAP_HEADROOM,TCP_MSS);
+    if(!allowed) {
         ctx->heap_waits++;return -3;
     }
-    return tcp_io_result(ctx,send(ctx->socket,data,n,0));
+    if(allowed<n)ctx->adaptive_writes++;
+    return tcp_io_result(ctx,send(ctx->socket,data,allowed,0));
 }
 static int tcp_read(void *p,uint8_t *data,size_t n) { return tcp_io_result(p,recv(((send_ctx_t*)p)->socket,data,n,0)); }
 static void tcp_phase(void *ctx,tcp_phase_t phase)
@@ -190,6 +196,7 @@ static void upload_worker(void *arg)
         bool have_job=session.busy;
         raw_session_t job = session;
         uint64_t deadline = accepted_deadline;
+        uint64_t submitted_at = accepted_at_us;
         bool framed = accepted_framed;
         bool tcp=accepted_tcp;
         bridge_frame_t frame = accepted_frame;
@@ -216,6 +223,8 @@ static void upload_worker(void *arg)
         }
         raw_result_t result = abort_reason(&ctx);
         int64_t started=esp_timer_get_time();
+        uint64_t idle_us=tcp && last_tcp_finished_us && last_tcp_session==frame.session_id ?
+                         (uint64_t)started-last_tcp_finished_us:0;
         size_t sent = 0;
         tcp_metrics_t metrics={0};
         if(result==RAW_OK && tcp) {
@@ -276,9 +285,15 @@ static void upload_worker(void *arg)
             status.tcp_send_waits=metrics.send_waits;status.tcp_ack_waits=metrics.ack_waits;
             status.tcp_resource_waits=metrics.resource_waits;
             status.tcp_heap_guard_waits=ctx.heap_waits;
+            status.tcp_adaptive_writes=ctx.adaptive_writes;
+            status.tcp_queue_us=(uint64_t)started-submitted_at;
+            status.tcp_idle_us=idle_us;
             status.tcp_metric_session=frame.session_id;status.tcp_metric_frame=frame.frame_id;
             status.tcp_metric_result=result;status.tcp_metric_bytes=sent;
-            if(result==RAW_OK)status.tcp_confirmed_frames++;
+            if(result==RAW_OK) {
+                status.tcp_confirmed_frames++;
+                last_tcp_finished_us=now_us(NULL);last_tcp_session=frame.session_id;
+            }
             else if(result!=RAW_CANCELLED && result!=RAW_LINK_DOWN)status.tcp_failed=true;
         }
         status.sent_bytes = sent;
@@ -386,6 +401,7 @@ static esp_err_t submit(const void *data, size_t length, const bridge_frame_t *f
         inet_pton(AF_INET, config.target_ip, &accepted_dest.sin_addr);
         accepted_generation = link_generation;
         accepted_deadline = now_ms(NULL) + CONFIG_PSRAM_UDP_TIMEOUT_MS;
+        accepted_at_us = now_us(NULL);
         cancel_requested = false;
         status.busy=true;status.total_bytes=length;status.sent_bytes=0;status.result=RAW_BUSY;
         status.active_port=config.target_port;status.active_tcp=tcp;status.packets=0;status.retries=0;

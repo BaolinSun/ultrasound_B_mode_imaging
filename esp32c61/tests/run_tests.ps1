@@ -115,6 +115,13 @@ foreach ($suite in @('framed','tcp_transfer','sdio_bridge','bridge_crc')) {
 }
 Write-Host "C test output and coverage: $testOutput"
 $cmdOutput=Join-Path $testOutput 'sdio-command'
+$frameCrcSources=Join-Path (Split-Path $projectRoot -Parent) 'build/src/ps/data_transfer'
+& $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic -O0 '-I' $frameCrcSources `
+    (Join-Path $PSScriptRoot 'test_frame_crc.c') (Join-Path $frameCrcSources 'frame_crc.c') `
+    -o (Join-Path $testOutput 'frame_crc.exe')
+if($LASTEXITCODE) { throw 'PS optimized CRC compilation failed' }
+& (Join-Path $testOutput 'frame_crc.exe')
+if($LASTEXITCODE) { throw 'PS optimized CRC self-check failed' }
 New-Item -ItemType Directory -Force -Path $cmdOutput | Out-Null
 Push-Location $cmdOutput
 try {
@@ -136,6 +143,7 @@ try {
     & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g "-DDATA_OUTPUT_MODE=DATA_OUTPUT_$outputMode" `
         '-I' $hostSources '-I' (Join-Path $PSScriptRoot 'stubs/host') `
         (Join-Path $PSScriptRoot 'test_sdio_host_bridge.c') (Join-Path $hostSources 'sdio_bridge.c') `
+        (Join-Path $hostSources 'frame_crc.c') `
         -o test_host.exe
     if ($LASTEXITCODE -ne 0) { throw 'Zynq host bridge compilation failed' }
     & ./test_host.exe

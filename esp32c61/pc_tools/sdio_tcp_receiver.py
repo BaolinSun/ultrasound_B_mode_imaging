@@ -60,6 +60,7 @@ class TCPReceiver:
         self.quiescing = threading.Event()  # Expect device cancellation; keep socket open until STOP.
         self.expected = test_pattern(args.length) if args.test_pattern and args.length else None
         self.valid_frames = self.valid_bytes = self.dropped_frames = self.received_bytes = 0
+        self.valid_payload_read_s = 0.0
         self.connections = self.ignored_connections = self.invalid_headers = self.ack_errors = 0
         self.integrity_errors = 0
         self.incomplete_errors = 0
@@ -139,6 +140,7 @@ class TCPReceiver:
                         else:
                             self.valid_frames += 1; self.valid_bytes += length
                             elapsed = last_activity-frame_start
+                            self.valid_payload_read_s += max(0.0, elapsed)
                             self.emit({'event': 'frame', 'session': session, 'frame': frame, 'bytes': length,
                                        'crc32': f'{crc:08x}', 'passed': True, 'elapsed_s': elapsed,
                                        'validation_elapsed_s': validation_elapsed,
@@ -179,6 +181,11 @@ class TCPReceiver:
                 # loopback transfer. Unknown rate is not a fabricated infinity.
                 'valid_fps': self.valid_frames/elapsed if elapsed > 0 else None,
                 'payload_mbit_s': self.valid_bytes*8/elapsed/1e6 if elapsed > 0 else None,
+                # Diagnostic read-call intervals, NOT physical Wi-Fi capacity.
+                # The remainder includes header waits, validation, ACK, setup/stop.
+                'valid_payload_read_s': self.valid_payload_read_s,
+                'outside_valid_payload_s': max(0.0,elapsed-self.valid_payload_read_s),
+                'payload_read_mbit_s': self.valid_bytes*8/self.valid_payload_read_s/1e6 if self.valid_payload_read_s > 0 else None,
                 'data_elapsed_s': data_elapsed,
                 'data_payload_mbit_s': self.valid_bytes*8/data_elapsed/1e6 if data_elapsed else None,
                 'pattern_checked': self.args.test_pattern, 'error': self.error}

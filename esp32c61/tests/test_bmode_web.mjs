@@ -15,7 +15,7 @@ function setup(){
  const backend={calls:[],revoked:[],seq:1,imageCalls:0,pending:null,offline:false,state:{state:'idle',device_ip:'192.168.3.27',port:50001,
   transport:null,image_available:false,image_age_s:null,lines:0}};
  const context=vm.createContext({document:{getElementById(id){assert.ok(elements[id],id);return elements[id]}},
-  setTimeout(){},setInterval(){},URL:{createObjectURL(){return 'blob:test'},revokeObjectURL(url){backend.revoked.push(url)}},
+  performance:{now:()=>0},setTimeout(){},setInterval(){},URL:{createObjectURL(){return 'blob:test'},revokeObjectURL(url){backend.revoked.push(url)}},
   async fetch(path,options){
    backend.calls.push({path,options});if(backend.offline)throw Error('offline');
    if(path==='/api/status')return {ok:true,json:async()=>({...backend.state})};

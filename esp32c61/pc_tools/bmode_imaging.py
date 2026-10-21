@@ -17,7 +17,7 @@ LINE_WORDS = SAMPLES + HEADER_WORDS
 FRAME_BYTES = LINES * LINE_WORDS * 2
 LINE_TTL = 5.0
 DISPLAY_DEPTH_MM = 120.0
-MAX_FPS = 10
+MAX_FPS = 20
 LUT_PATH = Path(__file__).with_name('bmode_assets') / 'graymap_lut.txt'
 
 
@@ -247,7 +247,9 @@ class ImagingWorker:
                         self.image_frame = last_valid_frame
                         self.sequence += 1
                         self.images += 1
-                dirty, rendered = False, time.monotonic()
+                # Limit start-to-start: PNG/render time is part of the budget,
+                # not an extra 50 ms sleep after every completed picture.
+                dirty, rendered = False, now
         except Exception as exc:
             with self.cv:
                 self.error = '图像处理失败: '+str(exc)

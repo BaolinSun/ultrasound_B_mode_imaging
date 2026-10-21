@@ -8,6 +8,8 @@ static uint8_t data[787456],wire[787456+24],stage[TCP_STAGE_BYTES];
 typedef struct {
     uint64_t clock,final_clock; size_t written,read; uint8_t ack[20];
     unsigned part,blocked,read_blocked,resource_blocked,yields,progress,phases;
+    size_t heap_available;
+    unsigned adaptive;
     tcp_phase_t phase;
     size_t fail_at; int failure; raw_result_t abort;
 } fixture_t;
@@ -21,6 +23,13 @@ static int write_bytes(void*p,const uint8_t*b,size_t n) {
     if(f->resource_blocked) { f->resource_blocked--;return -3; }
     if(f->written>=f->fail_at)return f->failure;
     if(n>f->part)n=f->part;
+    if(f->heap_available) {
+        size_t limited=tcp_memory_write_limit(f->heap_available,n,16384,1440);
+        if(!limited)return -3;
+        assert(tcp_memory_headroom(f->heap_available,limited,16384));
+        if(limited<n)f->adaptive++;
+        n=limited;
+    }
     assert(f->written+n<=sizeof(wire));memcpy(wire+f->written,b,n);f->written+=n;
     return (int)n;
 }
@@ -62,6 +71,25 @@ int main(void) {
     assert(tcp_memory_headroom(SIZE_MAX,1,16384));
     assert(!tcp_memory_headroom(SIZE_MAX,SIZE_MAX,0));
     assert(tcp_memory_headroom(0,0,0));
+    assert(!tcp_memory_write_limit(16384,5760,16384,1440));
+    assert(!tcp_memory_write_limit(16384+2879,5760,16384,1440));
+    assert(tcp_memory_write_limit(16384+2880,5760,16384,1440)==1440);
+    assert(tcp_memory_write_limit(16384+6000,5760,16384,1440)==2880);
+    assert(tcp_memory_write_limit(16384+11520,5760,16384,1440)==5760);
+    assert(tcp_memory_write_limit(16384+200,100,16384,1440)==100);
+    assert(!tcp_memory_write_limit(16384+198,100,16384,1440));
+    assert(!tcp_memory_write_limit(SIZE_MAX,5760,0,0));
+    assert(!tcp_memory_write_limit(SIZE_MAX,0,0,1440));
+    for(size_t available=0;available<40000;available+=71) {
+        for(size_t requested=1;requested<=16384;requested+=137) {
+            size_t limited=tcp_memory_write_limit(available,requested,16384,1440);
+            assert(limited<=requested);
+            if(limited) {
+                assert(tcp_memory_headroom(available,limited,16384));
+                assert(limited==requested || (limited>=1440 && limited%1440==0));
+            }
+        }
+    }
     raw_pattern_fill(data,sizeof(data));assert(br_crc32(0,data,sizeof(data))==meta.crc32);
     tcp_metrics_t m;fixture_t f=fresh();f.blocked=150;f.read_blocked=150;
     assert(run(&f,&m,10000)==RAW_OK);assert(m.waits==300 && m.sent==sizeof(data));
@@ -76,6 +104,13 @@ int main(void) {
     assert(!memcmp(wire+24,data,sizeof(data)) && !memcmp(wire,"UBST\1\30\0\0",8));
     uint8_t header[24];tcp_frame_header(header,&meta);assert(!memcmp(header,wire,24));
     assert(m.ack_ms==150 && m.error==TCP_ERROR_NONE && f.progress>1);
+    /* Full stages cannot fit the old gate; bounded MSS writes still progress.
+     * Production exact() must retain prefix/tail accounting and one final ACK. */
+    f=fresh();f.part=TCP_STAGE_BYTES;f.heap_available=16384+2*1440;
+    assert(run(&f,&m,10000)==RAW_OK && f.adaptive && m.partial_writes);
+    assert(!memcmp(wire+24,data,sizeof(data)) && f.read==20 && m.sent==sizeof(data));
+    f=fresh();f.part=TCP_STAGE_BYTES;f.heap_available=16384+2*1440-1;
+    assert(run(&f,&m,30)==RAW_TIMEOUT && !m.sent && !f.written && m.resource_waits);
     for(unsigned n=1;n<=TCP_STAGE_BYTES*2+1;n++) {
         if(n>4 && n!=TCP_STAGE_BYTES-TCP_FRAME_HEADER && n!=TCP_STAGE_BYTES-TCP_FRAME_HEADER+1 &&
            n!=TCP_STAGE_BYTES-1 && n!=TCP_STAGE_BYTES && n!=TCP_STAGE_BYTES+1 && n!=TCP_STAGE_BYTES*2+1)continue;

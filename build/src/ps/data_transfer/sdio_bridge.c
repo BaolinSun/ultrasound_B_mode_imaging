@@ -8,6 +8,7 @@ int sdio_bridge_output_is_sdio(void) { return DATA_OUTPUT_MODE == DATA_OUTPUT_SD
 #include "../imaging_config.h"
 #include "xil_cache.h"
 #include "frame_store.h"
+#include "frame_crc.h"
 #include "xil_io.h"
 #include "xiltimer.h"
 
@@ -24,6 +25,8 @@ static u32 session_id, frame_id, frame_crc, offset, failures, frames;
 static u64 deadline, retry_at;
 static u64 last_progress, next_diagnostic, source_report_at;
 static u32 progress_offset, progress_frames;
+static u32 last_crc_us;
+static u64 frame_log_at;
 enum { IDLE, BEGIN_WAIT, WINDOW, DONE_WAIT };
 static u64 milliseconds(void) { XTime n; XTime_GetTime(&n); return (u64)n*1000U/(u64)(COUNTS_PER_SECOND); }
 static int read8(unsigned p,u8 *v) { return sdio_read_reg(&host,p,v); }
@@ -136,7 +139,11 @@ static void poll_once(void) {
         command_seq=br_next_seq(command_seq);
         /* Lease prevents PL overwrites through CRC, DMA and the ESP CRC ACK. */
         Xil_DCacheInvalidateRange((UINTPTR)frame.data,frame.bytes);
-        frame_crc=br_crc32(0,frame.data,frame.bytes);
+        XTime crc_start,crc_end;
+        XTime_GetTime(&crc_start);
+        frame_crc=frame_crc32(0,frame.data,frame.bytes);
+        XTime_GetTime(&crc_end);
+        last_crc_us=(u32)(((u64)(crc_end-crc_start)*1000000U)/(u64)(COUNTS_PER_SECOND));
         if(write32(BR_FRAME_ID,frame_id) || write32(BR_LENGTH,frame.bytes) ||
            write32(BR_CRC,frame_crc) || write32(BR_SESSION_ECHO,session_id) ||
            write8(BR_CMD,BR_BEGIN) || write8(BR_CMD_SEQ,command_seq)) { fail_link(); return; }
@@ -170,8 +177,13 @@ static void poll_once(void) {
             watermark=frame.frame;
             if(release_frame()!=0) { fail_link(); return; }
             frames++; phase=IDLE;
-            xil_printf("@SDIO FRAME id=%u bytes=%u elapsed_ms=%u (ESP receive, not PC ACK)\r\n",
-                (unsigned)frame_id,(unsigned)offset,(unsigned)(now-(deadline-30000)));
+            /* UART is synchronous at 115200. Do not serialize a line per frame. */
+            if(now>=frame_log_at) {
+                frame_log_at=now+1000;
+                xil_printf("@SDIO PERF frames=%u id=%u bytes=%u crc_us=%u source_ms=%u (ESP receive, not PC ACK)\r\n",
+                    (unsigned)frames,(unsigned)frame_id,(unsigned)offset,(unsigned)last_crc_us,
+                    (unsigned)(now-(deadline-30000)));
+            }
         } else if(result==BR_BAD_CRC || result==BR_FAULT) fail_link();
     }
 }

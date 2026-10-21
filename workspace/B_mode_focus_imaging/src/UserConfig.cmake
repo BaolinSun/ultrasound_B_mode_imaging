@@ -46,12 +46,14 @@ set(USER_INCLUDE_DIRECTORIES
 #Example 2: Adding ../../common/helloworld.c will consider the path as relative to this component directory
 #Example 3: Adding ${MY_ENV}/data/helloworld.c are expanded using project-specific environment settings.
 set(USER_COMPILE_SOURCES
+"data_transfer/frame_crc.c"
 "outbyte.c"
 "uart/uart_log.c"
 "data_transfer/sdio_host.c"
 "data_transfer/sdio_cmd_engine.c"
 "data_transfer/sdio_bridge.c"
 "data_transfer/frame_store.c"
+"data_transfer/frame_crc.c"
 "AFE5832/afe5832.c"
 "AFE5832/afe5832_spi.c"
 "GPIO/gpio.c"
