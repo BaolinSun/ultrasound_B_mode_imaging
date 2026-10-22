@@ -32,6 +32,7 @@
 - [Zynq 串口日志与 monitor](ZYNQ_UART_MONITOR.md)
 - [温度采集与显示](TEMPERATURE_MONITOR.md)
 - [USB/SDIO 输出模式验证](OUTPUT_MODE_VERIFICATION.md)
+- [USB 完整帧传输、宏选择及上位机适配](USB_FRAME_TRANSFER.md)
 - [SDIO 验证记录](SDIO_VERIFICATION.md)
 - [SDIO 初始化调试记录](SDIO_INIT_DEBUG_20261012.md)
 - [TCP socket 调优历史](TCP_SOCKET_TUNING.md)
@@ -58,7 +59,7 @@ python .\pc_tools\sdio_tcp_receiver.py --port 50001 --source-ip 192.168.3.27 --f
 
 本目录是独立 ESP-IDF 6.1 工程，读取 ESP32-C61 外部 PSRAM 缓冲区，经 Wi-Fi STA 向上位机发送原始 UDP 数据报。网页完成首次配网、目标 IP/端口在线配置、单次自测上传及停止操作。
 
-保留原始 PSRAM UDP 自测，Zynq DDR → SDIO → PSRAM → Wi-Fi 帧链路支持 C 宏选择 TCP/带头 UDP，默认 TCP。当前 PS 读取真实成像 DDR 固定片段，尚无帧完成/防覆盖保证；未修改成像 RTL。TCP 完成等待 PC 收齐并校验 CRC 后的回执，不证明采集帧一致性，也不保证 TCP 更快。接线见 [SDIO 链路说明](SDIO_BRIDGE.md)，宏与协议见 [TCP/UDP 模式说明](TCP_TRANSPORT.md)，控制成像及配置见 [Wi-Fi 下发命令](WIFI_COMMANDS.md)。三种接收工具不能混用。
+保留原始 PSRAM UDP 自测，Zynq DDR → SDIO → PSRAM → Wi-Fi 帧链路支持 C 宏选择 TCP/带头 UDP，默认 TCP。当前 PS 从 DDR 三缓冲申请受保护的完整帧，按描述符实际长度传输，支持五档抽取；不再读取旧固定片段。TCP 完成等待 PC 收齐并校验 CRC 后的回执，不表示文件已持久化，也不保证 TCP 更快。帧槽位机制见 [DDR 完整帧说明](DDR_FRAME_STORE.md)，接线见 [SDIO 链路说明](SDIO_BRIDGE.md)，宏与协议见 [TCP/UDP 模式说明](TCP_TRANSPORT.md)，控制成像及配置见 [Wi-Fi 下发命令](WIFI_COMMANDS.md)。各接收工具不能混用；USB 仅支持不抽取，见 [USB 完整帧说明](USB_FRAME_TRANSFER.md)。
 
 当前 23040 B TCP 性能档加入 CRC 切片、帧头/首段合并、发送内存背压及两端停帧诊断；120/180 秒板测有效吞吐约 11.1..11.4 Mbit/s，未证明显著提速或停帧已根治。benchmark 默认在 armed 且两槽位空闲/发送空闲持续 5 秒时判失败，不再把该停帧当正常完成。最新测试、固件和 BOOT 输入见 [TCP 数据路径优化](TCP_PIPELINE_OPTIMIZATION.md)。
 

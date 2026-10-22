@@ -10,6 +10,7 @@
 #include "../bram/bram.h"
 #include "../HV/hv.h"
 #include "../data_transfer/frame_store.h"
+#include "../usb/usb_transport.h"
 #include "uart_log.h"
 #include "xiltimer.h"
 #include "../../../../common/wifi_control_protocol.h"
@@ -47,6 +48,7 @@ static u64 command_ms(void) { XTime t; XTime_GetTime(&t); return (u64)t/(COUNTS_
 static int owns_cfg(void) { return cfg_owner==command_source && (cfg_owner!=SOURCE_WIFI || cfg_session==wifi_session); }
 static void wifi_abort(void) {
     hv_disable(); Beamform_Halt(); uart_cfg_active=0; uart_cfg_done=0;
+    usb_image_config_end();
     (void)AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
 }
 
@@ -253,6 +255,9 @@ static void uart_handle_cfg(char **ctx)
 			return;
 		}
 		uart_cfg_seq = value;
+		if (usb_image_config_begin() != 0) {
+			Beamform_Stop(); uart_nack(value, "USB_DRAIN"); return;
+		}
 		Beamform_Stop();
         if(frame_store_pause()!=0) {
             const volatile frame_store_pause_diag_t *d=frame_store_pause_diagnostic();
@@ -264,7 +269,7 @@ static void uart_handle_cfg(char **ctx)
             const char *why=d->reason==FS_DRAIN_NOT_READY?"DDR_NOT_READY":
                 d->reason==FS_DRAIN_ABI?"DDR_ABI":
                 d->reason==FS_DRAIN_TIMEOUT?((d->flags&4U)?"DDR_DRAIN_BUSY":"DDR_DRAIN_TIMEOUT"):"DDR_DRAIN_RESULT";
-            uart_nack(value,why); return;
+			usb_image_config_end(); uart_nack(value,why); return;
         }
 		uart_cfg_active = 1;
 		cfg_owner=command_source; cfg_session=wifi_session; cfg_activity=command_ms();
@@ -286,6 +291,7 @@ static void uart_handle_cfg(char **ctx)
 			uart_nack(uart_cfg_seq,"AFE_MAP_FAIL"); return;
 		}
 		uart_cfg_active = 0;
+		usb_image_config_end();
 		uart_cfg_done = 1;
 		if(command_source==SOURCE_WIFI) { hv_disable(); Beamform_Halt(); }
 		else if(Beamform_Start()!=0) { uart_nack(uart_cfg_seq,"DDR_RESUME_OR_ABI"); return; }
@@ -296,6 +302,7 @@ static void uart_handle_cfg(char **ctx)
 	if (strcmp(op, "ABORT") == 0) {
 		AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
 		uart_cfg_active = 0;
+		usb_image_config_end();
 		uart_cfg_done = 0;
 		Beamform_Stop();
 		uart_ack(uart_cfg_seq, "CFG_ABORT");

@@ -10,6 +10,9 @@ XScuGic xInterruptController;
 static XUartPs_Config config={0xe0000000U,59U};
 static uint64_t clock_ticks;
 static unsigned hv,run,enables,writes,afe_fail,tx_full,resume_failure,downsample,pause_failure;
+static unsigned usb_drain_failure, usb_config_blocked;
+int usb_image_config_begin(void) { usb_config_blocked=!usb_drain_failure;return usb_drain_failure?-1:0; }
+void usb_image_config_end(void) { usb_config_blocked=0; }
 int frame_store_pause(void) { assert(!hv&&!run);return pause_failure?-1:0; }
 const volatile frame_store_pause_diag_t *frame_store_pause_diagnostic(void) {
     static const frame_store_pause_diag_t d={.reason=FS_DRAIN_TIMEOUT,.version=FS_MAGIC,.flags=13,.axi=0x2e101};return &d;
@@ -135,6 +138,13 @@ int main(void) {
     uart_handle_wifi_line("CFG BEGIN 32",12,capture);
     uart_handle_wifi_line("BRAM WR t_timing 9 1 5",12,capture);assert(strstr(answer,"FRAME_LAYOUT")&&writes==previous&&downsample==4);
     uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"cfg=0")&&strstr(answer,"down=4"));
+    assert(!usb_config_blocked);
+    usb_drain_failure=1;hv=run=1;previous=writes;
+    uart_handle_wifi_line("CFG BEGIN 33",12,capture);
+    assert(strstr(answer,"USB_DRAIN")&&!hv&&!run&&!usb_config_blocked);
+    uart_handle_wifi_line("BRAM WR t_timing 9 1 0",12,capture);
+    assert(strstr(answer,"NO_CFG")&&writes==previous);
+    usb_drain_failure=0;
     puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE failure/bounded TX");
     return 0;
 }

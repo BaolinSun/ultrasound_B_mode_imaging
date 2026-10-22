@@ -7,6 +7,7 @@
 #include "../imaging_config.h"
 #include "../uart/uart.h"
 #include "../system_ctrl/temp.h"
+#include "usb_transport.h"
 #include <string.h>
 #define USB_PACK_HEADER 0xef
 #define USB_CFG_REQ_TYPE 0xC0
@@ -51,6 +52,7 @@ u8 usb_ready_data[4] = { 0xef, 0xef, 0x01, 0x90 };
 u32 usb_init(void) {
 	u32 Status;
 	u32 Timeout = XUSBPS_TIMEOUT_COUNTER;
+	usb_transport_init();
 
 	/* The new PCB routes the active-low USB0 PHY reset to PS GPIO MIO49. */
 	XGpioPs_SetDirectionPin(&gpiops, USB0_PHY_RST_PIN, 1);
@@ -97,11 +99,7 @@ void usb_printf(char *str, u32 len) {
 }
 void usb_send_adc_data(u8* buffer_ptr, u32 nums, u32 package_of) {
     (void)buffer_ptr;(void)nums;(void)package_of;
-    if(recv_new_data!=1) return;
-    recv_new_data=0;
-    if(host_state==HOST_READY_TO_RECV) {
-        xil_printf("@NACK 0 USB_IMAGE_UNSUPPORTED use Wi-Fi frame transport\r\n");
-    }
+    usb_transport_poll();
 }
 
 void usb_buffer_init(void) {
@@ -117,21 +115,13 @@ void ero_handle() {
 
 static void usb_send_config_response(const char *text)
 {
-	u8 frame[4U + USB_CFG_RESP_MAX];
-	u32 len = 0;
+	usb_transport_reply(text);
+}
 
-	if (text == NULL) {
-		text = "@NACK 0 USB_RESPONSE";
-	}
-	while (text[len] != '\0' && len < USB_CFG_RESP_MAX) {
-		frame[4U + len] = (u8)text[len];
-		len++;
-	}
-	frame[0] = USB_PACK_HEADER;
-	frame[1] = USB_CFG_RESP_TYPE;
-	frame[2] = (u8)(len & 0xFFU);
-	frame[3] = (u8)((len >> 8) & 0xFFU);
-	xusb_COMMS_send_data(&UsbInstance, frame, len + 4U);
+void usb_reset_command_queue_isr(void)
+{
+    usb_cfg_line_count = usb_cfg_line_wr_idx = usb_cfg_line_rd_idx = 0;
+    usb_cfg_frame_error = usb_cfg_overflow = 0;
 }
 
 static void usb_queue_config_frame(u8 *buffer, u32 buffer_length)
@@ -195,6 +185,7 @@ void usb_process_commands(void)
 	char line[USB_CFG_LINE_MAX];
 	u8 frame_error;
 	u8 overflow;
+	usb_transport_poll();
 
 	Xil_ExceptionDisableMask(XIL_EXCEPTION_IRQ);
 	frame_error = usb_cfg_frame_error;
@@ -226,15 +217,13 @@ u32 xusbps_ep_buffer_handle(XUsbPs *usb, u8 endpoint, u8 *buffer,
 			break;
 		}
 
-		if (buffer_length == 4U) {
+		if (buffer_length == 4U && buffer[0] == USB_PACK_HEADER) {
 			// �������յ�������
-			memcpy(ep_buffer[buffer_use_pre], buffer, buffer_length);
 			// byte0 0xef byte1 数据类型
-			switch (ep_buffer[buffer_use_pre][1]) {
+			switch (buffer[1]) {
 			case 0x01: {
 				host_state = HOST_READY_TO_RECV;
 				bufferLength_to_send = USB_TRANSFER_WINDOW_BYTES;
-				DEBUG_PRINT("HOST_READY_TO_RECV \r\n");
 			}
 				break;
 			case 0x03: {
@@ -258,6 +247,7 @@ u32 xusbps_ep_buffer_handle(XUsbPs *usb, u8 endpoint, u8 *buffer,
 			// 切换缓冲区
 			buffer_use_pre = buffer_use_pre == 9 ? 0 : buffer_use_pre + 1;
 			recv_new_data = 1;
+			usb_transport_request_isr(buffer[1]);
 		} else {
 			DEBUG_PRINT("unsupported usb ep1 packet length: %d\r\n", buffer_length);
 			usb_cfg_frame_error = 1U;

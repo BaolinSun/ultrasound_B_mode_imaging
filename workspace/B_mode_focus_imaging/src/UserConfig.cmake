@@ -70,6 +70,8 @@ set(USER_COMPILE_SOURCES
 "system_ctrl/temp_hw.c"
 "uart/uart.c"
 "usb/usb.c"
+"usb/usb_frame_tx.c"
+"usb/usb_transport.c"
 "usb/xusbps_COMMS.c"
 "usb/xusbps_Ringbuffer.c"
 "usb/xusbps_ch9.c"

@@ -10,7 +10,9 @@ IDE = ROOT / "workspace/B_mode_focus_imaging/src"
 
 class OutputSelectionTests(unittest.TestCase):
     def test_canonical_and_ide_sources_match(self):
-        for name in ("main.c", "uart/uart.c", "usb/usb.c",
+        for name in ("main.c", "uart/uart.c", "usb/usb.c", "usb/usb_transport.c",
+                     "usb/usb_transport.h", "usb/usb_frame_tx.c", "usb/usb_frame_tx.h",
+                     "usb/xusbps_COMMS.c", "usb/xusbps_ch9_winusb.c", "usb/USB_CONFIG.h",
                      "data_transfer/output_config.h", "data_transfer/sdio_bridge.h",
                      "data_transfer/sdio_bridge.c"):
             with self.subTest(name=name):

@@ -44,6 +44,7 @@
 #include "DEBUG.h"
 #include "../main.h"
 #include "USB_CONFIG.h"
+#include "usb_transport.h"
 /************************** Constant Definitions *****************************/
 #define EP_PACKAGE_SIZE USB_EP_MaxPacketSize
 
@@ -77,7 +78,7 @@ int xusb_COMMS_init(XScuGic *IntcInstancePtr, XUsbPs *UsbInstancePtr,
 	const u8 NumEndpoints = USB_EP_NUMS;
 
 	XUsbPs_Config *UsbConfigPtr;
-	XUsbPs_DeviceConfig DeviceConfig;
+	XUsbPs_DeviceConfig DeviceConfig = {0};
 
 	/* Initialize the USB driver so that it's ready to use,
 	 * specify the controller ID that is generated in xparameters.h
@@ -179,7 +180,7 @@ int xusb_COMMS_init(XScuGic *IntcInstancePtr, XUsbPs *UsbInstancePtr,
 	// 配置错误处理
 	Status = XUsbPs_IntrSetHandler(UsbInstancePtr, UsbIntrHandler,
 			UsbInstancePtr,
-			XUSBPS_IXR_UE_MASK);
+			XUSBPS_IXR_UE_MASK | XUSBPS_IXR_UR_MASK);
 	if (XST_SUCCESS != Status) {
 		goto out;
 	}
@@ -192,19 +193,21 @@ int xusb_COMMS_init(XScuGic *IntcInstancePtr, XUsbPs *UsbInstancePtr,
 
 	/* Set the handler for handling endpoint 1 events.
 	 *
-	 * Note that for this example we do not need to register a handler for
-	 * TX complete events as we only send data using static data buffers
-	 * that do not need to be free()d or returned to the OS after they have
-	 * been sent.
+	 * IN completion is mandatory: DDR slots and persistent reply buffers
+	 * remain owned by DMA until their descriptor has completed successfully.
 	 */
 	Status = XUsbPs_EpSetHandler(UsbInstancePtr, 1,
 	XUSBPS_EP_DIRECTION_OUT, XUsbPs_Ep1EventHandler, UsbInstancePtr);
+	if (Status != XST_SUCCESS) goto out;
+	Status = XUsbPs_EpSetHandler(UsbInstancePtr, 1,
+	XUSBPS_EP_DIRECTION_IN, XUsbPs_Ep1EventHandler, UsbInstancePtr);
+	if (Status != XST_SUCCESS) goto out;
 
 	Status = XUsbPs_EpSetHandler(UsbInstancePtr, 2,
 	XUSBPS_EP_DIRECTION_OUT, XUsbPs_Ep2EventHandler, UsbInstancePtr);
 
 	/* Enable the interrupts. */
-	XUsbPs_IntrEnable(UsbInstancePtr, XUSBPS_IXR_UR_MASK | XUSBPS_IXR_UI_MASK);
+	XUsbPs_IntrEnable(UsbInstancePtr, XUSBPS_IXR_UR_MASK | XUSBPS_IXR_UI_MASK | XUSBPS_IXR_UE_MASK);
 
 //	Status = xusb_Ringbuffer_init(&xusb_rx_buffer, rx_buf_size);
 	if (Status != XST_SUCCESS) {
@@ -262,7 +265,9 @@ int xusb_COMMS_init(XScuGic *IntcInstancePtr, XUsbPs *UsbInstancePtr,
  *
  ******************************************************************************/
 static void UsbIntrHandler(void *CallBackRef, u32 Mask) {
-	DEBUG_PRINT("usb error %d\r\n", Mask);
+	(void)CallBackRef;
+	if (Mask & XUSBPS_IXR_UR_MASK) usb_transport_bus_isr(0);
+	else if (Mask & XUSBPS_IXR_UE_MASK) usb_transport_error_isr();
 	NumIrqs++;
 }
 
@@ -377,6 +382,7 @@ static void XUsbPs_Ep1EventHandler(void *CallBackRef, u8 EpNum, u8 EventType,
 		/* Get the data buffer */
 		status = XUsbPs_EpBufferReceive(usb, EpNum, &buffer, &buffer_length,
 				&handle);
+		if (status != XST_SUCCESS) { usb_transport_error_isr(); break; }
 		/* Invalidate the buffer pointer */
 		invalidate_length = buffer_length;
 		/* Ensure alignment for invalidation */
@@ -402,7 +408,7 @@ static void XUsbPs_Ep1EventHandler(void *CallBackRef, u8 EpNum, u8 EventType,
 	}
 		break;
 	case XUSBPS_EP_EVENT_DATA_TX: {
-//		xil_printf("ep1 send OK\r\n ");
+		usb_transport_tx_isr(Data);
 	}
 		break;
 	default:
@@ -435,6 +441,7 @@ static void XUsbPs_Ep2EventHandler(void *CallBackRef, u8 EpNum, u8 EventType,
 		/* Get the data buffer */
 		status = XUsbPs_EpBufferReceive(usb, EpNum, &buffer, &buffer_length,
 				&handle);
+		if (status != XST_SUCCESS) { usb_transport_error_isr(); break; }
 		/* Invalidate the buffer pointer */
 		invalidate_length = buffer_length;
 		/* Ensure alignment for invalidation */

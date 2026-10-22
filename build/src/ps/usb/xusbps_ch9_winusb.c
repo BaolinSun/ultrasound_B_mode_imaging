@@ -55,6 +55,7 @@
 #include "xusbps_ch9.h"
 #include "xusbps_ch9_winusb.h"
 #include "DEBUG.h"
+#include "usb_transport.h"
 /************************** Constant Definitions *****************************/
 
 /***************** Macros (Inline Functions) Definitions *********************/
@@ -471,6 +472,7 @@ void XUsbPs_SetConfiguration(XUsbPs *InstancePtr, int ConfigIdx) {
 	if (1 != ConfigIdx) {
 		return;
 	}
+	usb_transport_bus_isr(1);
 
 	XUsbPs_EpEnable(InstancePtr, 1, XUSBPS_EP_DIRECTION_OUT);
 	XUsbPs_EpEnable(InstancePtr, 1, XUSBPS_EP_DIRECTION_IN);

@@ -28,7 +28,7 @@
 #define MFG_NAME "TFWS"
 #endif
 
-#define USB_EP_MaxPacketSize 0x0400 //1024
+#define USB_EP_MaxPacketSize 0x0200 /* USB 2.0 high-speed bulk: 512 bytes */
 
 
 #endif /* SRC_USB_CONFIG_H_ */

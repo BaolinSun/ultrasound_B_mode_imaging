@@ -23,6 +23,7 @@
 #include "AFE5832/afe5832.h"
 //#include "ps_2_pl_ctrl.h"
 #include "usb/usb.h"
+#include "usb/usb_transport.h"
 #include "xiltimer.h"
 #include "system_ctrl/temp.h"
 #include "bram/bram.h"
@@ -62,7 +63,10 @@ int main() {
 	sleep(0.2);
 	para_down();
 
-	int frame_init_rc=frame_store_init();
+	/* A hot application download can inherit USB IN DMA using a DDR slot. */
+	int frame_init_rc = -1;
+	if (usb_transport_boot_quiesce() == 0) frame_init_rc = frame_store_init();
+	else xil_printf("@USB FATAL inherited DMA not idle; DDR INIT blocked\r\n");
 	const volatile frame_store_init_diag_t *fd=frame_store_init_diagnostic();
 	xil_printf("@DDR INIT rc=%d stage=%u version=%08x seq=%u ack=%u result=%u flags=%08x\r\n",
 	    frame_init_rc,(unsigned)fd->stage,(unsigned)fd->version,(unsigned)fd->sequence,
@@ -97,7 +101,7 @@ int main() {
 #if DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO
 		sdio_bridge_poll();
 #else
-		usb_send_adc_data(rx_buffer_ptr[0], PLANE_WAVE_ANGLE_NUMS*2, 0);
+		usb_send_adc_data(NULL, 0, 0);
 #endif
 		cnt ++;
 		XGpioPs_WritePin(&gpiops, LED_2_EMIO_PIN, cnt&0x01);
