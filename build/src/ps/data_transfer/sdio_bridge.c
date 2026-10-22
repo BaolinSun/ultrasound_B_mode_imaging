@@ -1,5 +1,6 @@
 #include "sdio_bridge.h"
 #include "xil_printf.h"
+#include "../AFE5832/afe_power.h"
 
 int sdio_bridge_output_is_sdio(void) { return DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO; }
 
@@ -46,6 +47,7 @@ static int release_frame(void) {
     return frame_store_release(&frame);
 }
 static void fail_link(void) {
+    /* Retire only after the host proves DMA idle. */
     if(release_frame()!=0) {
         store_ready=0;
         xil_printf("@SDIO FATAL retained DDR lease; DMA/ownership not proven idle\r\n");
@@ -53,6 +55,7 @@ static void fail_link(void) {
     failures++; online=0; phase=IDLE; offset=0; reset_on_connect=1; retry_at=milliseconds()+500;
     xil_printf("@SDIO ERROR failures=%u; re-enumerate, no payload replay\r\n",(unsigned)failures);
 }
+int sdio_bridge_power_idle(void) { return phase==IDLE && !frame.lease; }
 void sdio_bridge_init(void) {
     if(frame.lease && release_frame()!=0) { store_ready=0; return; }
     /* Boot/reinitialization starts a fresh handshake; never replay payload. */
@@ -120,6 +123,7 @@ static void poll_once(void) {
         }
     }
     if(phase==IDLE) {
+        if(!afe_power_allowed()) return;
         if((state&(BR_READY|BR_STREAM|BR_BACKPRESSURE))!=(BR_READY|BR_STREAM)) return;
         if(current_session!=session_id) { watermark=0; waiting_since=now; }
         session_id=current_session;
@@ -221,4 +225,5 @@ void sdio_bridge_poll(void) {
 /* USB build: no SDIO DDR frame allocation or SD1 register/DMA access. */
 void sdio_bridge_init(void) { xil_printf("@OUTPUT compiled=USB\r\n"); }
 void sdio_bridge_poll(void) { }
+int sdio_bridge_power_idle(void) { return 1; }
 #endif

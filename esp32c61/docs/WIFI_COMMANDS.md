@@ -1,5 +1,7 @@
 # Wi-Fi 下发 Zynq 命令
 
+AFE 独立电源控制新增 `AFE SLEEP`、`AFE WAKE`、`AFE STATUS`。SLEEP/WAKE 每批只能一条，恢复后不会自动启动扫描、高压或上传；安全流程、配套 bit 要求见 [AFE 电源说明](AFE_POWER.md)。
+
 ## 1. 通路与使用前提
 
 ```text

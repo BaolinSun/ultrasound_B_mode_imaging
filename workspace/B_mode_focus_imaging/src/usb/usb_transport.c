@@ -1,4 +1,5 @@
 #include "usb_transport.h"
+#include "../AFE5832/afe_power.h"
 #include "usb_frame_tx.h"
 #include "usb.h"
 #include "../data_transfer/output_config.h"
@@ -220,7 +221,7 @@ void usb_transport_poll(void)
     uint64_t now = ms();
     if (tx_kind == TX_REPLY && now >= tx_deadline) (void)usb_frame_cancel(&image, "REPLY_TIMEOUT");
     if (faulted) goto report;
-    if (request && image.state == USB_IMAGE_IDLE && !tx_kind && !reply_count && !config_blocked) {
+    if (request && image.state == USB_IMAGE_IDLE && !tx_kind && !reply_count && !config_blocked && afe_power_allowed()) {
 #if DATA_OUTPUT_MODE == DATA_OUTPUT_USB
         u32 speed = XUsbPs_ReadReg(UsbInstance.Config.BaseAddress, XUSBPS_PORTSCR1_OFFSET) & XUSBPS_PORTSCR_PSPD_MASK;
         if (speed != 0x08000000U) {
@@ -266,3 +267,10 @@ int usb_image_config_begin(void)
     return 0;
 }
 void usb_image_config_end(void) { config_blocked = image.blocked = 0; }
+void usb_transport_power_gate(int blocked) {
+    if(!initialized) return;
+    config_blocked=image.blocked=blocked; request=0;
+}
+int usb_transport_power_idle(void) {
+    return !initialized || (!usb_frame_busy(&image) && !image.frame.token && !tx_kind);
+}

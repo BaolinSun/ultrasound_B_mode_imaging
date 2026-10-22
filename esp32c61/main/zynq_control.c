@@ -17,6 +17,11 @@ static zynq_control_job active,finished;
 static char partial[WC_LINE],ps_status[WC_RESPONSE];
 static size_t used;
 static bool dropping,ready,synced,lease;
+static bool afe_blocked=true;
+static char afe_state[16]="unknown",afe_error[80]="Waiting for PS status";
+static uint32_t afe_flags;
+static int64_t afe_at;
+static int64_t operation_deadline;
 static uint32_t session,sequence,epoch,lease_client;
 static int64_t lease_activity,status_at;
 /* One bounded OFF latch, not a second normal batch queue. */
@@ -29,9 +34,34 @@ static bool off_pending(void) { take(); bool pending=urgent.pending; give(); ret
 static uint32_t new_job_id(void) { if(!++job_sequence) ++job_sequence; return job_sequence; }
 
 bool zynq_control_ready(void) { return ready; }
+static void afe_observe(const char *answer) {
+    const char *s=!strncmp(answer,"@AFE state=",11)?answer+11:strstr(answer," afe=");
+    if(!s) return;
+    if(!strncmp(s," afe=",5)) s+=5;
+    char value[16];size_t n=strcspn(s," ");
+    if(!n || n>=sizeof(value)) return;
+    memcpy(value,s,n);value[n]=0;
+    const char *proof=strstr(answer," flags=");
+    uint32_t proof_flags=0;char proof_hex[9];bool proof_valid=false;
+    if(proof && strlen(proof)>=16 && proof[15]==' ') {
+        memcpy(proof_hex,proof+7,8);proof_hex[8]=0;proof_valid=wc_hex8(proof_hex,&proof_flags);
+    }
+    bool invalid_ready=!strncmp(answer,"@AFE ",5) && !strcmp(value,"ready") &&
+        (!proof_valid || proof_flags!=31U);
+    if(invalid_ready) strcpy(value,"unknown");
+    if(strcmp(value,"ready")&&strcmp(value,"sleep")&&strcmp(value,"fault")&&strcmp(value,"waking")&&strcmp(value,"quiescing")&&strcmp(value,"unknown")) return;
+    take();strcpy(afe_state,value);afe_blocked=strcmp(value,"ready")!=0;afe_at=esp_timer_get_time();
+    const char *e=strstr(answer," error=");if(e) snprintf(afe_error,sizeof(afe_error),"%s",e+7);
+    else if(!afe_blocked) strcpy(afe_error,"NONE");
+    if(invalid_ready) strcpy(afe_error,"AFE ready flags not verified");
+    const char *f=strstr(answer," flags=");if(f) afe_flags=(uint32_t)strtoul(f+7,NULL,16);
+    bool blocked=afe_blocked||lease;give();sdio_bridge_control_gate(blocked);
+}
 void zynq_control_uart_lost(void) {
     if(!ready) return;
-    take(); synced=false; epoch++; ps_status[0]=0; status_at=0; give();
+    take(); synced=false; epoch++; ps_status[0]=0; status_at=0;
+    afe_blocked=true;strcpy(afe_state,"unknown");strcpy(afe_error,"UART lost/reset");afe_at=0;give();
+    sdio_bridge_control_gate(true);
     used=0; dropping=true;
 }
 void zynq_control_feed(const uint8_t *bytes,size_t count) {
@@ -67,6 +97,7 @@ static bool exchange(const char *command,char *response) {
         snprintf(response,WC_RESPONSE,"UART TX outcome unknown"); return false;
     }
     int64_t until=esp_timer_get_time()+20000000;
+    if(operation_deadline && until>operation_deadline) until=operation_deadline;
     while(esp_timer_get_time()<until) {
         if(off_pending() && strcmp(command,"HV DISABLE")) {
             snprintf(response,WC_RESPONSE,"priority OFF; prior command outcome unknown"); return false;
@@ -77,6 +108,7 @@ static bool exchange(const char *command,char *response) {
         if(xQueueReceive(replies,&m,pdMS_TO_TICKS(20))!=pdTRUE) continue;
         if(m.session!=session || m.request!=req) continue;
         snprintf(response,WC_RESPONSE,"%.127s",m.text);
+        afe_observe(response);
         if(!strncmp(response,"@STATUS ",8)) {
             take(); snprintf(ps_status,sizeof(ps_status),"%s",response); status_at=esp_timer_get_time(); give();
         }
@@ -85,8 +117,8 @@ static bool exchange(const char *command,char *response) {
     snprintf(response,WC_RESPONSE,"UART response timeout; outcome unknown"); return false;
 }
 static void release_lease(void) {
-    take(); lease=false; lease_client=0; give();
-    sdio_bridge_control_gate(false);
+    take(); lease=false; lease_client=0; bool blocked=afe_blocked;give();
+    sdio_bridge_control_gate(blocked);
 }
 static bool handshake(char *answer) {
     if(!exchange("STATUS",answer) || strncmp(answer,"@STATUS v=1 ",12)) return false;
@@ -97,11 +129,51 @@ static bool handshake(char *answer) {
 static bool drain(void) {
     sdio_bridge_control_gate(true);
     int64_t deadline=esp_timer_get_time()+90000000;
+    if(operation_deadline && deadline>operation_deadline) deadline=operation_deadline;
     while(!sdio_bridge_control_drained()) {
         if(off_pending() || esp_timer_get_time()>=deadline) return false;
         vTaskDelay(pdMS_TO_TICKS(10));
     }
     return true;
+}
+static bool afe_operation_inner(const char *command,char *answer) {
+    take();afe_blocked=true;strcpy(afe_state,!strcmp(command,"AFE SLEEP")?"quiescing":"waking");
+    strcpy(afe_error,"NONE");give();sdio_bridge_control_gate(true);
+    if(!strcmp(command,"AFE SLEEP")) {
+        /* PREPARE closes HV and scans on PS BEFORE the 90s network drain. */
+        if(!exchange("AFE PREPARE",answer) || strncmp(answer,"@ACK ",5)) return false;
+        if(!drain()) {snprintf(answer,WC_RESPONSE,"AFE drain timeout/interrupted; no SLEEP commit sent");return false;}
+        /* ESP free slots do not prove that the last host DMA/USB callback has
+         * retired. Poll a read-only PS observation before committing SLEEP. */
+        for(;;) {
+            if(!exchange("AFE STATUS",answer) || strncmp(answer,"@AFE ",5)) return false;
+            if(strstr(answer,"state=sleep ")) return true;
+            if(!strstr(answer,"state=quiescing ")) return false;
+            if(strstr(answer," idle=1 ")) break;
+            if(esp_timer_get_time()>=operation_deadline) return false;
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    } else if(!drain()) {
+        /* An explicit retry after failed SLEEP may still own a Wi-Fi buffer.
+         * Do not report a stopped READY state while that callback is pending. */
+        snprintf(answer,WC_RESPONSE,"AFE transfer busy/interrupted; no WAKE sent");return false;
+    }
+    if(!exchange(command,answer) || strncmp(answer,"@ACK ",5)) return false;
+    int64_t deadline=esp_timer_get_time()+6000000;
+    do {
+        if(!exchange("AFE STATUS",answer) || strncmp(answer,"@AFE ",5)) return false;
+        if(!strcmp(command,"AFE SLEEP")) return strstr(answer,"state=sleep ")!=NULL;
+        if(strstr(answer,"state=ready ")) {
+            take();bool verified=!afe_blocked;give();return verified;
+        }
+        if(!strstr(answer,"state=waking ")) return false;
+        vTaskDelay(pdMS_TO_TICKS(100));
+    } while(esp_timer_get_time()<deadline);
+    snprintf(answer,WC_RESPONSE,"AFE wake outcome unknown; query explicitly");return false;
+}
+static bool afe_operation(const char *command,char *answer) {
+    operation_deadline=esp_timer_get_time()+(!strcmp(command,"AFE SLEEP")?90000000:7000000);
+    bool ok=afe_operation_inner(command,answer);operation_deadline=0;return ok;
 }
 static void control_task(void *arg) {
     (void)arg;
@@ -158,8 +230,18 @@ static void control_task(void *arg) {
                     /* Keep the gate until slots really drain; STATUS can recover. */
                 }
             }
-            if(!failure && !exchange(command,answer)) { failure=true; unknown=true; }
-            else if(!failure && strncmp(answer,"@ACK ",5) && strncmp(answer,"@RD ",4) && strncmp(answer,"@STATUS ",8)) failure=true;
+            bool power=!strcmp(command,"AFE SLEEP")||!strcmp(command,"AFE WAKE");
+            if(!failure && power) {
+                if(!afe_operation(command,answer)) {
+                    failure=true;unknown=strncmp(answer,"@NACK ",6)!=0 && strncmp(answer,"@AFE ",5)!=0;
+                }
+            } else if(!failure && !exchange(command,answer)) { failure=true; unknown=true; }
+            else if(!failure && strncmp(answer,"@ACK ",5) && strncmp(answer,"@RD ",4) && strncmp(answer,"@STATUS ",8) && strncmp(answer,"@AFE ",5)) failure=true;
+            if(failure && power) {
+                take();afe_blocked=true;snprintf(afe_error,sizeof(afe_error),"%.79s",answer);
+                if(strncmp(answer,"@AFE ",5)) strcpy(afe_state,"unknown");
+                give();
+            }
             take(); snprintf(active.responses[i],WC_RESPONSE,"%s",answer); active.completed=i+1;
             if(lease_client==client) lease_activity=esp_timer_get_time();
             give();
@@ -186,8 +268,9 @@ static void control_task(void *arg) {
         strcpy(active.state,unknown?"unknown":failure?"failed":"succeeded");
         if(failure) snprintf(active.error,sizeof(active.error),"%.95s",answer);
         if(failure) synced=false;
-        if(unknown) { synced=false; ps_status[0]=0; status_at=0; }
-        active.busy=false; finished=active; give();
+        if(unknown) { synced=false; ps_status[0]=0; status_at=0; afe_blocked=true;strcpy(afe_state,"unknown");snprintf(afe_error,sizeof(afe_error),"%.79s",answer); }
+        bool gate_blocked=afe_blocked||lease;
+        active.busy=false; finished=active; give();sdio_bridge_control_gate(gate_blocked);
     }
 }
 esp_err_t zynq_control_start(void) {
@@ -205,6 +288,7 @@ esp_err_t zynq_control_start(void) {
         vSemaphoreDelete(lock); vQueueDelete(replies); lock=NULL; replies=NULL; return ESP_ERR_NO_MEM;
     }
     ready=true;
+    sdio_bridge_control_gate(true);
     ESP_LOGW("zynq_control","HTTP control has no authentication; use a trusted LAN only");
     return ESP_OK;
 }
@@ -212,7 +296,9 @@ esp_err_t zynq_control_submit(const zynq_control_job *input,bool allow_hv,uint32
     if(!ready) return ESP_ERR_INVALID_STATE;
     if(!input->client || !input->request || !input->count || input->count>WC_BATCH) return ESP_ERR_INVALID_ARG;
     for(unsigned i=0;i<input->count;i++)
-        if(wc_validate(input->commands[i]) || (!strcmp(input->commands[i],"HV ENABLE")&&!allow_hv)) return ESP_ERR_INVALID_ARG;
+        if(wc_validate(input->commands[i]) || !strcmp(input->commands[i],"AFE PREPARE") ||
+           (((!strcmp(input->commands[i],"AFE SLEEP"))||(!strcmp(input->commands[i],"AFE WAKE")))&&input->count!=1) ||
+           (!strcmp(input->commands[i],"HV ENABLE")&&!allow_hv)) return ESP_ERR_INVALID_ARG;
     take();
     if(urgent.pending && urgent.client==input->client && urgent.request==input->request) {
         bool same=input->count==1 && !strcmp(input->commands[0],"HV DISABLE");
@@ -232,10 +318,15 @@ esp_err_t zynq_control_submit(const zynq_control_job *input,bool allow_hv,uint32
         }
         give(); return ESP_ERR_TIMEOUT;
     }
+    if(lease && input->count==1 && (!strcmp(input->commands[0],"AFE SLEEP") || !strcmp(input->commands[0],"AFE WAKE"))) {give();return ESP_ERR_TIMEOUT;}
     if(lease && lease_client!=input->client) {
-        for(unsigned i=0;i<input->count;i++) if(!emergency(input->commands[i]) && strcmp(input->commands[i],"STATUS")) {
+        for(unsigned i=0;i<input->count;i++) if(!emergency(input->commands[i]) && strcmp(input->commands[i],"STATUS") && strcmp(input->commands[i],"AFE STATUS")) {
             give(); return ESP_ERR_TIMEOUT;
         }
+    }
+    if(afe_blocked) for(unsigned i=0;i<input->count;i++) {
+        const char *c=input->commands[i];
+        if(strcmp(c,"STATUS")&&strcmp(c,"AFE STATUS")&&strcmp(c,"AFE SLEEP")&&strcmp(c,"AFE WAKE")&&!emergency(c)) {give();return ESP_ERR_INVALID_STATE;}
     }
     if(lease && esp_timer_get_time()-lease_activity>=60000000 &&
        !(input->count==1 && !strcmp(input->commands[0],"HV DISABLE"))) { give(); return ESP_ERR_TIMEOUT; }
@@ -266,5 +357,9 @@ void zynq_control_status_json(cJSON *parent) {
     cJSON_AddBoolToObject(j,"config_owned",lease);
     cJSON_AddStringToObject(j,"ps_status",ps_status);
     cJSON_AddNumberToObject(j,"status_age_ms",status_at?(esp_timer_get_time()-status_at)/1000:-1);
+    cJSON_AddStringToObject(j,"afe_state",afe_state);
+    cJSON_AddStringToObject(j,"afe_error",afe_error);
+    cJSON_AddNumberToObject(j,"afe_flags",afe_flags);
+    cJSON_AddNumberToObject(j,"afe_age_ms",afe_at?(esp_timer_get_time()-afe_at)/1000:-1);
     give();
 }

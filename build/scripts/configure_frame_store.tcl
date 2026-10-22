@@ -26,6 +26,7 @@ foreach {name direction width pin} {
 # BRAM/DDR control share clk_100m; the read responder remains in heart_top.
 source [file join $fs_root build scripts configure_para_ports.tcl]
 configure_para_ports
+source [file join $fs_root build scripts configure_afe_power.tcl]
 save_reload_para_ports
 generate_target all [get_files [get_property FILE_NAME [current_bd_design]]]
 make_wrapper -files [get_files [get_property FILE_NAME [current_bd_design]]] -top

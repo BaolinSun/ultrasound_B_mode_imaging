@@ -6,6 +6,7 @@
 #include "sleep.h"
 #include <string.h>
 #include "../HV/hv.h"
+#include "../AFE5832/afe_power.h"
 #include "../data_transfer/frame_store.h"
 
 /*
@@ -76,6 +77,7 @@ u32 Beamform_GetDownsample(void) { return T_timing_hex[9]; }
 
 void Beamform_SetControl(u32 beamform_enable, u32 spi_start_enable)
 {
+    if(!afe_power_allowed() && (beamform_enable || spi_start_enable)) return;
 	XBram_WriteReg(BRAM_BEAMFORM_CTRL_ADDR, 0,
 			beamform_enable ? BEAMFORM_CTRL_RUN_MASK : 0U);
 	XBram_WriteReg(BRAM_SPI_START_ADDR, 0, spi_start_enable ? 1U : 0U);
@@ -101,6 +103,7 @@ u32 Rx_SetGainShift(u32 gain_shift)
 
 int Beamform_Resume(void)
 {
+    if(!afe_power_allowed()) return -1;
     if(frame_store_resume()!=0) {
         hv_disable(); Beamform_Halt();
         xil_printf("@DDR ERROR resume/ABI; scan not started\r\n"); return -1;
@@ -133,6 +136,7 @@ void Beamform_Halt(void)
 
 int Beamform_Start(void)
 {
+    if(!afe_power_allowed()) return -1;
     if(frame_store_resume()!=0) {
         hv_disable(); Beamform_Halt();
         xil_printf("@DDR ERROR resume/ABI; scan not started\r\n"); return -1;

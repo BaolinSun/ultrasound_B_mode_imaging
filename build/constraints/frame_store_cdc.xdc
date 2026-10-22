@@ -5,7 +5,7 @@
 # Do NOT false-path the held data bus or sample the input flags directly.
 # Preserve old-design CDC timing exclusions without masking the new FIFO.
 # This is inherited timing debt, NOT certification of the old CDC circuits.
-set fs_legacy_filter {NAME !~ *frame_store_i/* && NAME !~ proc_top_i/bf_sync* && NAME !~ proc_top_i/capture_drain_i/*}
+set fs_legacy_filter {NAME !~ *frame_store_i/* && NAME !~ *afe_power_i/* && NAME !~ proc_top_i/bf_sync* && NAME !~ proc_top_i/capture_drain_i/*}
 set fs_afe_clocks [get_clocks -include_generated_clocks dcp_0]
 set fs_sys_clocks [get_clocks -include_generated_clocks sys_clk_p]
 set fs_afe_legacy [filter [all_registers -clock $fs_afe_clocks] $fs_legacy_filter]

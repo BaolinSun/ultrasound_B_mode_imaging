@@ -5,6 +5,14 @@
 #include "../../build/src/ps/data_transfer/frame_store.h"
 #include <assert.h>
 #include <stdio.h>
+static int afe_ready=1;
+int afe_power_allowed(void) { return afe_ready; }
+int afe_power_idle(void) { return 1; }
+void afe_power_poll(void) { }
+const char *afe_power_state_name(void) { return afe_ready?"ready":"sleep"; }
+const char *afe_power_error(void) { return "AFE_NOT_READY"; }
+u32 afe_power_flags(void) { return afe_ready?31:0; }
+int afe_power_command(const char *op,u32 owner) { (void)owner;afe_ready=!strcmp(op,"WAKE");return 0; }
 #include <string.h>
 XScuGic xInterruptController;
 static XUartPs_Config config={0xe0000000U,59U};
@@ -145,6 +153,14 @@ int main(void) {
     uart_handle_wifi_line("BRAM WR t_timing 9 1 0",12,capture);
     assert(strstr(answer,"NO_CFG")&&writes==previous);
     usb_drain_failure=0;
-    puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE failure/bounded TX");
+    afe_ready=0;
+    uart_handle_usb_line("CFG BEGIN 901",capture);assert(strstr(answer,"AFE_NOT_READY"));
+    uart_handle_usb_line("HV ENABLE",capture);assert(strstr(answer,"AFE_NOT_READY"));
+    uart_handle_wifi_line("BEAM START",12,capture);assert(strstr(answer,"AFE_NOT_READY"));
+    uart_handle_wifi_line("BRAM WR t_timing 9 1 0",12,capture);assert(strstr(answer,"AFE_NOT_READY"));
+    uart_handle_wifi_line("AFE STATUS",12,capture);assert(strstr(answer,"state=sleep"));
+    uart_handle_wifi_line("HV DISABLE",12,capture);assert(strstr(answer,"HV_DISABLE")&&!hv&&!run);
+    uart_handle_wifi_line("AFE WAKE",12,capture);assert(strstr(answer,"AFE_WAKE")&&afe_ready&&!hv&&!run);
+    puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE power interlocks/bounded TX");
     return 0;
 }

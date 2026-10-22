@@ -1,7 +1,7 @@
 {
   "design": {
     "design_info": {
-      "boundary_crc": "0x73B62DDA2043F2C4",
+      "boundary_crc": "0xFD55792F31B61F1A",
       "device": "xc7z030sbg485-2",
       "gen_directory": "../../../../ultrasound_B_mode_imaging.gen/sources_1/bd/bd",
       "name": "pus_ctrl_system",
@@ -523,6 +523,11 @@
       },
       "para_dout": {
         "direction": "I",
+        "left": "31",
+        "right": "0"
+      },
+      "afe_power_rdata": {
+        "direction": "O",
         "left": "31",
         "right": "0"
       }
@@ -2175,6 +2180,32 @@
                 "value_src": "constant"
               }
             }
+          },
+          "clk_ctrl": {
+            "direction": "I"
+          },
+          "power_addr": {
+            "direction": "I",
+            "left": "23",
+            "right": "0"
+          },
+          "power_wdata": {
+            "direction": "I",
+            "left": "31",
+            "right": "0"
+          },
+          "power_en": {
+            "direction": "I"
+          },
+          "power_we": {
+            "direction": "I",
+            "left": "3",
+            "right": "0"
+          },
+          "power_rdata": {
+            "direction": "O",
+            "left": "31",
+            "right": "0"
           },
           "dclk_p": {
             "direction": "I",
@@ -4269,24 +4300,33 @@
           "data_ch"
         ]
       },
+      "afe5832_adc_14b_16la_0_power_rdata": {
+        "ports": [
+          "afe5832_adc_14b_16la_0/power_rdata",
+          "afe_power_rdata"
+        ]
+      },
       "axi_bram_ctrl_0_bram_addr_a": {
         "ports": [
           "axi_bram_ctrl_0/bram_addr_a",
           "para_addr",
-          "w_ddr_0/ctrl_addr"
+          "w_ddr_0/ctrl_addr",
+          "afe5832_adc_14b_16la_0/power_addr"
         ]
       },
       "axi_bram_ctrl_0_bram_clk_a": {
         "ports": [
           "axi_bram_ctrl_0/bram_clk_a",
-          "para_clk"
+          "para_clk",
+          "afe5832_adc_14b_16la_0/clk_ctrl"
         ]
       },
       "axi_bram_ctrl_0_bram_en_a": {
         "ports": [
           "axi_bram_ctrl_0/bram_en_a",
           "para_en",
-          "w_ddr_0/ctrl_en"
+          "w_ddr_0/ctrl_en",
+          "afe5832_adc_14b_16la_0/power_en"
         ]
       },
       "axi_bram_ctrl_0_bram_rst_a": {
@@ -4299,14 +4339,16 @@
         "ports": [
           "axi_bram_ctrl_0/bram_we_a",
           "para_we",
-          "w_ddr_0/ctrl_we"
+          "w_ddr_0/ctrl_we",
+          "afe5832_adc_14b_16la_0/power_we"
         ]
       },
       "axi_bram_ctrl_0_bram_wrdata_a": {
         "ports": [
           "axi_bram_ctrl_0/bram_wrdata_a",
           "para_din",
-          "w_ddr_0/ctrl_wdata"
+          "w_ddr_0/ctrl_wdata",
+          "afe5832_adc_14b_16la_0/power_wdata"
         ]
       },
       "clk_200m_1": {
@@ -4427,8 +4469,8 @@
           "ps7_0_axi_periph/M03_ARESETN",
           "axi_bram_ctrl_0/s_axi_aresetn",
           "ps7_0_axi_periph/M04_ARESETN",
-          "afe5832_adc_14b_16la_0/rst_n",
-          "w_ddr_0/m00_axi_aresetn"
+          "w_ddr_0/m00_axi_aresetn",
+          "afe5832_adc_14b_16la_0/rst_n"
         ]
       },
       "sys_clk_g_0_sys_clk": {

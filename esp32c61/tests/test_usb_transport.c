@@ -5,6 +5,7 @@
 #include <stdio.h>
 
 XUsbPs UsbInstance;
+int afe_power_allowed(void) { return 1; }
 unsigned mock_cpsr;
 static XUsbPs_dTD descriptors[16];
 static XUsbPs_dQH qh;

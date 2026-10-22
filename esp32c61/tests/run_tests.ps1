@@ -275,6 +275,12 @@ try {
 & (Join-Path $PSScriptRoot 'run_temperature_tests.ps1') -Compiler $Compiler -OutputDirectory (Join-Path $testOutput 'temperature')
 $controlOutput=Join-Path $testOutput 'wifi-control'
 New-Item -ItemType Directory -Path $controlOutput -Force | Out-Null
+& $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic `
+    (Join-Path $PSScriptRoot 'test_afe_power.c') (Join-Path $projectRoot '../common/afe_power_machine.c') `
+    -o (Join-Path $controlOutput 'afe_power.exe')
+if($LASTEXITCODE -ne 0) {throw 'AFE power state machine compile failed'}
+& (Join-Path $controlOutput 'afe_power.exe')
+if($LASTEXITCODE -ne 0) {throw 'AFE power state machine self-check failed'}
 & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic '-I' (Join-Path $PSScriptRoot 'stubs/bram') `
     '-I' (Join-Path $PSScriptRoot 'stubs/ps_control') (Join-Path $PSScriptRoot 'test_beamform_control.c') `
     -o (Join-Path $controlOutput 'beamform.exe')

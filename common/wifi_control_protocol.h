@@ -89,6 +89,7 @@ static inline const char *wc_validate(const char *line) {
     if(!strcmp(t[0],"HV")) return n==2&&(!strcmp(t[1],"ENABLE")||!strcmp(t[1],"DISABLE"))?NULL:"HV_OP";
     if(!strcmp(t[0],"GAIN")) return n==3&&!strcmp(t[1],"SET")&&wc_uint(t[2],&a)&&a<=8?NULL:"GAIN_RANGE";
     if(!strcmp(t[0],"AFE")) {
+        if(n==2 && (!strcmp(t[1],"SLEEP") || !strcmp(t[1],"WAKE") || !strcmp(t[1],"STATUS") || !strcmp(t[1],"PREPARE"))) return NULL;
         if(n<4 || (strcmp(t[2],"GLOBAL")&&strcmp(t[2],"ADC")&&strcmp(t[2],"VCA")&&strcmp(t[2],"DTGC")) ||
            !wc_uint(t[3],&a)||a>255) return "AFE_ARGS";
         if(!strcmp(t[1],"RD")) return n==4?NULL:"ARGUMENTS";

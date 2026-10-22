@@ -78,6 +78,7 @@ wire							data_clk;
 
 wire up_header, up_last, capture_busy;
 wire [31:0] frame_ctrl_rdata;
+wire [31:0] afe_power_rdata;
 reg								proc_en;
 reg			[511:0]				proc_in;
 wire							up_dataen;
@@ -103,6 +104,7 @@ pus_ctrl_system_wrapper	pus_ctrl_system_wrapper_i
 (
     .frame_header(up_header), .frame_last(up_last), .frame_busy(capture_busy),
     .frame_ctrl_rdata(frame_ctrl_rdata),
+    .afe_power_rdata(afe_power_rdata),
 	.clk_100m				(clk_100m	),
 	.pll_locked				(rst_n		),
     .clk_200m           (clk_200m),
@@ -171,6 +173,8 @@ begin
 			para_dout <= tx_cfg_rddata_debug;
 		else if (para_addr[23:8] == 16'h4c02)
             para_dout <= frame_ctrl_rdata;
+		else if (para_addr[23:6] == 18'h1300c)
+            para_dout <= afe_power_rdata;
 		else
 			para_dout <= 32'd0;
 	end

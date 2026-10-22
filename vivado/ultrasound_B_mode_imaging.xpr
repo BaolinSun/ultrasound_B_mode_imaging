@@ -107,6 +107,13 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
+      <File Path="$PPRDIR/../build/src/imports/sources/afe_power_hw.sv">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
+          <Attr Name="UsedIn" Val="simulation"/>
+        </FileInfo>
+      </File>
       <File Path="$PSRCDIR/sources_1/imports/imports/vivado/Wearable_US/Wearable_US.srcs/sources_1/imports/src/afe5832_adc_14b_16lane.v">
         <FileInfo>
           <Attr Name="ImportPath" Val="$PPRDIR/../build/src/imports/vivado/Wearable_US/Wearable_US.srcs/sources_1/imports/src/afe5832_adc_14b_16lane.v"/>
@@ -458,6 +465,12 @@
         <FileInfo>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="synthesis"/>
+        </FileInfo>
+      </File>
+      <File Path="$PPRDIR/../build/constraints/afe_power_cdc.xdc">
+        <FileInfo>
+          <Attr Name="UsedIn" Val="synthesis"/>
+          <Attr Name="UsedIn" Val="implementation"/>
         </FileInfo>
       </File>
       <Config>

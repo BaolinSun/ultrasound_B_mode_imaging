@@ -1,4 +1,5 @@
 #include "hv.h"
+#include "../AFE5832/afe_power.h"
 #include "../GPIO/gpio.h"
 #include "../main.h"
 
@@ -18,6 +19,7 @@ u32 hv_init(void) {
 }
 
 void hv_enable(void) {
+	if(!afe_power_allowed()) return;
 	XGpioPs_WritePin(&gpiops, HV_EN_PIN, 1);
 	XGpioPs_WritePin(&gpiops, LED_1_EMIO_PIN, 1);
 }

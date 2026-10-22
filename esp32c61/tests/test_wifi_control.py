@@ -18,6 +18,12 @@ import wifi_config_builder as builder
 
 
 class ControlTests(unittest.TestCase):
+    def test_afe_power_commands_are_explicit_and_prepare_is_internal(self):
+        for command in ('AFE SLEEP', 'AFE WAKE', 'AFE STATUS'):
+            tool.validate_command(command)
+        for command in ('AFE PREPARE', 'AFE SLEEP 1', 'AFE WAKE extra'):
+            with self.assertRaises(ValueError):
+                tool.validate_command(command)
     def test_unsigned_numbers_and_strict_commands(self):
         for command in ("HV SET 1", "GAIN SET 9", "GAIN SET -1", "CFG END 1", "STATUS\nHV ENABLE",
                         "BRAM WR t_timing 0 1 2048", "BRAM WR x_element 63 2 0 0", "AFE WR ADC 256 0"):

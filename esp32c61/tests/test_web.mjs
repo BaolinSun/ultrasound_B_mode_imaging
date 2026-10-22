@@ -41,7 +41,8 @@ function setup() {
       sta_ip: '', ap_ssid: 'Ultrasound-C61-123456', psram_total: 2097152, psram_free: 1209696,
       psram_largest: 1200000, selftest_bytes: 787456, max_bytes: 1048576, busy: false,
       result: 'not_ready', total_bytes: 0, sent_bytes: 0, packets: 0, retries: 0,
-      socket_errno: 0, active_ip: '', active_port: 0},
+      socket_errno: 0, active_ip: '', active_port: 0,
+      zynq_control:{ready:true,synced:true,afe_state:'ready'}},
     offline: false, failSave: false, calls: [], now:1700000000000,
   };
   backend.confirmed=true;
@@ -93,6 +94,23 @@ function setup() {
   return {elements,backend,context,settle:()=>new Promise(resolve=>setImmediate(resolve))};
 }
 const submit = env => env.elements['config-form'].listeners.submit({preventDefault(){}});
+
+test('AFE-only power controls use existing jobs, block starts while asleep and never trigger imaging',async()=>{
+ const e=setup();await e.settle();
+ e.backend.status.zynq_control={ready:true,synced:true,afe_state:'sleep',afe_flags:0,afe_error:'NONE',afe_age_ms:0};
+ await e.context.refresh();
+ for(const id of ['upload','sdio-once','sdio-stream','zynq-start','zynq-hv-on','zynq-down-set'])assert.equal(e.elements[id].disabled,true);
+ assert.equal(e.elements['afe-wake'].disabled,false);
+ assert.equal(e.elements['afe-sleep'].disabled,true);
+ const before=e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length;
+ await e.context.refresh();assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,before);
+ await e.elements['afe-query'].listeners.click();assert.deepEqual(e.backend.commandBody.commands,['AFE STATUS']);
+ await e.elements['afe-wake'].listeners.click();assert.deepEqual(e.backend.commandBody.commands,['AFE WAKE']);
+ assert.equal(e.backend.commandBody.allow_hv,false);
+ e.backend.status.zynq_control.afe_state='ready';await e.context.refresh();
+ await e.elements['afe-sleep'].listeners.click();assert.deepEqual(e.backend.commandBody.commands,['AFE SLEEP']);
+ assert.equal(e.backend.commandBody.allow_hv,false);
+});
 
 test('ESP page links to the local viewer without starting receive, scan or HV',async()=>{
   const link=html.match(/<a\b[^>]*\bid="image-viewer-link"[^>]*>/)?.[0];
@@ -381,7 +399,7 @@ test('configuration gate disables image submissions and safe stop sends HV DISAB
 
 async function downsampleEnvironment(d=0){
  const e=setup();await e.settle();
- e.backend.status.zynq_control={ready:true,busy:false,config_owned:false,synced:true,
+ e.backend.status.zynq_control={ready:true,busy:false,config_owned:false,synced:true,afe_state:'ready',
   ps_status:`@STATUS v=1 cfg=0 owner=2 seq=0 run=1 hv=1 run_src=ps spi=1 down=${d}`};
  await e.context.refresh();return e;
 }

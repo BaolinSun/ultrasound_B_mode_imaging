@@ -23,7 +23,7 @@ int main(int argc,char **argv) {
         "AFE WR ADC 256 0", "AFE WR ADC 1 65536", "TX7332 RD 1024", " HV ENABLE", "HV  ENABLE", "HV\nENABLE"};
     for(unsigned i=0;i<sizeof(bad)/sizeof(bad[0]);i++) assert(wc_validate(bad[i]));
     const char *good[]={"STATUS","HV ENABLE","HV DISABLE","BEAM START","BEAM STOP","CFG BEGIN 0","CFG END","CFG ABORT",
-        "AFE RD ADC 255","AFE WR DTGC 1 65535","TX7332 RD 1023","GAIN SET 8","BRAM WR t_timing 0 1 6144"};
+        "AFE RD ADC 255","AFE WR DTGC 1 65535","AFE SLEEP","AFE WAKE","AFE STATUS","TX7332 RD 1023","GAIN SET 8","BRAM WR t_timing 0 1 6144"};
     for(unsigned i=0;i<sizeof(good)/sizeof(good[0]);i++) assert(!wc_validate(good[i]));
     puts("PASS protocol: boundary lengths/CRC/strict grammar/ranges/6144 layout");return 0;
 }

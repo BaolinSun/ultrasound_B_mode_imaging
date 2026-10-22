@@ -23,6 +23,12 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
 ) (
     input                   ref_200M_clk     ,
     input  wire             rst_n            ,
+    input wire clk_ctrl,
+    input wire [23:0] power_addr,
+    input wire [31:0] power_wdata,
+    input wire power_en,
+    input wire [3:0] power_we,
+    output wire [31:0] power_rdata,
     // LVDS clock from AFE
     input  wire             dclk_p           ,
     input  wire             dclk_n           ,
@@ -109,7 +115,10 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
     wire clkdiv2_mmcm;
 
 // 鍙洿鎺ョ敤澶栭儴澶嶄綅鎴栦笂鐢靛浣?
-    assign mmcm_rst = ~rst_n;
+    wire afe_mmcm_reset, afe_rx_reset;
+    wire afe_idelay_ready;
+    wire afe_rx_rst_n = rst_n && !afe_rx_reset;
+    assign mmcm_rst = ~rst_n | afe_mmcm_reset;
 
 // dclk=350MHz, clkdiv=50MHz
 // 浣犲彲浠ョ敤 Clocking Wizard 鑷姩绠楀ソ杩欎簺鏁帮紝鐒跺悗鏇挎崲涓嬮潰鐨勫??
@@ -226,11 +235,11 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
 
 
     (* ASYNC_REG = "TRUE" *) reg [2:0] rst_clkdiv_reg;
-    always @(posedge clkdiv or negedge rst_n) begin
-        if(~rst_n) begin
+    always @(posedge clkdiv or negedge afe_rx_rst_n) begin
+        if(~afe_rx_rst_n) begin
             rst_clkdiv_reg <= 3'b111;
         end else begin
-            rst_clkdiv_reg <= {rst_clkdiv_reg[1:0],~rst_n};
+            rst_clkdiv_reg <= {rst_clkdiv_reg[1:0],1'b0};
         end
     end
     assign rst_clkdiv = rst_clkdiv_reg[2];
@@ -264,7 +273,7 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
 
     (* IODELAY_GROUP                                                                           = "IODELAY_GROUP " *)
     IDELAYCTRL IDELAYCTRL_inst (
-        .RDY   (              ),   // 1-bit output: Ready output
+        .RDY   (afe_idelay_ready),   // 1-bit output: Ready output
         .REFCLK(ref_200M_clk  ),   // 1-bit input: Reference clock input
         .RST   (idelayctrl_rst)    // 1-bit input: Active high reset input
     );
@@ -279,6 +288,17 @@ module afe5832_adc_14b_16lane #(parameter integer IDELAY_TAPS   = 0             
 
 
     assign dbg_fclk_data = fclk14;
+
+    // Only this receiver is reset. AXI/DDR/PS/JTAG retain their own reset.
+    wire afe_raw_clk;
+    BUFG afe_raw_buf (.I(dclk_se),.O(afe_raw_clk));
+    afe_power_hw afe_power_i (
+        .clk_ctrl(clk_ctrl),.rst_n(rst_n),.clk_raw(afe_raw_clk),.clk_rx(clkdiv),
+        .mmcm_locked(mmcm_out_data_locked),.idelay_ready(afe_idelay_ready),
+        .rx_locked(out_data_locked),.fclk_word(fclk14),
+        .ctrl_addr(power_addr),.ctrl_wdata(power_wdata),.ctrl_en(power_en),.ctrl_we(power_we),
+        .ctrl_rdata(power_rdata),.mmcm_reset(afe_mmcm_reset),.rx_reset(afe_rx_reset)
+    );
 
     reg bitslip_pulse;
 

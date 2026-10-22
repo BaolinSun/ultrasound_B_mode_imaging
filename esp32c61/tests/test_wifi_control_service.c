@@ -16,6 +16,10 @@ static bool inject_off_when_wait;
 static uint32_t injected_id;
 static unsigned ps_down,down_writes;
 static bool nack_down;
+static const char *ps_afe="ready";
+static unsigned power_prepares,power_sleeps;
+static unsigned wake_queries;
+static unsigned host_idle_reads;
 SemaphoreHandle_t xSemaphoreCreateMutex(void) { return !strcmp(fault,"mutex")?NULL:(void*)1; }
 int xSemaphoreTake(SemaphoreHandle_t s,unsigned wait) { (void)wait;assert(s&&!held);held=1;return 1; }
 int xSemaphoreGive(SemaphoreHandle_t s) { assert(s&&held);held=0;return 1; }
@@ -55,7 +59,11 @@ void cJSON_AddStringToObject(cJSON *j,const char *key,const char *v) { (void)j;(
 esp_err_t zynq_uart_bridge_send(const char *data,size_t length) {
     (void)length;sends++;
     wc_message m;assert(wc_decode(data,false,&m));char result[128];
-    if(!strcmp(m.text,"STATUS")) snprintf(result,sizeof(result),"@STATUS v=1 cfg=%u owner=2 seq=1 run=0 hv=%u down=%u",ps_cfg,ps_hv,ps_down);
+    if(!strcmp(m.text,"STATUS")) snprintf(result,sizeof(result),"@STATUS v=1 cfg=%u owner=2 seq=1 run=0 hv=%u down=%u afe=%s",ps_cfg,ps_hv,ps_down,ps_afe);
+    else if(!strcmp(m.text,"AFE PREPARE")) {assert(gate);ps_hv=0;ps_afe="quiescing";power_prepares++;strcpy(result,"@ACK 0 AFE_PREPARE quiescing");}
+    else if(!strcmp(m.text,"AFE SLEEP")) {assert(gate&&drained&&!ps_hv&&!host_idle_reads&&!strcmp(ps_afe,"quiescing"));ps_afe="sleep";power_sleeps++;strcpy(result,"@ACK 0 AFE_SLEEP sleep");}
+    else if(!strcmp(m.text,"AFE WAKE")) {assert(gate&&drained);ps_afe="waking";wake_queries=2;strcpy(result,"@ACK 0 AFE_WAKE waking");}
+    else if(!strcmp(m.text,"AFE STATUS")) {if(wake_queries && !--wake_queries)ps_afe="ready";unsigned idle_host=host_idle_reads?--host_idle_reads==0:1;snprintf(result,sizeof(result),"@AFE state=%s flags=0000001f idle=%u error=NONE",ps_afe,idle_host);}
     else if(!strncmp(m.text,"CFG BEGIN ",10)) { assert(gate&&drained);ps_cfg=1;ps_hv=0;strcpy(result,"@ACK 1 CFG_BEGIN"); }
     else if(!strcmp(m.text,"CFG END")||!strcmp(m.text,"CFG ABORT")) { ps_cfg=0;ps_hv=0;strcpy(result,"@ACK 1 CFG_END"); }
     else if(!strncmp(m.text,"AFE",3)&&nack_afe) strcpy(result,"@NACK 1 AFE_WR_FAIL");
@@ -99,8 +107,10 @@ int main(int argc,char **argv) {
     assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"failed")&&result.completed==1&&!lease&&!gate&&!ps_hv);
     drop_reply=true;id=submit(1,6,"GAIN SET 3",NULL);drop_reply=false;
     assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"unknown"));
+    (void)submit(1,700,"STATUS",NULL);
     reset_during_reply=true;id=submit(1,7,"GAIN SET 4",NULL);reset_during_reply=false;
     assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"unknown"));
+    (void)submit(1,701,"STATUS",NULL);
     id=submit(1,8,"CFG BEGIN 3",NULL);clock_us+=60000001;run_worker();assert(!lease&&!gate&&!ps_cfg);
     drained=false;id=submit(1,9,"CFG BEGIN 4",NULL);assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"failed")&&gate);
     drained=true;id=submit(1,10,"STATUS",NULL);assert(!gate&&!lease);
@@ -135,6 +145,26 @@ int main(int argc,char **argv) {
     assert(zynq_control_submit(&job,false,&id)==ESP_OK);run_worker();nack_down=false;
     assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"failed")&&result.completed==2);
     assert(down_writes==old_writes&&!ps_cfg&&!ps_hv&&!gate);
+    drained=false;drain_steps=3;host_idle_reads=3;id=submit(1,200,"AFE SLEEP",NULL);
+    assert(power_prepares==1&&power_sleeps==1&&gate&&!ps_hv&&!strcmp(ps_afe,"sleep"));
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"succeeded"));
+    zynq_control_job again={.client=1,.request=200,.count=1};strcpy(again.commands[0],"AFE SLEEP");
+    assert(zynq_control_submit(&again,false,&duplicate)==ESP_OK&&duplicate==id&&power_sleeps==1);
+    memset(&job,0,sizeof(job));job.client=1;job.request=201;job.count=1;strcpy(job.commands[0],"HV ENABLE");
+    assert(zynq_control_submit(&job,true,&id)==ESP_ERR_INVALID_STATE);
+    id=submit(1,202,"AFE STATUS",NULL);assert(gate&&!strcmp(ps_afe,"sleep"));
+    id=submit(1,203,"AFE WAKE",NULL);assert(!gate&&!ps_hv&&!strcmp(ps_afe,"ready"));
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"succeeded"));
+    unsigned slept=power_sleeps;drained=false;drain_steps=0;
+    id=submit(1,204,"AFE SLEEP",NULL);
+    assert(power_sleeps==slept&&gate&&!ps_hv&&!strcmp(afe_state,"unknown"));
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"unknown"));
+    assert(strstr(afe_error,"no SLEEP commit"));
+    unsigned before_wake=sends;
+    id=submit(1,205,"AFE WAKE",NULL);
+    assert(sends==before_wake+1); /* handshake STATUS only, not a WAKE */
+    assert(gate&&strstr(afe_error,"no WAKE sent")&&!strcmp(ps_afe,"quiescing"));
+    drained=true;id=submit(1,206,"AFE WAKE",NULL);assert(!gate&&!ps_hv&&!strcmp(ps_afe,"ready"));
     cJSON json;zynq_control_status_json(&json);
     puts("PASS ESP worker: no NVS/USB credential dependency; bounded queue/segmented+late replies/dedup/owner/drain/timeout/reset/watchdog/cleanup");
     return 0;

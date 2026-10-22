@@ -21,6 +21,7 @@
 #include "iic/iic.h"
 #include "GPIO/gpio.h"
 #include "AFE5832/afe5832.h"
+#include "AFE5832/afe_power.h"
 //#include "ps_2_pl_ctrl.h"
 #include "usb/usb.h"
 #include "usb/usb_transport.h"
@@ -88,6 +89,8 @@ int main() {
 	}
 	usb_init();
 	sdio_bridge_init();
+	afe_power_init();
+	xil_printf("@AFE state=%s flags=%08x error=%s\r\n",afe_power_state_name(),(unsigned)afe_power_flags(),afe_power_error());
 	temperature_service_init();
 	xil_printf("@READY CONFIG\r\n");
 	xil_printf("Beamform ready; STOP.\r\n");
@@ -96,6 +99,7 @@ int main() {
 
 	while (1) {
 		temperature_service_poll();
+		afe_power_poll();
 		uart_process_commands();
 		usb_process_commands();
 #if DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO

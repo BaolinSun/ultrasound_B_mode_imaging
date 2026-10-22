@@ -42,6 +42,12 @@
       "ports": {
         "ref_200M_clk": [ { "direction": "in" } ],
         "rst_n": [ { "direction": "in" } ],
+        "clk_ctrl": [ { "direction": "in" } ],
+        "power_addr": [ { "direction": "in", "size_left": "23", "size_right": "0" } ],
+        "power_wdata": [ { "direction": "in", "size_left": "31", "size_right": "0" } ],
+        "power_en": [ { "direction": "in" } ],
+        "power_we": [ { "direction": "in", "size_left": "3", "size_right": "0" } ],
+        "power_rdata": [ { "direction": "out", "size_left": "31", "size_right": "0" } ],
         "dclk_p": [ { "direction": "in" } ],
         "dclk_n": [ { "direction": "in" } ],
         "fclk_p": [ { "direction": "in" } ],
@@ -114,5 +120,5 @@
       }
     }
   },
-  "checksum": "0f4caebc"
+  "checksum": "6aa25d4f"
 }
