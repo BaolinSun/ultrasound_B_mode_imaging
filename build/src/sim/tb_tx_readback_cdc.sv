@@ -32,6 +32,7 @@ para_reg para_dut (
 );
 
 tx_top tx_dut (
+    .power_hold(1'b0), .power_standby(1'b0), .power_idle(),
     .clk(clk_200), .reset(reset), .scan_enable(1'b0),
     .tx_cfg_req(1'b0), .rtc_line(7'd0), .rtc_polarity(1'b0),
     .tx_cfg_ready(), .tx_cfg_done(), .spi_start(1'b0),

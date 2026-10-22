@@ -7,7 +7,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include "../AFE5832/afe5832.h"
-#include "../AFE5832/afe_power.h"
+#include "../system_ctrl/imaging_power.h"
 #include "../bram/bram.h"
 #include "../HV/hv.h"
 #include "../data_transfer/frame_store.h"
@@ -573,6 +573,14 @@ static void uart_handle_hv(char **ctx)
 
 static void uart_handle_line(char *line)
 {
+    if(!strcmp(line,"TX7332 STATUS")) {
+        uart_emitf("@TX state=%s flags=%08x idle=%u error=%s",tx_power_state_name(),(unsigned)tx_power_flags(),(unsigned)tx_power_idle(),tx_power_error());return;
+    }
+    if(!strcmp(line,"TX7332 PREPARE")||!strcmp(line,"TX7332 SLEEP")||!strcmp(line,"TX7332 WAKE")) {
+        if(command_source!=SOURCE_WIFI||uart_cfg_active){uart_nack(uart_cfg_seq,"TX_OWNER_OR_CFG");return;}
+        if(tx_power_command(line+7,wifi_session)){uart_nack(uart_cfg_seq,tx_power_error());return;}
+        uart_emitf("@ACK %u TX_%s %s",uart_cfg_seq,line+7,tx_power_state_name());return;
+    }
     /* AFE status is independent of configuration ownership and never wakes it. */
     if(!strcmp(line,"AFE STATUS")) {
         uart_emitf("@AFE state=%s flags=%08x idle=%u error=%s",afe_power_state_name(),(unsigned)afe_power_flags(),(unsigned)afe_power_idle(),afe_power_error());return;
@@ -583,8 +591,8 @@ static void uart_handle_line(char *line)
         if(afe_power_command(op,wifi_session)!=0) {uart_nack(uart_cfg_seq,afe_power_error());return;}
         uart_emitf("@ACK %u AFE_%s %s",uart_cfg_seq,op,afe_power_state_name());return;
     }
-    if(!afe_power_allowed() && strcmp(line,"HV DISABLE") && strcmp(line,"BEAM STOP") && strcmp(line,"STATUS")) {
-        uart_nack(uart_cfg_seq,"AFE_NOT_READY");return;
+    if(!imaging_power_allowed() && strcmp(line,"HV DISABLE") && strcmp(line,"BEAM STOP") && strcmp(line,"STATUS")) {
+        uart_nack(uart_cfg_seq,afe_power_allowed()?"TX_NOT_READY":"AFE_NOT_READY");return;
     }
 	/* Other inputs cannot enter this transaction. Stop/off remain available. */
 	if(uart_cfg_active && !owns_cfg() && strcmp(line,"HV DISABLE") &&
@@ -592,9 +600,9 @@ static void uart_handle_line(char *line)
 		uart_emitf("@NACK %u CFG_OWNER",uart_cfg_seq); return;
 	}
 	if(!strcmp(line,"STATUS")) {
-		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u run_src=ps spi=%u down=%u afe=%s",uart_cfg_active,
+		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u run_src=ps spi=%u down=%u afe=%s tx=%s",uart_cfg_active,
 		    cfg_owner,uart_cfg_seq,(unsigned)Beamform_GetRunRequest(),(unsigned)hv_is_enabled(),
-		    (unsigned)Beamform_GetSpiStartRequest(),(unsigned)Beamform_GetDownsample(),afe_power_state_name());
+		    (unsigned)Beamform_GetSpiStartRequest(),(unsigned)Beamform_GetDownsample(),afe_power_state_name(),tx_power_state_name());
 		return;
 	}
 	char *ctx = line;
@@ -708,6 +716,7 @@ u32 uart_init(void) {
 void uart_process_commands(void)
 {
 	afe_power_poll();
+    tx_power_poll();
 	char line[UART_LINE_MAX];
 	if(uart_cfg_active && cfg_owner==SOURCE_WIFI && command_ms()-cfg_activity>=60000U) {
 		wifi_abort(); xil_printf("@WIFI_CFG_TIMEOUT stopped; HV disabled\r\n");

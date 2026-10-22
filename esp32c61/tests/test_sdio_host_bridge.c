@@ -15,6 +15,7 @@
 #endif
 static u8 regs[64];
 int afe_power_allowed(void) { return 1; }
+int tx_power_allowed(void) { return 1; }
 static u64 tick;
 static unsigned inits,aborts,blocks,windows,complete,commits,flushes,invalidations;
 static u8 *image_ddr;

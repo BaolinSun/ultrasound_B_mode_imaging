@@ -1,6 +1,6 @@
 #include "sdio_bridge.h"
 #include "xil_printf.h"
-#include "../AFE5832/afe_power.h"
+#include "../system_ctrl/imaging_power.h"
 
 int sdio_bridge_output_is_sdio(void) { return DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO; }
 
@@ -123,7 +123,7 @@ static void poll_once(void) {
         }
     }
     if(phase==IDLE) {
-        if(!afe_power_allowed()) return;
+        if(!imaging_power_allowed()) return;
         if((state&(BR_READY|BR_STREAM|BR_BACKPRESSURE))!=(BR_READY|BR_STREAM)) return;
         if(current_session!=session_id) { watermark=0; waiting_since=now; }
         session_id=current_session;

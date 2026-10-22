@@ -51,7 +51,7 @@ def validate_command(line):
             return line
         if root == "GAIN" and op == "SET" and len(t) == 3:
             number(t[2], 8); return line
-        if root == "AFE" and len(t) == 2 and op in ("SLEEP", "WAKE", "STATUS"):
+        if root in ("AFE", "TX7332") and len(t) == 2 and op in ("SLEEP", "WAKE", "STATUS"):
             return
         if root == "AFE" and len(t) in (4, 5) and t[2] in builder.VALID_MAPS:
             number(t[3], 255)

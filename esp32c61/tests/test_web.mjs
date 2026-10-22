@@ -42,7 +42,7 @@ function setup() {
       psram_largest: 1200000, selftest_bytes: 787456, max_bytes: 1048576, busy: false,
       result: 'not_ready', total_bytes: 0, sent_bytes: 0, packets: 0, retries: 0,
       socket_errno: 0, active_ip: '', active_port: 0,
-      zynq_control:{ready:true,synced:true,afe_state:'ready'}},
+      zynq_control:{ready:true,synced:true,afe_state:'ready',tx_state:'ready'}},
     offline: false, failSave: false, calls: [], now:1700000000000,
   };
   backend.confirmed=true;
@@ -399,7 +399,7 @@ test('configuration gate disables image submissions and safe stop sends HV DISAB
 
 async function downsampleEnvironment(d=0){
  const e=setup();await e.settle();
- e.backend.status.zynq_control={ready:true,busy:false,config_owned:false,synced:true,afe_state:'ready',
+ e.backend.status.zynq_control={ready:true,busy:false,config_owned:false,synced:true,afe_state:'ready',tx_state:'ready',
   ps_status:`@STATUS v=1 cfg=0 owner=2 seq=0 run=1 hv=1 run_src=ps spi=1 down=${d}`};
  await e.context.refresh();return e;
 }
@@ -483,4 +483,25 @@ test('downsampling prevents double submit and keeps safety stop available during
  await e.elements['zynq-down-set'].listeners.click();
  release();await first;
  assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,1);
+});
+
+test('TX standby controls are independent and the two power gates are combined',async()=>{
+ const e=setup();await e.settle();
+ for(const afe of ['ready','sleep'])for(const tx of ['ready','sleep']){
+  e.backend.status.zynq_control={ready:true,synced:true,afe_state:afe,tx_state:tx,tx_flags:tx==='ready'?9:15};
+  await e.context.refresh();
+  assert.equal(e.elements['tx-sleep'].disabled,tx!=='ready');
+  assert.equal(e.elements['tx-wake'].disabled,tx==='ready');
+  assert.equal(e.elements['afe-wake'].disabled,afe==='ready');
+  if(afe!=='ready'||tx!=='ready')for(const id of ['upload','sdio-once','sdio-stream','zynq-start','zynq-hv-on','zynq-down-set'])assert.equal(e.elements[id].disabled,true);
+ }
+ await e.elements['tx-query'].listeners.click();assert.deepEqual(e.backend.commandBody.commands,['TX7332 STATUS']);
+ await e.elements['tx-wake'].listeners.click();assert.deepEqual(e.backend.commandBody.commands,['TX7332 WAKE']);
+ assert.equal(e.backend.commandBody.allow_hv,false);
+ e.backend.status.zynq_control.tx_state='ready';await e.context.refresh();
+ await e.elements['tx-sleep'].listeners.click();assert.deepEqual(e.backend.commandBody.commands,['TX7332 SLEEP']);
+ assert.equal(e.backend.commandBody.allow_hv,false);
+ const count=e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length;
+ await e.context.refresh();assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,count);
+ delete e.backend.status.zynq_control.tx_state;await e.context.refresh();assert.equal(e.elements['zynq-start'].disabled,true);
 });

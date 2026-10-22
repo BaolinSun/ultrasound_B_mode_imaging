@@ -31,6 +31,7 @@ set(USER_INCLUDE_DIRECTORIES
 "."
 ".compile_commands"
 "AFE5832"
+"TX7332"
 "GPIO"
 "HV"
 "bram"
@@ -47,6 +48,7 @@ set(USER_INCLUDE_DIRECTORIES
 #Example 3: Adding ${MY_ENV}/data/helloworld.c are expanded using project-specific environment settings.
 set(USER_COMPILE_SOURCES
 "AFE5832/afe_power.c"
+"TX7332/tx_power.c"
 "data_transfer/frame_crc.c"
 "outbyte.c"
 "uart/uart_log.c"

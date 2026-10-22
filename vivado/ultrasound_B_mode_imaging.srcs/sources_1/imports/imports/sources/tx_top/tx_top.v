@@ -1,5 +1,7 @@
 module tx_top
 (
+    input wire power_hold, power_standby,
+    output wire power_idle,
 	input								clk,
 	input								reset,
 
@@ -73,6 +75,11 @@ reg tx_spi_rdreq_seen;
 reg tx_spi_rdreq_pending;
 reg [9:0] tx_spi_rdaddr_latched;
 wire tx_spi_rdaccept;
+wire cfg_power_idle;
+wire [3:0] spi_power_idle;
+assign power_idle = cfg_power_idle && (&spi_power_idle) && !tx_spi_rdreq_pending &&
+    tx_spi_rdreq_sync[1]==tx_spi_rdreq_seen && tx_spi_rdreq_sync[0]==tx_spi_rdreq_seen &&
+    !tx_spi_die1_rdvalid && !tx_spi_die2_rdvalid && ctrl_spi_rdy;
 
 // Toggle synchronizer for clk_para -> clk_200.  The bundled address is held
 // by para_reg until the completion toggle returns, so it is stable before the
@@ -98,15 +105,16 @@ end
 
 tx_cfg_top								tx_cfg_top_i
 (
+    .power_idle(cfg_power_idle), .power_hold(power_hold),
 	.clk								(clk					),
 	.reset								(reset					),
 	.scan_enable						(scan_enable			),
-	.tx_cfg_req						(tx_cfg_req				),
+	.tx_cfg_req						(tx_cfg_req && !power_hold),
 	.rtc_line							(rtc_line				),
 	.rtc_polarity						(rtc_polarity			),
 	.tx_cfg_ready						(tx_cfg_ready			),
 	.tx_cfg_done						(tx_cfg_done			),
-	.spi_start							(spi_start				),
+	.spi_start							(spi_start && !power_hold),
 	.tx_st_reg_rden						(tx_st_reg_rden			),
 	.tx_st_reg_rdaddr					(tx_st_reg_rdaddr		),
 	.tx_st_reg_rddata					(tx_st_reg_rddata		),
@@ -115,7 +123,7 @@ tx_cfg_top								tx_cfg_top_i
 	.tx_rt_reg_rdaddr					(tx_rt_reg_rdaddr		),
 	.tx_rt_reg_rddata					(tx_rt_reg_rddata		),
 	.tx_rt_reg_num						(tx_rt_reg_num			),
-	.tx_spi_rdreq						(tx_spi_rdreq_pending	),
+	.tx_spi_rdreq						(tx_spi_rdreq_pending && !power_hold),
 	.tx_spi_rdaddr						(tx_spi_rdaddr_latched	),
 	.tx_spi_rdaccept					(tx_spi_rdaccept		),
 	
@@ -142,6 +150,7 @@ tx_cfg_top								tx_cfg_top_i
 
 tx_spi									tx_spi_0
 (				
+    .power_idle(spi_power_idle[0]),
 	.clk								(clk				),
 	.reset								(reset				),
 	.spi_trig							(tx_spi_trig0		),
@@ -208,6 +217,7 @@ end
 
 tx_spi									tx_spi_1
 (				
+    .power_idle(spi_power_idle[1]),
 	.clk								(clk			),
 	.reset								(reset			),
 	.spi_trig							(tx_spi_trig1	),
@@ -226,6 +236,7 @@ tx_spi									tx_spi_1
 
 tx_spi									tx_spi_2
 (
+    .power_idle(spi_power_idle[2]),
 	.clk								(clk			),
 	.reset								(reset			),
 	.spi_trig							(tx_spi_trig0	),
@@ -244,6 +255,7 @@ tx_spi									tx_spi_2
 
 tx_spi									tx_spi_3
 (				
+    .power_idle(spi_power_idle[3]),
 	.clk								(clk			),
 	.reset								(reset			),
 	.spi_trig							(tx_spi_trig1	),
@@ -286,7 +298,7 @@ tx_ctrl									tx_ctrl_i
 (
 	.clk								(clk			),
 	.reset								(reset			),
-	.tx_cfg_reset						(tx_cfg_reset	),
+	.tx_cfg_reset						(tx_cfg_reset && !power_hold),
 	.tx_reset							(tx_reset		),
 	.tx_dsel0							(tx_dsel0		),
 	.tx_dsel1							(tx_dsel1		),
@@ -294,7 +306,7 @@ tx_ctrl									tx_ctrl_i
 );
 //--------------------------------------------------------------------------------------------------
 assign tr_en = 8'b0000_0000;
-assign tx_stdby = 1'b0;
+assign tx_stdby = power_standby;
 assign tx_cw_en = 1'b0;
 //--------------------------------------------------------------------------------------------------
 endmodule

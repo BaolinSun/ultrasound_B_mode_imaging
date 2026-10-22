@@ -55,6 +55,13 @@ Wi-Fi、网页、日志、LED、三路温度继续运行。DTGC 不被恢复代�
 
 CDC crossing：Gray 计数→两级同步，限定 max-delay/bus-skew；单 bit→两级同步；代次→保持数据请求/确认握手并限定路径。各接收域复位异步置位、同步释放。局部复位不复位共享 AXI/DDR/PS/SDIO/JTAG；不改变 MMCM 频率或 `ila_bf` 原有探针。
 
+## 与独立 TX 待机的协调
+
+新增 TX 功能后，两颗芯片的状态独立，AFE 操作不会替 TX 掉电或唤醒。
+扫描、高压、参数写入及新上传必须同时满足 AFE 与 TX 就绪；唤醒一颗不会解除另一颗的门控。
+AFE 已睡眠时，TX 仅可复用仍有效的 DDR 排空证明，不向停钟的接收 FIFO 重新发送清理请求。
+详见 [TX7332 电源控制](TX7332_POWER.md)。
+
 ## 构建、回退与验收
 
 必须使用配套 bit/XSA、PS ELF 和 ESP32 固件；旧 bit 会报 AFE_ABI。原 release 分支保留，回退需同时恢复配套产物。原磁盘输出备份在 `build/backups/afe_power_4d8c78c/`，不据此保证备份产物全部来自同一 Git 提交。构建结果及哈希见 [构建记录](AFE_POWER_BUILD.md)。

@@ -1,5 +1,6 @@
 module tx_spi
 (
+    output wire power_idle,
 	input									clk,
 	input									reset,
 	input									spi_trig,
@@ -228,4 +229,7 @@ assign							o_spi_sclk = spi_sclk;
 assign							o_spi_sdata = spi_sdata;
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
+// Actual shifters plus the trigger pipeline and registered chip select.
+assign power_idle=(STATE_WRSPI==WRSPI_IDLE) && (STATE_RDSPI==RDSPI_IDLE) &&
+    !spi_trig && !spi_trig_t0 && !spi_trig_t1 && !spi_trig_pos && o_spi_sen;
 endmodule

@@ -95,6 +95,7 @@ static inline const char *wc_validate(const char *line) {
         if(!strcmp(t[1],"RD")) return n==4?NULL:"ARGUMENTS";
         return n==5&&!strcmp(t[1],"WR")&&wc_uint(t[4],&a)&&a<=65535?NULL:"AFE_ARGS";
     }
+    if(!strcmp(t[0],"TX7332") && n==2 && (!strcmp(t[1],"SLEEP")||!strcmp(t[1],"WAKE")||!strcmp(t[1],"STATUS")||!strcmp(t[1],"PREPARE"))) return NULL;
     if(!strcmp(t[0],"TX7332")&&!strcmp(t[1],"RD")) return n==3&&wc_uint(t[2],&a)&&a<=1023?NULL:"TX7332_RD_ARGS";
     if(strcmp(t[0],"BRAM")&&strcmp(t[0],"TX7332")) return "UNKNOWN_CMD";
     if(n<6||strcmp(t[1],"WR")||!wc_uint(t[3],&a)||!wc_uint(t[4],&b)||!b||b>8||n!=5+b) return "WRITE_ARGS";

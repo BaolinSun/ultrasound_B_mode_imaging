@@ -2,6 +2,8 @@
 //--------------------------------------------------------------------------------------------------
 module tx_cfg_top
 (
+    output wire power_idle,
+    input wire power_hold,
 	input									clk,
 	input									reset,
 
@@ -44,6 +46,7 @@ module tx_cfg_top
 );
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------------------------------------------
+wire st_power_idle, rt_power_idle, rd_power_idle;
 reg											scan_enable_t0;
 reg											scan_enable_t1;
 wire										scan_enable_pos;
@@ -92,7 +95,9 @@ assign tx_spi_rdaccept = (ST_CONFIG == CFG_IDLE) && !spi_start_pos && tx_spi_rdr
 
 always@(posedge clk)
 begin
-	if(reset | scan_enable_neg)
+    // Power HOLD is asserted only after the real shifters/children drained.
+    // Re-arm the controller without resetting SPI or the chip/register cache.
+	if(reset | scan_enable_neg | (power_hold && power_idle))
 		ST_CONFIG <= CFG_IDLE;
 	else
 		ST_CONFIG <= NT_CONFIG;
@@ -184,6 +189,7 @@ assign tx_cfg_done = rtreg_cfg_done;
 
 tx_cfg_streg							tx_cfg_streg_i
 (
+    .power_idle(st_power_idle),
 	.clk								(clk					),
 	.reset								(reset					),
 	.streg_cfg_en						(streg_cfg_en			),
@@ -221,6 +227,7 @@ wire		[31:0]						tx1_rtreg_spi_txdata1;
 
 tx_cfg_rtreg							tx_cfg_rtreg_i
 (
+    .power_idle(rt_power_idle),
 	.clk								(clk					),
 	.reset								(reset					),
 	.rtc_line							(rtc_line				),
@@ -265,6 +272,7 @@ wire		[31:0]						tx1_rdreg_spi_txdata1;
 
 tx_cfg_rdreg							tx_cfg_rdreg_i
 (
+    .power_idle(rd_power_idle),
 	.clk								(clk					),
 	.reset								(reset					),
 	.rdreg_cfg_done						(rdreg_cfg_done			),
@@ -349,4 +357,8 @@ begin
 	endcase
 end
 
+
+assign power_idle=(ST_CONFIG==CFG_IDLE || ST_CONFIG==CFG_RTREG) &&
+    st_power_idle && rt_power_idle && rd_power_idle && !tx_cfg_req &&
+    !spi_start_pos && !tx_spi_rdreq && !tx_spi_trig0 && !tx_spi_trig1;
 endmodule

@@ -27,6 +27,7 @@ foreach {name direction width pin} {
 source [file join $fs_root build scripts configure_para_ports.tcl]
 configure_para_ports
 source [file join $fs_root build scripts configure_afe_power.tcl]
+source [file join $fs_root build scripts configure_tx_power.tcl]
 save_reload_para_ports
 generate_target all [get_files [get_property FILE_NAME [current_bd_design]]]
 make_wrapper -files [get_files [get_property FILE_NAME [current_bd_design]]] -top

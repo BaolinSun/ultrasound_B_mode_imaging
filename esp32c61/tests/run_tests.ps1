@@ -287,6 +287,12 @@ if($LASTEXITCODE -ne 0) {throw 'AFE power state machine self-check failed'}
 if($LASTEXITCODE -ne 0) { throw 'Beamform MMIO regression compile failed' }
 & (Join-Path $controlOutput 'beamform.exe')
 if($LASTEXITCODE -ne 0) { throw 'Beamform MMIO regression failed' }
+& $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic `
+    (Join-Path $PSScriptRoot 'test_tx_power.c') (Join-Path $projectRoot '../common/tx_power_machine.c') `
+    -o (Join-Path $controlOutput 'tx_power.exe')
+if($LASTEXITCODE -ne 0){throw 'TX state machine compile failed'}
+& (Join-Path $controlOutput 'tx_power.exe')
+if($LASTEXITCODE -ne 0){throw 'TX state machine failed'}
 foreach($suite in @('wifi_protocol','wifi_control_service')) {
     [string[]]$extra=if($suite -eq 'wifi_control_service') { @('-I',(Join-Path $PSScriptRoot 'stubs/control')) } else { @() }
     $binary=Join-Path $controlOutput "$suite.exe"

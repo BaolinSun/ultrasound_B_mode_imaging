@@ -13,5 +13,6 @@ void usb_transport_reply(const char *text);
 int usb_image_config_begin(void);
 void usb_image_config_end(void);
 void usb_transport_power_gate(int blocked);
+void usb_transport_power_vote(unsigned owner,int blocked);
 int usb_transport_power_idle(void);
 #endif

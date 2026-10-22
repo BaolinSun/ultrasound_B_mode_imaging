@@ -1,5 +1,5 @@
 #include "usb_transport.h"
-#include "../AFE5832/afe_power.h"
+#include "../system_ctrl/imaging_power.h"
 #include "usb_frame_tx.h"
 #include "usb.h"
 #include "../data_transfer/output_config.h"
@@ -28,6 +28,7 @@ static const uint8_t * volatile tx_buffer;
 static uint64_t tx_deadline;
 static volatile unsigned seen_epoch, faulted, config_blocked;
 static uint32_t errors_logged;
+static unsigned power_blocks; /* Independent AFE=1 / TX=2 votes; never clear a peer. */
 
 static uint64_t ms(void) { XTime t; XTime_GetTime(&t); return (uint64_t)t * 1000U / (uint64_t)(COUNTS_PER_SECOND); }
 static u32 lock(void) { u32 saved = mfcpsr(); Xil_ExceptionDisableMask(XIL_EXCEPTION_IRQ); return saved; }
@@ -221,7 +222,7 @@ void usb_transport_poll(void)
     uint64_t now = ms();
     if (tx_kind == TX_REPLY && now >= tx_deadline) (void)usb_frame_cancel(&image, "REPLY_TIMEOUT");
     if (faulted) goto report;
-    if (request && image.state == USB_IMAGE_IDLE && !tx_kind && !reply_count && !config_blocked && afe_power_allowed()) {
+    if (request && image.state == USB_IMAGE_IDLE && !tx_kind && !reply_count && !config_blocked && !power_blocks && imaging_power_allowed()) {
 #if DATA_OUTPUT_MODE == DATA_OUTPUT_USB
         u32 speed = XUsbPs_ReadReg(UsbInstance.Config.BaseAddress, XUSBPS_PORTSCR1_OFFSET) & XUSBPS_PORTSCR_PSPD_MASK;
         if (speed != 0x08000000U) {
@@ -266,11 +267,13 @@ int usb_image_config_begin(void)
     if (image.frame.token || image.state == USB_IMAGE_FAULT) { usb_image_config_end(); return -1; }
     return 0;
 }
-void usb_image_config_end(void) { config_blocked = image.blocked = 0; }
-void usb_transport_power_gate(int blocked) {
-    if(!initialized) return;
-    config_blocked=image.blocked=blocked; request=0;
+void usb_image_config_end(void) { config_blocked=0; image.blocked=power_blocks!=0; }
+void usb_transport_power_vote(unsigned owner,int blocked) {
+    if(blocked)power_blocks|=owner;else power_blocks&=~owner;
+    if(!initialized)return;
+    image.blocked=config_blocked || power_blocks;request=0;
 }
+void usb_transport_power_gate(int blocked) {usb_transport_power_vote(1U,blocked);}
 int usb_transport_power_idle(void) {
     return !initialized || (!usb_frame_busy(&image) && !image.frame.token && !tx_kind);
 }

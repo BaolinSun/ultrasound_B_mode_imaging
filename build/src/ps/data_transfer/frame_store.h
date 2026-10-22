@@ -41,5 +41,6 @@ typedef struct {
     u32 axi,input,parser,samples,age;
 } frame_store_pause_diag_t;
 const volatile frame_store_pause_diag_t *frame_store_pause_diagnostic(void);
+int frame_store_pause_retained(void); /* read-only, no FIFO clock required */
 int frame_store_resume(void);
 #endif

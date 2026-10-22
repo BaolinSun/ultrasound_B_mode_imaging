@@ -5,7 +5,14 @@
 #include "../../build/src/ps/data_transfer/frame_store.h"
 #include <assert.h>
 #include <stdio.h>
-static int afe_ready=1;
+static int afe_ready=1,tx_ready=1;
+int tx_power_allowed(void){return tx_ready;}
+int tx_power_idle(void){return 1;}
+void tx_power_poll(void){}
+const char *tx_power_state_name(void){return tx_ready?"ready":"sleep";}
+const char *tx_power_error(void){return "TX_NOT_READY";}
+u32 tx_power_flags(void){return tx_ready?9:15;}
+int tx_power_command(const char *op,u32 owner){(void)owner;tx_ready=!strcmp(op,"WAKE");return 0;}
 int afe_power_allowed(void) { return afe_ready; }
 int afe_power_idle(void) { return 1; }
 void afe_power_poll(void) { }
@@ -161,6 +168,19 @@ int main(void) {
     uart_handle_wifi_line("AFE STATUS",12,capture);assert(strstr(answer,"state=sleep"));
     uart_handle_wifi_line("HV DISABLE",12,capture);assert(strstr(answer,"HV_DISABLE")&&!hv&&!run);
     uart_handle_wifi_line("AFE WAKE",12,capture);assert(strstr(answer,"AFE_WAKE")&&afe_ready&&!hv&&!run);
-    puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE power interlocks/bounded TX");
+    tx_ready=0;
+    uart_handle_wifi_line("BEAM START",12,capture);assert(strstr(answer,"TX_NOT_READY")&&!run&&!hv);
+    uart_handle_usb_line("HV ENABLE",capture);assert(strstr(answer,"TX_NOT_READY")&&!hv);
+    uart_handle_usb_line("CFG BEGIN 90",capture);assert(strstr(answer,"TX_NOT_READY"));
+    uart_handle_wifi_line("TX7332 STATUS",12,capture);assert(strstr(answer,"state=sleep"));
+    uart_handle_wifi_line("AFE SLEEP",12,capture);assert(!afe_ready&&!tx_ready);
+    uart_handle_wifi_line("TX7332 WAKE",12,capture);assert(tx_ready&&!afe_ready&&!run&&!hv);
+    uart_handle_wifi_line("BEAM START",12,capture);assert(strstr(answer,"AFE_NOT_READY")&&!run);
+    uart_handle_wifi_line("AFE WAKE",12,capture);assert(afe_ready&&tx_ready&&!hv&&!run);
+    uart_handle_wifi_line("CFG BEGIN 91",12,capture);assert(strstr(answer,"CFG_BEGIN"));
+    uart_handle_wifi_line("TX7332 SLEEP",12,capture);assert(strstr(answer,"TX_OWNER_OR_CFG")&&tx_ready);
+    uart_handle_wifi_line("CFG ABORT",12,capture);
+    uart_handle_usb_line("TX7332 SLEEP",capture);assert(strstr(answer,"TX_OWNER_OR_CFG")&&tx_ready);
+    puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE+TX power interlocks/bounded TX");
     return 0;
 }

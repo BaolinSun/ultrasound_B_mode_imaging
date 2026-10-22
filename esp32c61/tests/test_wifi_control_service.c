@@ -16,7 +16,8 @@ static bool inject_off_when_wait;
 static uint32_t injected_id;
 static unsigned ps_down,down_writes;
 static bool nack_down;
-static const char *ps_afe="ready";
+static const char *ps_afe="ready",*ps_tx="ready";
+static unsigned tx_prepares,tx_sleeps,tx_wake_queries;
 static unsigned power_prepares,power_sleeps;
 static unsigned wake_queries;
 static unsigned host_idle_reads;
@@ -59,7 +60,11 @@ void cJSON_AddStringToObject(cJSON *j,const char *key,const char *v) { (void)j;(
 esp_err_t zynq_uart_bridge_send(const char *data,size_t length) {
     (void)length;sends++;
     wc_message m;assert(wc_decode(data,false,&m));char result[128];
-    if(!strcmp(m.text,"STATUS")) snprintf(result,sizeof(result),"@STATUS v=1 cfg=%u owner=2 seq=1 run=0 hv=%u down=%u afe=%s",ps_cfg,ps_hv,ps_down,ps_afe);
+    if(!strcmp(m.text,"STATUS")) snprintf(result,sizeof(result),"@STATUS v=1 cfg=%u owner=2 seq=1 run=0 hv=%u down=%u afe=%s tx=%s",ps_cfg,ps_hv,ps_down,ps_afe,ps_tx);
+    else if(!strcmp(m.text,"TX7332 PREPARE")){assert(gate);ps_hv=0;ps_tx="quiescing";tx_prepares++;strcpy(result,"@ACK 0 TX_PREPARE quiescing");}
+    else if(!strcmp(m.text,"TX7332 SLEEP")){assert(gate&&drained&&!ps_hv);ps_tx="sleep";tx_sleeps++;strcpy(result,"@ACK 0 TX_SLEEP sleep");}
+    else if(!strcmp(m.text,"TX7332 WAKE")){assert(gate&&drained);ps_tx="waking";tx_wake_queries=2;strcpy(result,"@ACK 0 TX_WAKE waking");}
+    else if(!strcmp(m.text,"TX7332 STATUS")){if(tx_wake_queries&&! --tx_wake_queries)ps_tx="ready";snprintf(result,sizeof(result),"@TX state=%s flags=%08x idle=1 error=NONE",ps_tx,!strcmp(ps_tx,"sleep")?15U:9U);}
     else if(!strcmp(m.text,"AFE PREPARE")) {assert(gate);ps_hv=0;ps_afe="quiescing";power_prepares++;strcpy(result,"@ACK 0 AFE_PREPARE quiescing");}
     else if(!strcmp(m.text,"AFE SLEEP")) {assert(gate&&drained&&!ps_hv&&!host_idle_reads&&!strcmp(ps_afe,"quiescing"));ps_afe="sleep";power_sleeps++;strcpy(result,"@ACK 0 AFE_SLEEP sleep");}
     else if(!strcmp(m.text,"AFE WAKE")) {assert(gate&&drained);ps_afe="waking";wake_queries=2;strcpy(result,"@ACK 0 AFE_WAKE waking");}
@@ -165,6 +170,18 @@ int main(int argc,char **argv) {
     assert(sends==before_wake+1); /* handshake STATUS only, not a WAKE */
     assert(gate&&strstr(afe_error,"no WAKE sent")&&!strcmp(ps_afe,"quiescing"));
     drained=true;id=submit(1,206,"AFE WAKE",NULL);assert(!gate&&!ps_hv&&!strcmp(ps_afe,"ready"));
+    id=submit(1,300,"TX7332 SLEEP",NULL);assert(gate&&!strcmp(ps_tx,"sleep")&&!strcmp(ps_afe,"ready")&&tx_sleeps==1&&tx_prepares==1);
+    id=submit(1,301,"AFE SLEEP",NULL);assert(gate&&!strcmp(ps_tx,"sleep")&&!strcmp(ps_afe,"sleep"));
+    id=submit(1,302,"TX7332 WAKE",NULL);assert(gate&&!strcmp(ps_tx,"ready")&&!strcmp(ps_afe,"sleep"));
+    id=submit(1,303,"AFE WAKE",NULL);assert(!gate&&!strcmp(ps_tx,"ready")&&!strcmp(ps_afe,"ready"));
+    id=submit(1,304,"AFE SLEEP",NULL);
+    id=submit(1,305,"TX7332 SLEEP",NULL);assert(gate&&!strcmp(ps_tx,"sleep")&&!strcmp(ps_afe,"sleep"));
+    id=submit(1,306,"AFE WAKE",NULL);assert(gate&&!strcmp(ps_tx,"sleep")&&!strcmp(ps_afe,"ready"));
+    id=submit(1,307,"TX7332 WAKE",NULL);assert(!gate&&!ps_hv);
+    unsigned dispatched=sends;tx_observe("@TX state=ready flags=0000000f idle=1 error=NONE");assert(tx_blocked);
+    job.request=400;job.count=1;strcpy(job.commands[0],"HV ENABLE");assert(zynq_control_submit(&job,true,&id)==ESP_ERR_INVALID_STATE&&sends==dispatched);
+    tx_observe("@TX state=ready flags=00000009 idle=1 error=NONE");assert(!tx_blocked);
+    strcpy(job.commands[0],"TX7332 PREPARE");assert(zynq_control_submit(&job,false,&id)==ESP_ERR_INVALID_ARG);
     cJSON json;zynq_control_status_json(&json);
     puts("PASS ESP worker: no NVS/USB credential dependency; bounded queue/segmented+late replies/dedup/owner/drain/timeout/reset/watchdog/cleanup");
     return 0;

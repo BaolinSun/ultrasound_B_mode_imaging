@@ -8,6 +8,7 @@
 #define FRAME_BARRIER() __asm__ volatile("" ::: "memory")
 #endif
 static u32 sequence;
+static u32 retained_pause_seq;
 static int initialized;
 static volatile frame_store_init_diag_t init_diag;
 static volatile frame_store_pause_diag_t pause_diag;
@@ -17,6 +18,9 @@ const volatile frame_store_init_diag_t *frame_store_init_diagnostic(void) {
     return &init_diag;
 }
 static int command(u32 op, u32 timeout_ms) {
+    /* Any operation invalidates a prior pause certificate, except a failed
+     * no-op read performed by pause_retained(). New PAUSE creates a new one. */
+    retained_pause_seq=0;
     u32 version=Xil_In32(FS_BASE+FS_VERSION);
     command_version=version;command_reason=FS_DRAIN_OK;
     if(op==FS_INIT) { init_diag.stage=FS_INIT_COMMAND_VERSION; init_diag.version=version; }
@@ -149,6 +153,15 @@ int frame_store_pause(void) {
             pause_diag.age=Xil_In32(FS_BASE+FS_DIAG_AGE);
         }
     }
+    if(rc==FS_OK)retained_pause_seq=sequence;
     return rc==FS_OK ? 0:-1;
+}
+int frame_store_pause_retained(void) {
+    /* Read-only proof from this PS boot, invalidated by every FS command.
+     * flags initialized=1, active=0, input_busy=0, paused=1. */
+    FRAME_BARRIER();
+    return initialized && retained_pause_seq && Xil_In32(FS_BASE+FS_VERSION)==FS_MAGIC &&
+        Xil_In32(FS_BASE+FS_ACK)==retained_pause_seq && Xil_In32(FS_BASE+FS_SEQ)==retained_pause_seq &&
+        Xil_In32(FS_BASE+FS_RESULT)==FS_OK && (Xil_In32(FS_BASE+FS_FLAGS)&15U)==9U ? 0:-1;
 }
 int frame_store_resume(void) { return initialized && command(FS_RESUME,100)==FS_OK ? 0:-1; }

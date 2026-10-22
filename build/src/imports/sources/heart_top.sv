@@ -79,6 +79,7 @@ wire							data_clk;
 wire up_header, up_last, capture_busy;
 wire [31:0] frame_ctrl_rdata;
 wire [31:0] afe_power_rdata;
+wire [31:0] tx_power_rdata;
 reg								proc_en;
 reg			[511:0]				proc_in;
 wire							up_dataen;
@@ -175,6 +176,8 @@ begin
             para_dout <= frame_ctrl_rdata;
 		else if (para_addr[23:6] == 18'h1300c)
             para_dout <= afe_power_rdata;
+        else if (para_addr[23:6] == 18'h1300d)
+            para_dout <= tx_power_rdata;
 		else
 			para_dout <= 32'd0;
 	end
@@ -230,6 +233,7 @@ ila_bf						ila_bf_i
 proc_top					proc_top_i
 (
     .up_header(up_header), .up_last(up_last), .capture_busy(capture_busy),
+    .tx_power_rdata(tx_power_rdata), .power_en(para_en), .power_we(para_we),
 	.clk_para				(para_clk		),
 	.clk_200				(clk_200m		),
 	.clk_25					(data_clk		),

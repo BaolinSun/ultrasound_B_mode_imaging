@@ -63,6 +63,13 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <button id="zynq-send">下发命令</button></details>
 <pre id="control-result" style="white-space:pre-wrap;overflow-wrap:anywhere" aria-live="polite">尚未下发命令</pre>
 </section>
+<section class="card"><h2>TX7332 电源控制</h2>
+<p>仅 TX 使用 STDBY 引脚待机，不改变 AFE 状态；网页及温度采集继续运行。恢复后扫描、高压及上传仍停止。数字状态正常不等于模拟输出已验证。</p>
+<p id="tx-power-status" class="muted" role="status">TX 状态未知，请查询。</p>
+<button id="tx-sleep" disabled>TX 待机</button>
+<button id="tx-wake" class="secondary" disabled>唤醒 TX</button>
+<button id="tx-query" class="secondary" disabled>查询 TX 状态</button>
+</section>
 <section class="card"><h2>AFE5832 电源控制</h2>
 <p>仅 AFE 待机，网页、温度采集及其他芯片继续运行。进入前自动关闭高压、停止扫描并排空数据；唤醒后不会自动恢复扫描、高压或上传。</p>
 <p id="afe-power-status" class="muted" role="status">AFE 状态未知，请查询。</p>
@@ -259,12 +266,17 @@ function renderZynqControl(s){
  el('zynq-down-set').disabled=downDisabled;el('zynq-down').disabled=downDisabled;
  previewDownsample();
  const afe=c.afe_state||'unknown',afeReady=c.synced&&afe==='ready';
+ const tx=c.tx_state||'unknown',txReady=c.synced&&tx==='ready';
+ el('tx-power-status').textContent=`TX：${tx}；标志 0x${Number(c.tx_flags||0).toString(16)}；${c.tx_error||'请更新配套 bit、PS 和 ESP32 固件并查询'}。${c.tx_age_ms>=0?'缓存为 '+(c.tx_age_ms/1000).toFixed(1)+' 秒前；':''}查询不唤醒。STDBY 控制状态，不是模拟输出测量。`;
+ for(const id of ['tx-sleep','tx-wake','tx-query'])el(id).disabled=!!controlBusy||!!c.busy||!c.ready;
+ el('tx-sleep').disabled=el('tx-sleep').disabled||!txReady||!!c.config_owned;
+ el('tx-wake').disabled=el('tx-wake').disabled||txReady||!!c.config_owned;
  el('afe-power-status').textContent=`AFE：${afe}；恢复标志 0x${Number(c.afe_flags||0).toString(16)}；${c.afe_error||'请更新配套固件并查询'}。${c.afe_age_ms>=0?'状态为 '+(c.afe_age_ms/1000).toFixed(1)+' 秒前的缓存；查询不唤醒。':''}`;
  for(const id of ['afe-sleep','afe-wake','afe-query'])el(id).disabled=!!controlBusy||!!c.busy||!c.ready;
  el('afe-sleep').disabled=el('afe-sleep').disabled||!afeReady||!!c.config_owned;
  el('afe-wake').disabled=el('afe-wake').disabled||afeReady||!!c.config_owned;
- if(!afeReady){for(const id of ['zynq-hv-on','zynq-start','zynq-gain-set','zynq-down-set'])el(id).disabled=true;el('zynq-down').disabled=true}
- if(c.config_owned||!afeReady){el('upload').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true}
+ if(!afeReady||!txReady){for(const id of ['zynq-hv-on','zynq-start','zynq-gain-set','zynq-down-set','zynq-send'])el(id).disabled=true;el('zynq-down').disabled=true}
+ if(c.config_owned||!afeReady||!txReady){el('upload').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true}
 }
 async function controlApi(path,body){
  return api(path,{method:body?'POST':'GET',headers:body?{'Content-Type':'application/json'}:{},...(body?{body:JSON.stringify(body)}:{})});
@@ -279,7 +291,7 @@ async function sendZynq(lines,options={}){
  if(hv&&!confirm('即将开启高压。请确认硬件连接及操作条件安全。是否继续？'))return;
  if(!controlClient){controlClient=controlId();controlRequest=Number.parseInt(controlId(),16)&0x7fffffff}
  controlBusy++;for(const id of controlButtons)el(id).disabled=true;
- for(const id of ['afe-sleep','afe-wake','afe-query'])el(id).disabled=true;
+ for(const id of ['afe-sleep','afe-wake','afe-query','tx-sleep','tx-wake','tx-query'])el(id).disabled=true;
  for(const id of ['zynq-hv-off','zynq-safe-stop'])el(id).disabled=false;
  const output=[],results=[];
  try{
@@ -313,7 +325,7 @@ el('zynq-gain-set').addEventListener('click',()=>{
  sendZynq(['GAIN SET '+n]).catch(e=>notify(e.message,true));
 });
 el('zynq-send').addEventListener('click',()=>sendZynq(el('zynq-lines').value.split(/\r?\n/)).catch(e=>notify(e.message,true)));
-for(const [id,line] of [['afe-sleep','AFE SLEEP'],['afe-wake','AFE WAKE'],['afe-query','AFE STATUS']])
+for(const [id,line] of [['afe-sleep','AFE SLEEP'],['afe-wake','AFE WAKE'],['afe-query','AFE STATUS'],['tx-sleep','TX7332 SLEEP'],['tx-wake','TX7332 WAKE'],['tx-query','TX7332 STATUS']])
  el(id).addEventListener('click',()=>sendZynq([line]).catch(e=>notify(e.message,true)));
 async function applyDownsample(){
  const text=el('zynq-down').value,c=downsampleControl,fields=c.synced?psStatusFields(c.ps_status):null;

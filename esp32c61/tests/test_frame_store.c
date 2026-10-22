@@ -46,6 +46,7 @@ void Xil_Out32(UINTPTR a,u32 n) {
 }
 int main(void) {
     frame_lease_t f={0};
+    assert(frame_store_pause_retained()!=0);
     assert(frame_store_acquire(&f,0)==-1);
     const volatile frame_store_init_diag_t *diag=frame_store_init_diagnostic();
     magic=0;assert(frame_store_init()==-1 && diag->stage==FS_INIT_VERSION);magic=FS_MAGIC;
@@ -56,6 +57,10 @@ int main(void) {
     assert(diag->sd_cleanup_phase==FS_SD_DONE && diag->sd_clock_before==0);
     assert(diag->sd_clock_ready==3 && diag->sd_clock_after==3 && !diag->sd_reset_after);
     assert(frame_store_is_ready());
+    regfile[FS_FLAGS/4]=9;assert(frame_store_pause()==0);
+    u32 retained_seq=regfile[FS_SEQ/4];assert(frame_store_pause_retained()==0&&regfile[FS_SEQ/4]==retained_seq);
+    regfile[FS_FLAGS/4]=13;assert(frame_store_pause_retained()!=0);regfile[FS_FLAGS/4]=9;
+    assert(frame_store_resume()==0);assert(frame_store_pause_retained()!=0);
     /* Warm restart: preserve existing bus clock and divisor, clear old reset. */
     sd_control=0x000e0207U;sd_reset=6;
     assert(frame_store_init()==0 && clock_writes==1 && diag->sd_clock_after==0x000e0207U);

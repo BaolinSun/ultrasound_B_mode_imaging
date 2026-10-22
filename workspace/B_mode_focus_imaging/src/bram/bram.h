@@ -37,6 +37,7 @@ u32 Rx_SetGainShift(u32 gain_shift);
 int Beamform_Resume(void);
 void Beamform_Pause(void);
 void Beamform_Halt(void);
+void Beamform_RequestStop(void); /* RUN=0; retain SPI configuration until actual drain */
 int Beamform_Start(void);
 void Beamform_Stop(void);
 u32 Bram_WriteSectionWords(const char *section, u32 offset, const u32 *words, u32 count);

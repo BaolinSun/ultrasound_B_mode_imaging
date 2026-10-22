@@ -3,6 +3,9 @@ module proc_top
     output reg up_header,
     output reg up_last,
     output wire capture_busy,
+    output wire [31:0] tx_power_rdata,
+    input wire power_en,
+    input wire [3:0] power_we,
 	input								clk_para,
 	input								clk_200,
 	input								clk_25,
@@ -108,6 +111,14 @@ wire									tx_cfg_ready;
 wire									tx_cfg_done;
 wire		[7:0]						rtc_shot;
 wire									beamform_active;
+wire tx_power_hold, tx_power_standby, tx_power_idle;
+tx_power_hw tx_power_i (
+    .clk_ctrl(clk_para), .clk_tx(clk_200), .rst_n(!reset),
+    .addr(para_addr), .wdata(para_wrdata), .en(power_en), .we(power_we),
+    .rdata(tx_power_rdata),
+    .tx_idle(tx_power_idle && !beamform_active && !rtc_trig && !rtc_txen),
+    .ctrl_ready(ctrl_spi_rdy), .tx_hold(tx_power_hold), .tx_standby(tx_power_standby)
+);
 (* ASYNC_REG = "TRUE", SHREG_EXTRACT = "NO", DONT_TOUCH = "TRUE" *) reg beamform_active_sync_ff1;
 (* ASYNC_REG = "TRUE", SHREG_EXTRACT = "NO", DONT_TOUCH = "TRUE" *) reg beamform_active_sync_ff2;
 reg										ad_en_in;
@@ -223,6 +234,7 @@ para_top								para_top_i
 //--------------------------------------------------------------------------------------------------
 tx_top									tx_top_i
 (
+    .power_hold(tx_power_hold), .power_standby(tx_power_standby), .power_idle(tx_power_idle),
 	.clk								(clk_200				),
 	.reset								(reset					),
 	.scan_enable						(beamform_active		),
@@ -281,7 +293,7 @@ scan_sync								scan_sync_i
 	.tx_cfg_ready						(tx_cfg_ready),
 	.tx_cfg_done						(tx_cfg_done),
 	.tx_cfg_req						(tx_cfg_req),
-	.rtc_enable							(scan_enable),
+	.rtc_enable							(scan_enable && !tx_power_hold),
 	.rtc_trig							(rtc_trig),
 	.rtc_txen							(rtc_txen),
 	.rtc_rxen							(rtc_rxen),

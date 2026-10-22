@@ -6,6 +6,7 @@
 
 XUsbPs UsbInstance;
 int afe_power_allowed(void) { return 1; }
+int tx_power_allowed(void) { return 1; }
 unsigned mock_cpsr;
 static XUsbPs_dTD descriptors[16];
 static XUsbPs_dQH qh;
@@ -187,5 +188,12 @@ int main(void) {
     setup();usb_transport_poll();queue_fail=1;usb_transport_reply("@ACK");usb_transport_poll();assert(faulted);
     setup();usb_transport_poll();usb_transport_reply(NULL);usb_transport_poll();
     assert(tx_kind==TX_REPLY);ticks+=4001;usb_transport_poll();assert(faulted);
-    puts("PASS real USB adapter: IN descriptors, persistent replies, stream isolation, flush/reset, config drain, macro mode");
+    setup();usb_transport_power_gate(1);usb_transport_power_vote(2,1);
+    assert(power_blocks==3&&image.blocked);
+    usb_transport_power_gate(0);assert(power_blocks==2&&image.blocked);
+    usb_image_config_end();assert(power_blocks==2&&image.blocked);
+    usb_transport_power_vote(2,0);assert(!power_blocks&&!image.blocked);
+    usb_transport_power_vote(2,1);usb_transport_power_gate(1);usb_transport_power_vote(2,0);
+    assert(power_blocks==1&&image.blocked);usb_transport_power_gate(0);
+    puts("PASS real USB adapter: IN descriptors, persistent replies, stream isolation, flush/reset, config drain, independent power votes, macro mode");
 }

@@ -1,5 +1,6 @@
 module tx_cfg_rdreg
 (
+    output wire power_idle,
 	input									clk,
 	input									reset,
 	output	reg								rdreg_cfg_done,			//波形配置结束
@@ -176,4 +177,5 @@ begin
 	else if(NT_CONFIG == REGCFG_DONE)								rdreg_cfg_done <= 1;
 end
 
+assign power_idle=(ST_CONFIG==REGCFG_IDLE) && !tx_spi_rdreq;
 endmodule

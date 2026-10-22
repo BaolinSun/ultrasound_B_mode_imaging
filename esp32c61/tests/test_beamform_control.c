@@ -7,6 +7,7 @@ void hv_enable(void);
 void hv_disable(void);
 static int resume_failure;
 int afe_power_allowed(void) { return 1; }
+int tx_power_allowed(void) { return 1; }
 int frame_store_resume(void) { return resume_failure?-1:0; }
 #include "../../build/src/ps/bram/bram.c"
 

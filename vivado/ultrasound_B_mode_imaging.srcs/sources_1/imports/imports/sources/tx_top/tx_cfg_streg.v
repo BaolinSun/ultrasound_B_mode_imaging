@@ -1,5 +1,6 @@
 module tx_cfg_streg
 (
+    output wire power_idle,
 	input									clk,
 	input									reset,
 	input									streg_cfg_en,			//波形配置使能
@@ -141,5 +142,6 @@ begin
 	else if(NT_CONFIG == STREGCFG_DONE)								streg_cfg_done <= 1;
 end
 
+assign power_idle=(ST_CONFIG==STREGCFG_IDLE) && !streg_cfg_en && !streg_cfg_en_t0 && !streg_cfg_en_t1;
 endmodule
 

@@ -10,6 +10,8 @@ reg rtc_polarity = 1'b0;
 wire tx_cfg_ready;
 wire tx_cfg_done;
 reg spi_start = 1'b0;
+reg power_hold=0;
+wire power_idle;
 
 wire tx_st_reg_rden;
 wire [8:0] tx_st_reg_rdaddr;
@@ -44,6 +46,7 @@ always #2.5 clk = ~clk;
 
 tx_cfg_top dut
 (
+    .power_hold(power_hold), .power_idle(power_idle),
 	.clk(clk), .reset(reset), .scan_enable(scan_enable),
 	.tx_cfg_req(tx_cfg_req), .rtc_line(rtc_line),
 	.rtc_polarity(rtc_polarity), .tx_cfg_ready(tx_cfg_ready),
@@ -180,8 +183,12 @@ initial begin
 	start_static_config();
 	request_and_check(1'b0, 32'h108C0003, 32'h118C0003,
 	                  32'h128C0003, 32'h138C0003);
-	if(dynamic_writes != 3)
-		$fatal(1, "expected three synthetic register 18h writes, got %0d", dynamic_writes);
+    wait(power_idle);@(negedge clk);power_hold=1;repeat(6)@(negedge clk);
+    if(tx_cfg_ready || dut.reg18_valid!=4'b1111)$fatal(1,"power rearm lost retained register cache");
+    power_hold=0;start_static_config();
+    request_and_check(1'b1,32'h108C0043,32'h118C0043,32'h128C0043,32'h138C0043);
+	if(dynamic_writes != 4)
+$fatal(1, "expected four synthetic register 18h writes, got %0d", dynamic_writes);
 	$display("PASS: four static register 18h values are captured, masked and refreshed");
 	$finish;
 end

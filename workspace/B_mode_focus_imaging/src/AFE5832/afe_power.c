@@ -1,4 +1,5 @@
 #include "afe_power.h"
+#include "../TX7332/tx_power.h"
 #include "afe5832.h"
 #include "../GPIO/gpio.h"
 #include "../HV/hv.h"
@@ -90,6 +91,9 @@ const char *afe_power_error(void) { return initialized?machine.error:"AFE_NOT_IN
 u32 afe_power_flags(void) { return initialized && rd(0,AP_VERSION)==AP_MAGIC?rd(0,AP_STATUS):0; }
 int afe_power_command(const char *op,u32 owner) {
     if(!initialized) return -1;
+    if(!strcmp(tx_power_state_name(),"quiescing")||!strcmp(tx_power_state_name(),"waking")) {
+        machine.error="AFE_TX_TRANSITION";return -1;
+    }
     if(machine.state==AFE_READY) {machine.settle=0;ap_poll(&machine);}
     if(!strcmp(op,"WAKE") && machine.state==AFE_READY &&
        (Beamform_GetRunRequest() || hv_is_enabled() || !idle(0))) {

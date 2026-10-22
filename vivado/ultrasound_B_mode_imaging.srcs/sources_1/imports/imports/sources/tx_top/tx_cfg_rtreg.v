@@ -1,5 +1,6 @@
 module tx_cfg_rtreg
 (
+    output wire power_idle,
 	input             clk,
 	input             reset,
 	input      [6:0]  rtc_line,
@@ -192,4 +193,5 @@ begin
 	end
 end
 
+assign power_idle=(ST_CONFIG==RTREGCFG_IDLE) && !rtreg_cfg_en && !rtreg_cfg_en_t0 && !rtreg_cfg_en_t1;
 endmodule
