@@ -14,7 +14,8 @@ class Cpu0Integration(unittest.TestCase):
                          'uart/uart.c', 'uart/uart.h', 'uart/uart_log.c', 'uart/uart_log.h',
                          'usb/usb.c', 'usb/usb.h', 'usb/usb_transport.c', 'usb/usb_transport.h',
                          'AFE5832/afe_power.c', 'AFE5832/afe_power.h', 'TX7332/tx_power.c', 'TX7332/tx_power.h',
-                         'data_transfer/sdio_bridge.c', 'data_transfer/sdio_bridge.h'):
+                         'data_transfer/sdio_bridge.c', 'data_transfer/sdio_bridge.h',
+                         'data_transfer/frame_store.c', 'data_transfer/frame_store.h'):
             self.assertEqual((PS / relative).read_text(), (IDE / relative).read_text(), relative)
         for root in (PS, IDE):
             main = (root / 'main.c').read_text(errors='replace')

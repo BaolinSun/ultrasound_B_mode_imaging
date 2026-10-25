@@ -158,10 +158,22 @@ int frame_store_pause(void) {
 }
 int frame_store_pause_retained(void) {
     /* Read-only proof from this PS boot, invalidated by every FS command.
-     * flags initialized=1, active=0, input_busy=0, paused=1. */
+     * FS_SEQ/FS_CMD are write-only: their PL read decode returns zero.
+     * Use the versioned diagnostic mirror, not the command write aperture.
+     * flags initialized=1, active=0, input_busy=0, paused=1. Never issue a
+     * new PAUSE/flush here: the AFE/FIFO source clock may already be off. */
     FRAME_BARRIER();
-    return initialized && retained_pause_seq && Xil_In32(FS_BASE+FS_VERSION)==FS_MAGIC &&
-        Xil_In32(FS_BASE+FS_ACK)==retained_pause_seq && Xil_In32(FS_BASE+FS_SEQ)==retained_pause_seq &&
-        Xil_In32(FS_BASE+FS_RESULT)==FS_OK && (Xil_In32(FS_BASE+FS_FLAGS)&15U)==9U ? 0:-1;
+    u32 proof=retained_pause_seq;
+    if(!initialized || !proof) return -1;
+    if(Xil_In32(FS_BASE+FS_VERSION)!=FS_MAGIC ||
+       Xil_In32(FS_BASE+FS_DIAG_VERSION)!=FS_DIAG_MAGIC_VALUE ||
+       Xil_In32(FS_BASE+FS_ACK)!=proof ||
+       Xil_In32(FS_BASE+FS_DIAG_SEQUENCE)!=proof ||
+       Xil_In32(FS_BASE+FS_DIAG_COMMAND)!=FS_PAUSE ||
+       Xil_In32(FS_BASE+FS_RESULT)!=FS_OK || (Xil_In32(FS_BASE+FS_FLAGS)&15U)!=9U) return -1;
+    FRAME_BARRIER();
+    /* Reject a new command/reset observed while taking the multi-register
+     * snapshot, including one submitted but not yet acknowledged. */
+    return Xil_In32(FS_BASE+FS_DIAG_SEQUENCE)==proof && Xil_In32(FS_BASE+FS_ACK)==proof ? 0:-1;
 }
 int frame_store_resume(void) { return initialized && command(FS_RESUME,100)==FS_OK ? 0:-1; }

@@ -6,7 +6,17 @@
 
 CPU0 的中断唤醒不会自动唤醒 AFE/TX，也不会自动恢复扫描、高压或上传。原有 AFE/TX 操作入口和恢复顺序继续有效。CPU1 仍保持既有复位与停钟策略。
 
-本次无需更换 bit/XSA、BSP、FSBL 或 ESP32 固件，不覆盖 BOOT.BIN；不调整 DDR、PLL、SCU/L2、DCache 或共享时钟。工程此前的缓存策略保持原样。本轮未连接板卡，以下板测步骤尚未执行，功耗收益没有实测结论。
+本次无需更换 bit/XSA、BSP、FSBL 或 ESP32 固件，不覆盖 BOOT.BIN；不调整 DDR、PLL、SCU/L2、DCache 或共享时钟。工程此前的缓存策略保持原样。初版交付后板测发现排空证明回读错误，见下节；当前修复版本仅完成离线验证，尚未重新下载板测，功耗收益没有实测结论。
+
+## 2026-10-25 排空证明回读修复
+
+初版 `d2bcb1a` 板测时 `wfi=1`、定时器中断自检通过，但双待机约 39 秒后 WFI 次数仍为 0；AFE 先待机再使 TX 待机还会报 `TX_DDR_DRAIN`。已恢复两颗芯片 ready、扫描和高压关闭；原始记录保留在 `esp32c61/logs/cpu0_wfi_board_check_20261025.json`。
+
+原因是 `frame_store_pause_retained()` 误读了写入专用的 `FS_SEQ`（`0x404C0208`）。当前 PL 对该地址回读为 0；真实序号镜像位于 `FS_DIAG_SEQUENCE`（`0x404C0250`）。旧的主机 MMIO 测试把寄存器模拟成普通可读写内存，因此没有捕捉到这个接口差异。
+
+修复仅修改 PS 校验和测试：确认帧缓存 ABI、诊断 ABI、上次成功 PAUSE 的非零序号、匹配 ACK、命令为 PAUSE、结果成功且已排空；读取结束时再次核对序号和 ACK，拒绝中途变化。不写控制寄存器、不重新发 PAUSE、不触发 AFE 已掉电域的 FIFO 清理；诊断接口缺失时仍拒绝 WFI，不放宽保护。
+
+新测试先成功复现旧代码失败，再验证修复通过。模型对命令、序号、水位及释放令牌的写入地址统一回读 0，诊断镜像按 RTL 更新；静态契约直接核对 RTL 的读地址译码，防止再将只写地址当作可回读接口。本次修改函数的行和分支方向覆盖均为 100%。
 
 ## 调度及唤醒
 
@@ -83,7 +93,7 @@ python -m unittest discover -s build\scripts\tests -v
 2026-10-25 离线验证通过：
 
 - 新增核心：行覆盖 100%、分支方向覆盖 100%；真实 PS 适配层在主机模拟服务下：行覆盖 100%、分支方向覆盖 93.75%。覆盖队列竞态、检查前后中断、短 UART 包、温度期限与回绕、定时器占用/失败、中断被屏蔽、USB 会话/DMA、SD1 硬件活动、DDR 租约/排空证明、四种 AFE/TX 组合及故障回退。
-- 原有原始 UDP、帧 TCP/UDP、动态长度、USB、温度、UART 桥、Wi-Fi 命令及 AFE/TX 状态机离线回归通过。Python 213 项通过、1 项历史 TXT 样本测试跳过；网页测试 33 项通过；构建脚本及源码集成测试 32 项通过。
+- 原有原始 UDP、帧 TCP/UDP、动态长度、USB、温度、UART 桥、Wi-Fi 命令及 AFE/TX 状态机离线回归通过。修复后 Python 214 项通过、1 项历史 TXT 样本测试跳过；网页测试 33 项通过；构建脚本及源码集成测试 32 项通过。
 - USB/SDIO × WFI 开关四种应用，以及当前 Vitis 工作区的头文件默认构建通过。反汇编确认 WFI=1 的 `wait_irq` 含 DSB/WFI/ISB，WFI=0 无该指令。
 - 编译仍有原 AFE/USB 等代码的未使用参数、符号及有符号比较警告，未在本任务中宣称清零；新增 CPU0 源无编译警告。
 
@@ -92,29 +102,29 @@ python -m unittest discover -s build\scripts\tests -v
 |应用|text|data|bss|
 |---|---:|---:|---:|
 |基线 `124d132` SDIO|214635|140604|165872|
-|SDIO WFI=1 / 默认|221819|140604|166000|
-|SDIO WFI=0|220519|140604|166000|
-|USB WFI=1|215483|140604|164944|
-|USB WFI=0|214235|140604|164944|
+|SDIO WFI=1 / 默认|221947|140604|166000|
+|SDIO WFI=0|220635|140604|166000|
+|USB WFI=1|215611|140604|164944|
+|USB WFI=0|214363|140604|164944|
 
-默认 SDIO 增加 text 7184 B、bss 128 B；已分配区域结束于 `0x00181050`，不与 USB 区 `0x1C000000` 或三帧区 `0x20000000～0x202FFFFF` 重叠。
+默认 SDIO 相对 `124d132` 增加 text 7312 B、bss 128 B；本次回读修复相对 `d2bcb1a` 增加 text 128 B，data/bss 不变。受链接对齐影响，已分配区域结束于 `0x00185050`，不与 USB 区 `0x1C000000` 或三帧区 `0x20000000～0x202FFFFF` 重叠。
 
-常用应用已更新为头文件默认 SDIO/WFI=1，两处 SHA256 均为 `F0981B9C49B23F09AA1517644CA5440E5BF74B956521568FB0C5E46D3551DA6B`：
+常用应用已更新为修复后头文件默认 SDIO/WFI=1，两处 SHA256 均为 `092921E5A8B7FA1DF5CB13F91C438EFC9D7262101F559A83EB886DF62FD0509D`：
 
 - `D:/MyProjects/zynq_prj/ultrasound_B_mode_imaging/build/output/B_mode_focus_imaging.elf`
 - `D:/MyProjects/zynq_prj/ultrasound_B_mode_imaging/workspace/B_mode_focus_imaging/build/B_mode_focus_imaging.elf`
 
-四档对照产物位于 `D:/MyProjects/zynq_prj/ultrasound_B_mode_imaging/build/output/cpu0_idle_20261025/`：
+四档对照产物位于 `D:/MyProjects/zynq_prj/ultrasound_B_mode_imaging/build/output/cpu0_idle_pause_fix_20261025/`：
 
 |文件|SHA256|
 |---|---|
-|`B_mode_focus_imaging_sdio_wfi1.elf`|`77F4A9D4683CAB6B9906165671C1710F20DE1B815C6DF083D7DB1075E837AAA6`|
-|`B_mode_focus_imaging_sdio_wfi0.elf`|`C915CA40DAEE80AE9D1FA2BB5678EBF00AEB163A0EC235231D5838C29D763374`|
-|`B_mode_focus_imaging_usb_wfi1.elf`|`4021EC19396457F4A3ECD8E34CA1C396E451511B5DE9B6AE02EC051AA6B1AA63`|
-|`B_mode_focus_imaging_usb_wfi0.elf`|`E6401D5BD523EDABF804E76E9CD39B56D87F640E0B9641C3D31D1A7B83A7A5AB`|
+|`B_mode_focus_imaging_sdio_wfi1.elf`|`9AA08C63AA883E26673C375A803973C9A74DBCEB2BCFCA73B52A953EA1F94626`|
+|`B_mode_focus_imaging_sdio_wfi0.elf`|`AF7FBFB5E8781B48ECC8C799E2B5F88D95E39C43F7D2E36A010365F379E54CD8`|
+|`B_mode_focus_imaging_usb_wfi1.elf`|`C66F70CF5719D14DAB06F3993B6A33A181B99F184DB27C96D7135587DB8F56F9`|
+|`B_mode_focus_imaging_usb_wfi0.elf`|`C93F109984FB90787012BD1BFF332B5122E8E374626B16870012C44414A0F118`|
 
 `B_mode_focus_imaging_sdio_header.elf` 是默认应用的额外副本。显式 WFI=1 与默认构建的 ELF 因调试/构建信息和链接 build-id 不同而哈希不同；核对发现加载区仅 GNU build-id 的 20 字节不同，应用指令和其余加载数据一致。
 
-基线应用及未修改产物备份在 `build/backups/cpu0_124d132/`。FSBL、bit、XSA、BOOT.BIN 与备份逐项哈希比较一致；ESP32 源及固件未改。完整绝对路径、哈希和测试摘要见 `esp32c61/logs/cpu0_idle_build_manifest_20261025.json`，日志集中在 `esp32c61/logs/cpu0_idle_20261025/`。日志和构建产物依照现有 Git 忽略规则保留本地，不纳入源码提交。
+初版应用、源码及测试在本次修改前备份到 `build/backups/cpu0_pause_readback_20261025/`；更早的基线备份在 `build/backups/cpu0_124d132/`。FSBL、bit、XSA、BOOT.BIN 与备份逐项哈希比较一致；ESP32 源及固件未改。当前绝对路径、哈希和测试摘要见 `esp32c61/logs/cpu0_pause_fix_manifest_20261025.json`，修复日志集中在 `esp32c61/logs/cpu0_pause_fix_20261025/`；首版记录继续保留。日志和构建产物依照现有 Git 忽略规则保留本地，不纳入源码提交。
 
 本轮软件自检查和编译结果不能替代实际唤醒、电流、JTAG 及长期稳定性验收。

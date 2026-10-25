@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <string.h>
 static u32 regfile[32],hold,magic=FS_MAGIC;
+static unsigned register_writes,change_seq_on_flags,change_ack_on_flags;
 static u64 now;
 static unsigned dma_stuck,magic_reads,fail_magic_read,clock_stuck;
 static unsigned clock_writes,reset_writes,reset_reads,reset_delay,time_divider=1;
@@ -35,10 +36,21 @@ u32 Xil_In32(UINTPTR a) {
     if(a==0xe010102cU)return sd_control|((u32)sd_reset<<24);
     assert(a>=FS_BASE && a<FS_BASE+128);
     if(a==FS_BASE) { magic_reads++;return magic_reads==fail_magic_read?0:magic; }
+    /* Actual RTL default read decode: these are WRITE-ONLY, not RAM. */
+    if(a==FS_BASE+FS_CMD || a==FS_BASE+FS_SEQ || a==FS_BASE+FS_WATERMARK || a==FS_BASE+FS_RELEASE_TOKEN)return 0;
+    if(a==FS_BASE+FS_FLAGS && change_seq_on_flags) {
+        change_seq_on_flags=0;regfile[FS_DIAG_SEQUENCE/4]++;
+    }
+    if(a==FS_BASE+FS_FLAGS && change_ack_on_flags) {
+        change_ack_on_flags=0;regfile[FS_ACK/4]++;
+    }
     return regfile[(a-FS_BASE)/4];
 }
 void Xil_Out32(UINTPTR a,u32 n) {
-    assert(a>=FS_BASE && a<FS_BASE+128);regfile[(a-FS_BASE)/4]=n;
+    assert(a==FS_BASE+FS_CMD || a==FS_BASE+FS_SEQ || a==FS_BASE+FS_WATERMARK || a==FS_BASE+FS_RELEASE_TOKEN);
+    register_writes++;regfile[(a-FS_BASE)/4]=n; /* private write history, not readback */
+    if(a==FS_BASE+FS_CMD)regfile[FS_DIAG_COMMAND/4]=n;
+    if(a==FS_BASE+FS_SEQ)regfile[FS_DIAG_SEQUENCE/4]=n;
     if(a==FS_BASE+FS_SEQ && !hold) {
         regfile[FS_ACK/4]=n;
         if(regfile[FS_CMD/4]==FS_INIT && !regfile[FS_RESULT/4])regfile[FS_FLAGS/4]=1;
@@ -46,6 +58,7 @@ void Xil_Out32(UINTPTR a,u32 n) {
 }
 int main(void) {
     frame_lease_t f={0};
+    regfile[FS_DIAG_VERSION/4]=FS_DIAG_MAGIC_VALUE;
     assert(frame_store_pause_retained()!=0);
     assert(frame_store_acquire(&f,0)==-1);
     const volatile frame_store_init_diag_t *diag=frame_store_init_diagnostic();
@@ -57,8 +70,27 @@ int main(void) {
     assert(diag->sd_cleanup_phase==FS_SD_DONE && diag->sd_clock_before==0);
     assert(diag->sd_clock_ready==3 && diag->sd_clock_after==3 && !diag->sd_reset_after);
     assert(frame_store_is_ready());
+    assert(frame_store_pause_retained()!=0); /* No accepted PAUSE in this PS boot. */
     regfile[FS_FLAGS/4]=9;assert(frame_store_pause()==0);
-    u32 retained_seq=regfile[FS_SEQ/4];assert(frame_store_pause_retained()==0&&regfile[FS_SEQ/4]==retained_seq);
+    u32 retained_seq=regfile[FS_DIAG_SEQUENCE/4],writes_before=register_writes;
+    assert(retained_seq && Xil_In32(FS_BASE+FS_SEQ)==0 && Xil_In32(FS_BASE+FS_CMD)==0);
+    assert(frame_store_pause_retained()==0);
+    for(unsigned i=0;i<10;i++)assert(frame_store_pause_retained()==0);
+    assert(register_writes==writes_before&&regfile[FS_DIAG_SEQUENCE/4]==retained_seq);
+    regfile[FS_DIAG_VERSION/4]=0;assert(frame_store_pause_retained()!=0);regfile[FS_DIAG_VERSION/4]=FS_DIAG_MAGIC_VALUE;
+    magic=0;assert(frame_store_pause_retained()!=0);magic=FS_MAGIC;
+    regfile[FS_ACK/4]=retained_seq+1;assert(frame_store_pause_retained()!=0);regfile[FS_ACK/4]=retained_seq;
+    regfile[FS_DIAG_SEQUENCE/4]=retained_seq+1;assert(frame_store_pause_retained()!=0);regfile[FS_DIAG_SEQUENCE/4]=retained_seq;
+    regfile[FS_DIAG_COMMAND/4]=FS_RESUME;assert(frame_store_pause_retained()!=0);regfile[FS_DIAG_COMMAND/4]=FS_PAUSE;
+    regfile[FS_RESULT/4]=FS_BUSY;assert(frame_store_pause_retained()!=0);regfile[FS_RESULT/4]=FS_OK;
+    const u32 bad_flags[]={0,1,8,11,13};
+    for(unsigned i=0;i<sizeof bad_flags/sizeof bad_flags[0];i++){regfile[FS_FLAGS/4]=bad_flags[i];assert(frame_store_pause_retained()!=0);}
+    regfile[FS_FLAGS/4]=9;assert(frame_store_pause_retained()==0);
+    change_seq_on_flags=1;assert(frame_store_pause_retained()!=0); /* New request during snapshot. */
+    regfile[FS_DIAG_SEQUENCE/4]=retained_seq;
+    change_ack_on_flags=1;assert(frame_store_pause_retained()!=0);
+    regfile[FS_ACK/4]=retained_seq;
+    assert(register_writes==writes_before);
     regfile[FS_FLAGS/4]=13;assert(frame_store_pause_retained()!=0);regfile[FS_FLAGS/4]=9;
     assert(frame_store_resume()==0);assert(frame_store_pause_retained()!=0);
     /* Warm restart: preserve existing bus clock and divisor, clear old reset. */
@@ -120,6 +152,6 @@ int main(void) {
     regfile[FS_RESULT/4]=FS_INVALID;
     assert(frame_store_pause()==-1&&pd->reason==FS_DRAIN_RESULT&&pd->result==FS_INVALID);
     regfile[FS_RESULT/4]=0;assert(frame_store_pause()==0&&pd->reason==FS_DRAIN_OK);
-    puts("PASS cold/warm SD1 clock-before-reset, delayed reset, clock/reset/busy failure, no premature PL INIT, ready gate, ABI, five lengths, leases, timeouts/reinit");
+    puts("PASS cold/warm SD1/ABI/five lengths/leases/timeouts; real write-only register decode, read-only retained PAUSE proof, sequence race/reset/failure rejection");
     return 0;
 }
