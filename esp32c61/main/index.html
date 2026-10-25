@@ -240,7 +240,8 @@ function psStatusFields(text){
  if(typeof text!=='string'||!text.startsWith('@STATUS '))return null;
  const fields={};
  for(const item of text.slice(8).split(' ')){
-  const match=/^([a-z_]+)=([a-z0-9]+)$/.exec(item);
+  // PS extensions such as cpu1_disabled keep the same key=value grammar.
+  const match=/^([a-z_][a-z0-9_]*)=([a-z0-9]+)$/.exec(item);
   if(!match||Object.hasOwn(fields,match[1]))return null;
   fields[match[1]]=match[2];
  }

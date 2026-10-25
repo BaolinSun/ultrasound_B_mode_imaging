@@ -400,7 +400,7 @@ test('configuration gate disables image submissions and safe stop sends HV DISAB
 async function downsampleEnvironment(d=0){
  const e=setup();await e.settle();
  e.backend.status.zynq_control={ready:true,busy:false,config_owned:false,synced:true,afe_state:'ready',tx_state:'ready',
-  ps_status:`@STATUS v=1 cfg=0 owner=2 seq=0 run=1 hv=1 run_src=ps spi=1 down=${d}`};
+  ps_status:`@STATUS v=1 cfg=0 owner=2 seq=0 run=1 hv=1 run_src=ps spi=1 down=${d} afe=ready tx=ready cpu1_disabled=1 wfi=1`};
  await e.context.refresh();return e;
 }
 function successfulDownsampleJob(e,d,override={}){
@@ -408,9 +408,27 @@ function successfulDownsampleJob(e,d,override={}){
  const commands=[`CFG BEGIN ${seq}`,`BRAM WR t_timing 9 1 ${d}`,'CFG END','STATUS'];
  e.backend.job={busy:false,state:'succeeded',count:4,completed:4,results:commands.map((command,i)=>({command,
   response:i<3?`@ACK ${seq} ${['CFG_BEGIN','BRAM_WR','CFG_END'][i]}`:
-   `@STATUS v=1 cfg=0 owner=2 seq=${seq} run=0 hv=0 run_src=ps spi=0 down=${d}`})),...override};
+   `@STATUS v=1 cfg=0 owner=2 seq=${seq} run=0 hv=0 run_src=ps spi=0 down=${d} afe=ready tx=ready cpu1_disabled=1 wfi=1`})),...override};
  return commands;
 }
+test('downsampling accepts current CPU1/WFI status fields without disabling its controls',async()=>{
+ const e=await downsampleEnvironment();
+ const current='@STATUS v=1 cfg=0 owner=0 seq=0 run=0 hv=0 run_src=ps spi=0 down=0 afe=ready tx=ready cpu1_disabled=1 wfi=1';
+ for(const text of [current,current.replace('cpu1_disabled=1 wfi=1','cpu1_disabled=0 wfi=0'),current+' future2=ok']){
+  const fields=e.context.psStatusFields(text);
+  assert.notEqual(fields,null);assert.equal(fields.down,'0');
+  e.backend.status.zynq_control.ps_status=text;await e.context.refresh();
+  assert.equal(e.elements['zynq-down-set'].disabled,false);assert.equal(e.elements['zynq-down'].disabled,false);
+  assert.match(e.elements['down-configured'].textContent,/PS 已下发配置：1 倍/);
+ }
+ for(const bad of [current+' cpu1_disabled=1',current+' 1field=0',current+' bad-key=0',current+' future2=',current+' future2=1.5']){
+  assert.equal(e.context.psStatusFields(bad),null);
+  e.backend.status.zynq_control.ps_status=bad;await e.context.refresh();
+  assert.equal(e.elements['zynq-down-set'].disabled,true);
+ }
+ assert.equal(e.backend.calls.some(c=>c.options.method==='POST'),false);
+});
+
 test('downsampling offers all five sizes, sends one safe transaction and never restarts imaging or upload',async()=>{
  for(const [d,n] of [787456,394240,197632,99328,50176].entries()){
   const e=await downsampleEnvironment();const commands=successfulDownsampleJob(e,d);

@@ -97,6 +97,16 @@ STATUS
 
 旧 PS 固件没有合法 `down` 字段时禁用下采样应用并提示更新；网页轮询仍只读缓存，不周期性下发串口查询。下采样不写 NVS，重启采用 C 数组默认档位。仅减少输出数据量，不保证采集或显示帧率等比提高；大倍率降低轴向采样密度。
 
+2026-10-25 网页兼容修复：如果 PS 回执已有 `down=0`，页面却仍提示缺少 `down`，可能是旧网页不接受字段名中的数字，遇到 `cpu1_disabled=1` 后拒绝了整条状态。修复后字段名允许数字出现在首字符之后，兼容 CPU1/WFI 及后续扩展字段，同时继续拒绝重复字段和非法格式；配置忙碌、AFE/TX 未就绪等禁止条件保持不变。此修复只需更新 ESP32 固件，然后强制刷新页面，不需要重新下载 Zynq、更新 bit/XSA 或改变下采样参数。
+
+在 `esp32c61` 目录退出占用串口的 monitor 后，使用原构建脚本更新（端口以实际连接为准）：
+
+```powershell
+.\build.ps1 -Action flash -Port COM3
+```
+
+烧录完成后用 `Ctrl+F5` 刷新 `http://192.168.3.27/`，再点击“查询状态”。修复已通过包含完整 CPU1/WFI 状态的五档配置回归及默认/combined 固件构建；未在本次诊断中自动烧录或应用配置。
+
 本功能需要更新 PS ELF 与 ESP32 固件，不需要更新 bit/XSA，也不自动修改 BOOT.BIN。软件记录不能代替物理扫描或高压状态确认。
 
 ## 3. 全部原始命令
@@ -176,7 +186,7 @@ JSON 全部在 PC 校验并生成命令后才联网；无效文件不会产生�
 @RD <seq> <addr> <AFE数据>
 @RD <seq> TX7332 <addr> <TX数据>
 @NACK <seq> <error>
-@STATUS v=1 cfg=<0/1> owner=<0/1/2> seq=<seq> run=<0/1> hv=<0/1> run_src=ps spi=<0/1> down=<0～4>
+@STATUS v=1 cfg=<0/1> owner=<0/1/2> seq=<seq> run=<0/1> hv=<0/1> run_src=ps spi=<0/1> down=<0～4> afe=<state> tx=<state> cpu1_disabled=<0/1> wfi=<0/1>
 ```
 
 owner：0 为 UART1，1 为 USB，2 为 Wi-Fi，仅在 cfg=1 时代表事务所有者。`run_src=ps` 表示 run 是 **PS 最后下发的扫描请求缓存**，spi 同样是 PS 下发的 SPI 启动请求；hv 是使能 GPIO 读回。它们都不是实际高压电压、PL 扫描活动或事务排空的证明。PL 复位或 JTAG 直接写寄存器也不会同步修改 PS 缓存。
