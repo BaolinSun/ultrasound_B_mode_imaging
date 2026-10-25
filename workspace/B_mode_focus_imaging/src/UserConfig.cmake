@@ -47,6 +47,7 @@ set(USER_INCLUDE_DIRECTORIES
 #Example 2: Adding ../../common/helloworld.c will consider the path as relative to this component directory
 #Example 3: Adding ${MY_ENV}/data/helloworld.c are expanded using project-specific environment settings.
 set(USER_COMPILE_SOURCES
+"system_ctrl/cpu1_power.c"
 "AFE5832/afe_power.c"
 "TX7332/tx_power.c"
 "data_transfer/frame_crc.c"

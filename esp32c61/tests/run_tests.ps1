@@ -10,6 +10,7 @@ New-Item -ItemType Directory -Force -Path $testOutput | Out-Null
 if (-not (Test-Path -LiteralPath $Compiler)) { throw 'Supply -Compiler with a host GCC path.' }
 $env:PATH = "$(Split-Path $Compiler -Parent);$env:PATH"
 $env:PYTHONUTF8 = '1'
+& (Join-Path $projectRoot '../build/scripts/test_cpu1.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_usb_frame.ps1') -Compiler $Compiler -OutputDirectory (Join-Path $testOutput 'usb-frame')
 $socketOutput = Join-Path $testOutput 'tcp-socket'
 New-Item -ItemType Directory -Force -Path $socketOutput | Out-Null

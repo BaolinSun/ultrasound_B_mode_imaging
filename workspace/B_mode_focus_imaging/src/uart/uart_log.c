@@ -64,7 +64,7 @@ int zynq_uart_command_init(void)
     u32 irq=(u32)(XGet_IntrId(log_uart.Config.IntrId)+XGet_IntrOffset(log_uart.Config.IntrId));
     if(XScuGic_Connect(&xInterruptController,irq,receive_isr,NULL)!=XST_SUCCESS) return XST_FAILURE;
     XUartPs_SetFifoThreshold(&log_uart,16); XUartPs_SetRecvTimeout(&log_uart,4);
-    XScuGic_InterruptMaptoCpu(&xInterruptController,XSCUGIC_SPI_CPU1_MASK,irq);
+    XScuGic_InterruptMaptoCpu(&xInterruptController,0U,irq);
     XUartPs_SetInterruptMask(&log_uart,XUARTPS_IXR_RXOVR|XUARTPS_IXR_TOUT|
         XUARTPS_IXR_OVER|XUARTPS_IXR_FRAMING|XUARTPS_IXR_PARITY);
     XScuGic_Enable(&xInterruptController,irq); command_ready=1;

@@ -28,6 +28,7 @@
 #include "usb/usb_transport.h"
 #include "xiltimer.h"
 #include "system_ctrl/temp.h"
+#include "system_ctrl/cpu1_power.h"
 #include "bram/bram.h"
 #include "data_transfer/sdio_bridge.h"
 #include "data_transfer/frame_store.h"
@@ -44,11 +45,12 @@ int main() {
 
 	if (zynq_uart_log_init() != XST_SUCCESS) return XST_FAILURE;
 	xil_printf("@UART_LOG UART0 MIO27/TX -> ESP32 GPIO10/RX 115200 8N1\r\n");
+	cpu1_power_init(); /* Warning only on failure; must precede IRQ init. */
 	Xil_DCacheDisable();
 	// �жϳ�ʼ��
 	intr_init();
 	sleep(1);
-	DEBUG_PRINT("---------------cpu1 start----------\r\n");
+	/* Application runs on CPU0; CPU1 is held reset/clock-stopped above. */
 	system_ctrl_init();
 	gpio_init(); //ok
 	uart_init(); //

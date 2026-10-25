@@ -489,9 +489,9 @@ static int UsbSetupIntrSystem(XScuGic *IntcInstancePtr, XUsbPs *UsbInstancePtr,
 		u16 UsbIntrId) {
 	int Status;
 
-	XScuGic_InterruptUnmapFromCpu(IntcInstancePtr, XSCUGIC_SPI_CPU0_MASK,
+	XScuGic_InterruptUnmapFromCpu(IntcInstancePtr, 1U, /* Remove CPU1 target. */
 			UsbIntrId);
-	XScuGic_InterruptMaptoCpu(IntcInstancePtr, XSCUGIC_SPI_CPU0_MASK,
+	XScuGic_InterruptMaptoCpu(IntcInstancePtr, 0U, /* CPU0 number, not mask. */
 			UsbIntrId);
 	/*
 	 * Connect the device driver handler that will be called when an

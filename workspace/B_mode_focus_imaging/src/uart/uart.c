@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include "../AFE5832/afe5832.h"
 #include "../system_ctrl/imaging_power.h"
+#include "../system_ctrl/cpu1_power.h"
 #include "../bram/bram.h"
 #include "../HV/hv.h"
 #include "../data_transfer/frame_store.h"
@@ -600,9 +601,9 @@ static void uart_handle_line(char *line)
 		uart_emitf("@NACK %u CFG_OWNER",uart_cfg_seq); return;
 	}
 	if(!strcmp(line,"STATUS")) {
-		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u run_src=ps spi=%u down=%u afe=%s tx=%s",uart_cfg_active,
+		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u run_src=ps spi=%u down=%u afe=%s tx=%s cpu1_disabled=%u",uart_cfg_active,
 		    cfg_owner,uart_cfg_seq,(unsigned)Beamform_GetRunRequest(),(unsigned)hv_is_enabled(),
-		    (unsigned)Beamform_GetSpiStartRequest(),(unsigned)Beamform_GetDownsample(),afe_power_state_name(),tx_power_state_name());
+		    (unsigned)Beamform_GetSpiStartRequest(),(unsigned)Beamform_GetDownsample(),afe_power_state_name(),tx_power_state_name(),cpu1_power_is_disabled());
 		return;
 	}
 	char *ctx = line;
@@ -774,7 +775,7 @@ u32 setup_uart_intr_system(void) {
 		return XST_FAILURE;
 	}
 	XScuGic_Enable(&xInterruptController, UART_INT_IRQ_ID);
-	XScuGic_InterruptMaptoCpu(&xInterruptController, XSCUGIC_SPI_CPU1_MASK,
+	XScuGic_InterruptMaptoCpu(&xInterruptController, 0U, /* CPU number, not a target bit mask */
 	UART_INT_IRQ_ID);
 
 	DEBUG_PRINT(" uart intr init \r\n");

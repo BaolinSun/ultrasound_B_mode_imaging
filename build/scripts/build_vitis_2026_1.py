@@ -16,6 +16,7 @@ import vitis
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 from uart_bsp_compat import configure_uart_bsp
+from cpu1_fsbl import build_cpu1_fsbl
 ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 WORKSPACE = os.path.abspath(
     os.environ.get("ULTRASOUND_VITIS_WORKSPACE", os.path.join(ROOT, "workspace"))
@@ -189,6 +190,10 @@ try:
     print(f"VITIS_MIGRATION: platform build result={platform_result!r}")
     if platform_result not in (None, 0):
         raise RuntimeError(f"platform build failed with result {platform_result!r}")
+
+    # Generated FSBL sources only exist after the platform's first build.
+    # Patch locally, explicitly rebuild, then verify/copy the exported ELF.
+    build_cpu1_fsbl(WORKSPACE, PLATFORM_NAME)
 
     if STAGE == "platform":
         print(f"VITIS_MIGRATION_COMPLETE: platform at {WORKSPACE}")

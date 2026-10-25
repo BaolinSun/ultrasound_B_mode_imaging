@@ -6,6 +6,8 @@
 #include <assert.h>
 #include <stdio.h>
 static int afe_ready=1,tx_ready=1;
+static unsigned cpu1_disabled=1;
+unsigned cpu1_power_is_disabled(void){return cpu1_disabled;}
 int tx_power_allowed(void){return tx_ready;}
 int tx_power_idle(void){return 1;}
 void tx_power_poll(void){}
@@ -53,7 +55,7 @@ void XUartPs_SetRecvTimeout(XUartPs *u,u8 n) { (void)u;(void)n; }
 u32 XUartPs_Recv(XUartPs *u,u8 *p,u32 n) { (void)u;(void)p;(void)n;return 0; }
 int XScuGic_Connect(XScuGic *g,u32 id,Xil_ExceptionHandler fn,void *ctx) { (void)g;(void)id;(void)ctx;irq_handler=fn;return 0; }
 void XScuGic_Enable(XScuGic *g,u32 id) { (void)g;(void)id; }
-void XScuGic_InterruptMaptoCpu(XScuGic *g,u8 mask,u32 id) { (void)g;(void)id;assert(mask==1); }
+void XScuGic_InterruptMaptoCpu(XScuGic *g,u8 mask,u32 id) { (void)g;(void)id;assert(mask==0); }
 u32 XBram_ReadReg(u32 base,u32 off) { (void)base;(void)off;assert(0);return 0; } /* No valid run readback in PL. */
 void hv_enable(void) { hv=1;enables++; }
 void hv_disable(void) { hv=0; }
@@ -91,6 +93,9 @@ static const char *wifi(uint32_t request,const char *command) {
 int main(void) {
     assert(zynq_uart_log_init()==0);assert(zynq_uart_command_init()==0);
     assert(strstr(wifi(1,"STATUS"),"cfg=0"));
+    assert(strstr(answer,"cpu1_disabled=1"));
+    cpu1_disabled=0;uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"cpu1_disabled=0"));
+    cpu1_disabled=1;
     assert(strstr(wifi(2,"CFG BEGIN 123"),"CFG_BEGIN"));assert(!hv&&!run);
     uart_handle_usb_line("CFG END",capture);assert(strstr(answer,"CFG_OWNER")&&!hv&&!run);
     assert(strstr(wifi(3,"BRAM WR t_timing 0 1 0x1800"),"BRAM_WR"));assert(writes==1);
@@ -181,6 +186,11 @@ int main(void) {
     uart_handle_wifi_line("TX7332 SLEEP",12,capture);assert(strstr(answer,"TX_OWNER_OR_CFG")&&tx_ready);
     uart_handle_wifi_line("CFG ABORT",12,capture);
     uart_handle_usb_line("TX7332 SLEEP",capture);assert(strstr(answer,"TX_OWNER_OR_CFG")&&tx_ready);
-    puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE+TX power interlocks/bounded TX");
+    cpu1_disabled=0; /* Requested warning-only policy must not add a scan/HV gate. */
+    uart_handle_wifi_line("BEAM START",12,capture);assert(run&&!hv);
+    uart_handle_wifi_line("HV ENABLE",12,capture);assert(hv&&run);
+    uart_handle_wifi_line("HV DISABLE",12,capture);
+    uart_handle_wifi_line("BEAM STOP",12,capture);assert(!run&&!hv);
+    puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE+TX power interlocks/bounded TX/CPU1 warning only");
     return 0;
 }
