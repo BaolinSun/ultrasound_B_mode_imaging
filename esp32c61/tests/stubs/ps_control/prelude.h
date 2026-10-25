@@ -44,6 +44,8 @@ u32 Tx7332_ReadRegister(u32,u32*);
 void uart_intrhandler(void*);
 u32 setup_uart_intr_system(void);
 void uart_process_commands(void);
+int uart_idle_pending(void);
+extern XUartPs uartps;
 void uart_handle_usb_line(const char*,command_response_fn);
 void uart_handle_wifi_line(const char*,u32,command_response_fn);
 #endif

@@ -19,6 +19,8 @@ typedef void (*command_response_fn)(const char *text);
 
 u32 uart_init(void);
 void uart_process_commands(void);
+int uart_idle_pending(void); /* read-only, caller masks IRQ */
+int uart_config_active(void);
 void uart_handle_usb_line(const char *line, command_response_fn response_fn);
 int uart_wait_config_done(void);
 int uart_wait_afe_config_done(void);

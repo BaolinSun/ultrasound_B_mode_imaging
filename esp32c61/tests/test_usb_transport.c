@@ -70,6 +70,7 @@ static void complete(u32 token) {
 void temperature_service_poll(void) { if(auto_complete&&tx_kind==TX_IMAGE) complete(0); }
 static void setup(void) {
     memset(&UsbInstance,0,sizeof(UsbInstance));memset(registers,0,sizeof(registers));memset(descriptors,0,sizeof(descriptors));
+    UsbInstance.Config.BaseAddress=0xe0002000U;
     initialized=configured=epoch=request=stop_request=io_error=tx_kind=tx_event=0;
     request_epoch=seen_epoch=faulted=config_blocked=errors_logged=reply_rd=reply_count=0;
     flush_fail=queue_fail=lease_held=release_fail=source_down=source_empty=0;
@@ -84,6 +85,16 @@ static void setup(void) {
 }
 int main(void) {
     for(unsigned i=0;i<sizeof(pixels);i++)pixels[i]=(uint8_t)(i^(i>>11));
+    assert(usb_transport_idle_pending());
+    setup();assert(usb_transport_idle_pending());usb_transport_poll();assert(!usb_transport_idle_pending());
+    UsbInstance.Config.BaseAddress=0;assert(usb_transport_idle_pending());UsbInstance.Config.BaseAddress=0xe0002000U;
+    volatile unsigned *flags[]={&faulted,&request,&stop_request,&io_error,&tx_kind,&tx_event};
+    for(unsigned i=0;i<sizeof flags/sizeof flags[0];i++){*flags[i]=1;assert(usb_transport_idle_pending());*flags[i]=0;}
+    reply_count=1;assert(usb_transport_idle_pending());reply_count=0;
+    image.frame.token=123;assert(usb_transport_idle_pending());image.frame.token=0;
+    registers[XUSBPS_EPPRIME_OFFSET/4]=TX_MASK;assert(usb_transport_idle_pending());registers[XUSBPS_EPPRIME_OFFSET/4]=0;
+    assert(!usb_transport_idle_pending());
+    usb_transport_power_gate(1);usb_transport_request_isr(1);assert(!request);usb_transport_power_gate(0);
     setup();assert(usb_transport_boot_quiesce()==0);flush_fail=1;
     assert(usb_transport_boot_quiesce()==-1);flush_fail=0;
     initialized=0;usb_transport_poll();assert(!usb_image_config_begin());

@@ -29,6 +29,7 @@
 #include "xiltimer.h"
 #include "system_ctrl/temp.h"
 #include "system_ctrl/cpu1_power.h"
+#include "system_ctrl/cpu0_idle.h"
 #include "bram/bram.h"
 #include "data_transfer/sdio_bridge.h"
 #include "data_transfer/frame_store.h"
@@ -41,7 +42,6 @@ void led_blink(u8 times,u32 time);
 
 
 int main() {
-	u32 cnt = 0;
 
 	if (zynq_uart_log_init() != XST_SUCCESS) return XST_FAILURE;
 	xil_printf("@UART_LOG UART0 MIO27/TX -> ESP32 GPIO10/RX 115200 8N1\r\n");
@@ -101,21 +101,10 @@ int main() {
 	xil_printf("Beamform ready; STOP.\r\n");
 	XGpioPs_WritePin(&gpiops, LED_2_EMIO_PIN, 1);
 	led_blink(5,250000);
+	cpu0_idle_init();
 
 	while (1) {
-		temperature_service_poll();
-		afe_power_poll();
-        tx_power_poll();
-		uart_process_commands();
-		usb_process_commands();
-#if DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO
-		sdio_bridge_poll();
-#else
-		usb_send_adc_data(NULL, 0, 0);
-#endif
-		cnt ++;
-		XGpioPs_WritePin(&gpiops, LED_2_EMIO_PIN, cnt&0x01);
-//		usleep(250000);
+		cpu0_foreground_poll();
 	}
 
 

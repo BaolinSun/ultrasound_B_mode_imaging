@@ -1,0 +1,9 @@
+#ifndef UB_CPU0_IDLE_CONFIG_H
+#define UB_CPU0_IDLE_CONFIG_H
+#ifndef CPU0_IDLE_WFI_ENABLE
+#define CPU0_IDLE_WFI_ENABLE 1
+#endif
+#if CPU0_IDLE_WFI_ENABLE != 0 && CPU0_IDLE_WFI_ENABLE != 1
+#error "CPU0_IDLE_WFI_ENABLE must be 0 or 1"
+#endif
+#endif

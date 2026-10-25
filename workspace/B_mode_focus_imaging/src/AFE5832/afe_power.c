@@ -79,6 +79,10 @@ void afe_power_init(void) {
 }
 void afe_power_poll(void) { if(initialized) ap_poll(&machine); }
 int afe_power_idle(void) { return idle(0); }
+int afe_power_sleep_confirmed(void) {
+    return initialized && machine.state==AFE_SLEEP && rd(0,AP_VERSION)==AP_MAGIC &&
+        rd(0,AP_CONTROL)==3U && XGpioPs_ReadPin(&gpiops,AFE5832_PDN_GBL_PIN_EMIO)!=0;
+}
 int afe_power_allowed(void) {
     return initialized && machine.state==AFE_READY && rd(0,AP_VERSION)==AP_MAGIC &&
         (rd(0,AP_STATUS)&AP_READY)==AP_READY && rd(0,AP_EPOCH)==machine.epoch && rd(0,AP_ACK_EPOCH)==machine.epoch;

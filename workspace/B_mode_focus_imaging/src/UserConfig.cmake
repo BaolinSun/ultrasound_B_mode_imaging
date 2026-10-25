@@ -48,6 +48,7 @@ set(USER_INCLUDE_DIRECTORIES
 #Example 3: Adding ${MY_ENV}/data/helloworld.c are expanded using project-specific environment settings.
 set(USER_COMPILE_SOURCES
 "system_ctrl/cpu1_power.c"
+"system_ctrl/cpu0_idle.c"
 "AFE5832/afe_power.c"
 "TX7332/tx_power.c"
 "data_transfer/frame_crc.c"

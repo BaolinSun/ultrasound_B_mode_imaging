@@ -25,7 +25,8 @@ static u32 source_frame, source_length=BR_FRAME_BYTES, source_down;
 static unsigned lease_releases, quiesced;
 static int source_ready=1;
 int frame_store_is_ready(void) { return source_ready; }
-u32 Xil_In32(UINTPTR address) { (void)address;return 0; }
+static u32 hardware_busy;
+u32 Xil_In32(UINTPTR address) { return address==0xE0101024U?hardware_busy:0; }
 int sdio_host_quiesce(sdio_host_t *host) { (void)host;quiesced=1;return 0; }
 int frame_store_acquire(frame_lease_t *f,u32 watermark) {
     (void)watermark;assert(!f->lease);
@@ -129,6 +130,11 @@ int main(void) {
     fill_image(91);
     u32 before_init=br_crc32(0,image_ddr,BR_FRAME_BYTES);
     sdio_bridge_init();assert(sdio_bridge_output_is_sdio());assert(inits==0 && flushes==0 && invalidations==0);
+    assert(!sdio_bridge_idle_pending());
+    for(unsigned bit=0;bit<10;bit++)if((1U<<bit)&0x307U) {
+        hardware_busy=1U<<bit;assert(sdio_bridge_idle_pending());
+    }
+    hardware_busy=0;assert(!sdio_bridge_idle_pending());
     assert(br_crc32(0,image_ddr,BR_FRAME_BYTES)==before_init); /* No DDR writes on init. */
     /* Enumeration succeeds but missing frame-store init must NOT advertise
      * host-ready or acquire a lease. The existing ESP start gate uses mode. */

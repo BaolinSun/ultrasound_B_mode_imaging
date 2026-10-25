@@ -9,6 +9,7 @@
 #include "../AFE5832/afe5832.h"
 #include "../system_ctrl/imaging_power.h"
 #include "../system_ctrl/cpu1_power.h"
+#include "../system_ctrl/cpu0_idle.h"
 #include "../bram/bram.h"
 #include "../HV/hv.h"
 #include "../data_transfer/frame_store.h"
@@ -41,6 +42,14 @@ static volatile u8 uart_line_overflow = 0;
 static u32 uart_cfg_seq = 0;
 static u8 uart_cfg_active = 0;
 static u8 uart_cfg_done = 0;
+int uart_config_active(void) { return uart_cfg_active!=0; }
+int uart_idle_pending(void) {
+    if(uart_cfg_active || uart_line_count || uart_line_overflow || uartps.Config.BaseAddress!=UART_BASEADDR) return 1;
+    u32 sr=XUartPs_ReadReg(UART_BASEADDR,XUARTPS_SR_OFFSET);
+    u32 mask=XUartPs_ReadReg(UART_BASEADDR,XUARTPS_IMR_OFFSET);
+    return (sr&(XUARTPS_SR_RXEMPTY|XUARTPS_SR_TXEMPTY))!=(XUARTPS_SR_RXEMPTY|XUARTPS_SR_TXEMPTY) ||
+        (mask&(XUARTPS_IXR_RXOVR|XUARTPS_IXR_TOUT))!=(XUARTPS_IXR_RXOVR|XUARTPS_IXR_TOUT);
+}
 static command_response_fn uart_response_fn = NULL;
 enum { SOURCE_UART1, SOURCE_USB, SOURCE_WIFI };
 static unsigned command_source, cfg_owner;
@@ -601,9 +610,9 @@ static void uart_handle_line(char *line)
 		uart_emitf("@NACK %u CFG_OWNER",uart_cfg_seq); return;
 	}
 	if(!strcmp(line,"STATUS")) {
-		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u run_src=ps spi=%u down=%u afe=%s tx=%s cpu1_disabled=%u",uart_cfg_active,
+		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u run_src=ps spi=%u down=%u afe=%s tx=%s cpu1_disabled=%u wfi=%u",uart_cfg_active,
 		    cfg_owner,uart_cfg_seq,(unsigned)Beamform_GetRunRequest(),(unsigned)hv_is_enabled(),
-		    (unsigned)Beamform_GetSpiStartRequest(),(unsigned)Beamform_GetDownsample(),afe_power_state_name(),tx_power_state_name(),cpu1_power_is_disabled());
+		    (unsigned)Beamform_GetSpiStartRequest(),(unsigned)Beamform_GetDownsample(),afe_power_state_name(),tx_power_state_name(),cpu1_power_is_disabled(),cpu0_idle_enabled());
 		return;
 	}
 	char *ctx = line;

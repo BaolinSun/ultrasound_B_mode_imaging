@@ -39,7 +39,8 @@ class AfePowerContracts(unittest.TestCase):
         self.assertLess(sequence.index('exchange("AFE PREPARE"'), sequence.index('if(!drain())'))
         self.assertLess(sequence.index(' idle=1 '), sequence.index('exchange(command,answer)'))
         main = (ROOT/'build/src/ps/main.c').read_text(encoding='utf-8')
-        self.assertIn('temperature_service_poll();', main)
+        self.assertIn('cpu0_foreground_poll();', main)
+        self.assertIn('temperature_service_poll();', (ROOT/'build/src/ps/system_ctrl/cpu0_idle.c').read_text())
 
 
 if __name__ == '__main__':

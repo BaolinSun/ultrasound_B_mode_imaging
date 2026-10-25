@@ -17,6 +17,15 @@ static int dropping,command_ready;
 static uint32_t peer,highest,last_request;
 static char saved_command[WC_COMMAND],saved_response[WC_RESPONSE];
 static char response[WC_RESPONSE];
+int zynq_uart_idle_pending(void)
+{
+    if(!command_ready || queued || lost) return 1;
+    u32 sr=XUartPs_ReadReg(ZYNQ_LOG_UART_BASEADDR,XUARTPS_SR_OFFSET);
+    u32 mask=XUartPs_ReadReg(ZYNQ_LOG_UART_BASEADDR,XUARTPS_IMR_OFFSET);
+    return (sr&(XUARTPS_SR_RXEMPTY|XUARTPS_SR_TXEMPTY))!=(XUARTPS_SR_RXEMPTY|XUARTPS_SR_TXEMPTY) ||
+        (mask&(XUARTPS_IXR_RXOVR|XUARTPS_IXR_TOUT))!=(XUARTPS_IXR_RXOVR|XUARTPS_IXR_TOUT);
+    /* A partial line is not runnable work. Later bytes/timeout still interrupt. */
+}
 
 int zynq_uart_log_init(void)
 {

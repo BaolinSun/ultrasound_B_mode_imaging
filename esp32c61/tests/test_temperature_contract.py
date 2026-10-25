@@ -20,7 +20,10 @@ class TemperatureContractTests(unittest.TestCase):
         for root in (PS, IDE):
             main = (root / "main.c").read_text(encoding="utf-8")
             self.assertLess(main.index("IIC_Init();"), main.index("temperature_service_init();"))
-            self.assertRegex(main, r"while \(1\) \{\s*temperature_service_poll\(\);")
+            self.assertRegex(main, r"while \(1\) \{\s*cpu0_foreground_poll\(\);")
+            scheduler = (root / 'system_ctrl/cpu0_idle.c').read_text()
+            self.assertIn('temperature_service_poll();', scheduler)
+            self.assertLess(scheduler.index('temperature_service_poll();'), scheduler.index('cpu0_idle_core_try(&idle_core);'))
             usb = (root / "usb/usb.c").read_text(encoding="utf-8")
             # Image DMA is polled in foreground, never from the RX ISR.
             self.assertNotIn("while (recv_new_data", usb)

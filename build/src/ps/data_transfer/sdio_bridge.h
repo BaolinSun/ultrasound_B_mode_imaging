@@ -6,5 +6,6 @@
 void sdio_bridge_init(void);
 void sdio_bridge_poll(void);
 int sdio_bridge_power_idle(void);
+int sdio_bridge_idle_pending(void); /* read-only SD1 CMD/DAT/DMA snapshot */
 int sdio_bridge_output_is_sdio(void);
 #endif

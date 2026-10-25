@@ -24,6 +24,7 @@ u32 get_USB_datalen(u8 *frame_in);
 
 void usb_send_adc_data(u8* rx_buffer_ptr,u32 nums,u32 package_of);
 void usb_process_commands(void);
+int usb_commands_idle_pending(void); /* caller masks IRQ */
 void usb_reset_command_queue_isr(void);
 
 void usb_printf(char *str, u32 len);

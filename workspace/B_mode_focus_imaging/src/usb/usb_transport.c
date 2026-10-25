@@ -148,7 +148,7 @@ static int final_image_consumed(void)
 void usb_transport_request_isr(unsigned cmd)
 {
     if (cmd == 3 || cmd == 2) { request = 0; stop_request = 1; return; }
-    if ((cmd == 1 || cmd == 4) && configured && !config_blocked && !request &&
+    if ((cmd == 1 || cmd == 4) && configured && !config_blocked && !power_blocks && !request &&
         (epoch != seen_epoch || (!faulted && (image.state == USB_IMAGE_IDLE || final_image_consumed())))) {
         request_epoch = epoch; request = 1;
     }
@@ -276,4 +276,10 @@ void usb_transport_power_vote(unsigned owner,int blocked) {
 void usb_transport_power_gate(int blocked) {usb_transport_power_vote(1U,blocked);}
 int usb_transport_power_idle(void) {
     return !initialized || (!usb_frame_busy(&image) && !image.frame.token && !tx_kind);
+}
+int usb_transport_idle_pending(void) {
+    return !initialized || !UsbInstance.Config.BaseAddress || faulted || request || stop_request || io_error ||
+        tx_kind || tx_event || reply_count || epoch!=seen_epoch ||
+        usb_frame_busy(&image) || image.frame.token || !dma_idle();
+    /* Posted OUT descriptors remain armed for wake-up; DDR stays powered. */
 }

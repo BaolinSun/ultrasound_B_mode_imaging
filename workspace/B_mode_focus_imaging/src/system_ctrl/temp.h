@@ -12,4 +12,5 @@ float read_temp(uint32_t address); /* NAN on failure, not a fabricated 0 C. */
 uint32_t temp_init(void);
 void temperature_service_init(void);
 void temperature_service_poll(void); /* Foreground only; never call in ISR. */
+uint32_t temperature_service_remaining_ms(void); /* zero if due/unavailable */
 #endif

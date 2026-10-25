@@ -46,6 +46,9 @@ static volatile u32 usb_cfg_line_rd_idx = 0;
 static volatile u32 usb_cfg_line_count = 0;
 static volatile u8 usb_cfg_frame_error = 0;
 static volatile u8 usb_cfg_overflow = 0;
+int usb_commands_idle_pending(void) {
+    return usb_cfg_line_count || usb_cfg_frame_error || usb_cfg_overflow;
+}
 
 XUsbPs UsbInstance; /* The instance of the USB Controller */
 u8 usb_ready_data[4] = { 0xef, 0xef, 0x01, 0x90 };

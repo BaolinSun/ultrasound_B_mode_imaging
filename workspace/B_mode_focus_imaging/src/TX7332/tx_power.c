@@ -42,6 +42,11 @@ void tx_power_init(void) {
 void tx_power_poll(void) {if(initialized)tp_poll(&machine);}
 int tx_power_allowed(void) {return initialized&&tp_allowed(&machine);}
 int tx_power_idle(void) {return idle_tx(0);}
+int tx_power_sleep_confirmed(void) {
+    return initialized && machine.state==TX_SLEEPING && read_reg(0,TP_VERSION)==TP_MAGIC &&
+        read_reg(0,TP_CONTROL)==3U && (read_reg(0,TP_STATUS)&63U)==15U &&
+        read_reg(0,TP_ACK)==machine.sequence && read_reg(0,TP_SEQUENCE)==machine.sequence;
+}
 u32 tx_power_flags(void) {return initialized&&read_reg(0,TP_VERSION)==TP_MAGIC?read_reg(0,TP_STATUS):0;}
 const char *tx_power_state_name(void) {
     if(!initialized || (machine.state==TX_READY&&!tx_power_allowed()))return "unknown";

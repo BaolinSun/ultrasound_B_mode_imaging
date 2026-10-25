@@ -56,6 +56,11 @@ static void fail_link(void) {
     xil_printf("@SDIO ERROR failures=%u; re-enumerate, no payload replay\r\n",(unsigned)failures);
 }
 int sdio_bridge_power_idle(void) { return phase==IDLE && !frame.lease; }
+int sdio_bridge_idle_pending(void) {
+    /* SD1 only: PSTATE CMD/DAT inhibit, DAT active, write/read active.
+     * Never reset the bus, clear status or issue CMD52 from the atomic check. */
+    return !sdio_bridge_power_idle() || (Xil_In32((UINTPTR)0xE0101024U)&0x307U)!=0;
+}
 void sdio_bridge_init(void) {
     if(frame.lease && release_frame()!=0) { store_ready=0; return; }
     /* Boot/reinitialization starts a fresh handshake; never replay payload. */
@@ -226,4 +231,5 @@ void sdio_bridge_poll(void) {
 void sdio_bridge_init(void) { xil_printf("@OUTPUT compiled=USB\r\n"); }
 void sdio_bridge_poll(void) { }
 int sdio_bridge_power_idle(void) { return 1; }
+int sdio_bridge_idle_pending(void) { return 0; }
 #endif

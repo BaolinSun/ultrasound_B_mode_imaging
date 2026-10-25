@@ -34,3 +34,7 @@ void temperature_service_poll(void) {
     if(length) (void)temp_hw_send(line,length); /* Bounded; no retry/replay. */
     busy=0;
 }
+uint32_t temperature_service_remaining_ms(void) {
+    uint32_t now=temp_hw_now_ms();
+    return !initialized || busy || temperature_due(now,next_sample)?0U:next_sample-now;
+}

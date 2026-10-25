@@ -1,4 +1,5 @@
 #include "uart_log.h"
+#include "uart.h"
 #include "xscugic.h"
 #include "xiltimer.h"
 #include "wifi_control_protocol.h"
@@ -7,6 +8,8 @@
 #include <stdio.h>
 static int afe_ready=1,tx_ready=1;
 static unsigned cpu1_disabled=1;
+static unsigned idle_enabled=1;
+unsigned cpu0_idle_enabled(void){return idle_enabled;}
 unsigned cpu1_power_is_disabled(void){return cpu1_disabled;}
 int tx_power_allowed(void){return tx_ready;}
 int tx_power_idle(void){return 1;}
@@ -45,7 +48,9 @@ int XUartPs_SetDataFormat(XUartPs *u,XUartPsFormat *f) { (void)u;assert(f->BaudR
 void XUartPs_SetOperMode(XUartPs *u,u8 m) { (void)u;(void)m; }
 void XUartPs_SetInterruptMask(XUartPs *u,u32 m) { (void)u;(void)m; }
 void XUartPs_SendByte(UINTPTR base,u8 c) { (void)base;(void)c; }
-u32 XUartPs_ReadReg(UINTPTR base,u32 off) { (void)base; if(off==XUARTPS_FIFO_OFFSET)return (u8)received[receive_at++];return 0; }
+static unsigned uart_sr=XUARTPS_SR_RXEMPTY|XUARTPS_SR_TXEMPTY;
+static unsigned uart_imr=XUARTPS_IXR_RXOVR|XUARTPS_IXR_TOUT;
+u32 XUartPs_ReadReg(UINTPTR base,u32 off) { (void)base; if(off==XUARTPS_FIFO_OFFSET)return (u8)received[receive_at++];if(off==XUARTPS_SR_OFFSET)return uart_sr;if(off==XUARTPS_IMR_OFFSET)return uart_imr;return 0; }
 void XUartPs_WriteReg(UINTPTR base,u32 off,u32 v) { (void)base; if(off==XUARTPS_FIFO_OFFSET) { assert(transmit_len<sizeof(transmitted)-1);transmitted[transmit_len++]=(char)v;transmitted[transmit_len]=0; } }
 int XUartPs_IsReceiveData(UINTPTR base) { (void)base;return receive_at<receive_len; }
 int XUartPs_IsTransmitFull(UINTPTR base) { (void)base;return tx_full; }
@@ -94,6 +99,20 @@ int main(void) {
     assert(zynq_uart_log_init()==0);assert(zynq_uart_command_init()==0);
     assert(strstr(wifi(1,"STATUS"),"cfg=0"));
     assert(strstr(answer,"cpu1_disabled=1"));
+    assert(strstr(answer,"wfi=1"));
+    idle_enabled=0;uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"wfi=0"));idle_enabled=1;
+    assert(!zynq_uart_idle_pending());
+    uart_sr=XUARTPS_SR_RXEMPTY;assert(zynq_uart_idle_pending());
+    uart_sr=XUARTPS_SR_TXEMPTY;assert(zynq_uart_idle_pending());
+    uart_sr=XUARTPS_SR_RXEMPTY|XUARTPS_SR_TXEMPTY;
+    uart_imr=XUARTPS_IXR_RXOVR;assert(zynq_uart_idle_pending()); /* Short packets need timeout IRQ too. */
+    uart_imr=XUARTPS_IXR_TOUT;assert(zynq_uart_idle_pending());
+    uart_imr=XUARTPS_IXR_RXOVR|XUARTPS_IXR_TOUT;assert(!zynq_uart_idle_pending());
+    assert(uart_idle_pending()); /* UART1 must have been initialized. */
+    uartps.Config.BaseAddress=0xe0001000U;assert(!uart_idle_pending());
+    uart_sr=0;assert(uart_idle_pending());uart_sr=XUARTPS_SR_RXEMPTY|XUARTPS_SR_TXEMPTY;
+    uart_imr=XUARTPS_IXR_RXOVR;assert(uart_idle_pending());
+    uart_imr=XUARTPS_IXR_RXOVR|XUARTPS_IXR_TOUT;assert(!uart_idle_pending());
     cpu1_disabled=0;uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"cpu1_disabled=0"));
     cpu1_disabled=1;
     assert(strstr(wifi(2,"CFG BEGIN 123"),"CFG_BEGIN"));assert(!hv&&!run);
@@ -125,6 +144,11 @@ int main(void) {
     uart_handle_wifi_line("BEAM START",12,capture);assert(strstr(answer,"BEAM_START")&&run&&!hv);
     uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"run=1 hv=0 run_src=ps spi=1"));
     uart_handle_wifi_line("BEAM STOP",12,capture);assert(!run&&!hv);
+    int split=wc_encode(received,sizeof received,false,12,1000,"STATUS");assert(split>1);
+    receive_at=0;receive_len=1;transmit_len=0;transmitted[0]=0;
+    irq_handler(NULL);assert(!zynq_uart_idle_pending()); /* Partial line waits for next UART IRQ. */
+    receive_len=(size_t)split;irq_handler(NULL);assert(zynq_uart_idle_pending());
+    uart_process_commands();assert(!zynq_uart_idle_pending()&&!hv&&!run);
     uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"run=0 hv=0 run_src=ps"));
     uart_handle_wifi_line("CFG BEGIN 20",12,capture);
     uart_handle_wifi_line("BRAM WR t_timing 0 1 06144",12,capture);assert(strstr(answer,"BRAM_WR"));

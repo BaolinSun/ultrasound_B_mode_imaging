@@ -40,9 +40,16 @@ class OutputSelectionTests(unittest.TestCase):
 
     def test_main_data_paths_are_compile_time_exclusive(self):
         source = (CANONICAL / "main.c").read_text(encoding="utf-8")
-        self.assertRegex(source,
-                         r"#if DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO\s+"
-                         r"sdio_bridge_poll\(\);\s+#else\s+usb_send_adc_data\([^;]+;\s+#endif")
+        self.assertIn('cpu0_foreground_poll();', source)
+        scheduler = (CANONICAL / 'system_ctrl/cpu0_idle.c').read_text()
+        self.assertIn('if(!q)sdio_bridge_poll();', scheduler)
+        # USB foreground is served through usb_process_commands exactly once;
+        # SDIO has a no-op implementation in the USB macro build.
+        self.assertIn('usb_process_commands();', scheduler)
+        bridge = (CANONICAL / 'data_transfer/sdio_bridge.c').read_text()
+        self.assertIn('#if DATA_OUTPUT_MODE == DATA_OUTPUT_SDIO', bridge)
+        self.assertIn('void sdio_bridge_poll(void) { }', bridge)
+        self.assertIn('usb_transport_poll();', (CANONICAL/'usb/usb.c').read_text())
         header = (CANONICAL / "data_transfer/output_config.h").read_text(encoding="utf-8")
         self.assertIn('#error "DATA_OUTPUT_MODE must be', header)
 
