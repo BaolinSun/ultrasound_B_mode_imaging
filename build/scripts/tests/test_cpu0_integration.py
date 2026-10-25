@@ -51,8 +51,9 @@ class Cpu0Integration(unittest.TestCase):
 
     def test_timer_never_modifies_shared_power_resources(self):
         text = (PS / 'system_ctrl/cpu0_idle.c').read_text()
-        for forbidden in ('Xil_DCache', 'Xil_L2', 'F800', 'SLCR', 'cpu1_power_init(', 'XTime_SetTime', 'XScuGic_CfgInitialize'):
+        for forbidden in ('Xil_DCache', 'Xil_L2', 'SLCR', 'cpu1_power_init(', 'XTime_SetTime', 'XScuGic_CfgInitialize'):
             self.assertNotIn(forbidden, text)
+        self.assertNotIn('F800',text.replace('Xil_In32(0xF8000244U)','')) # Only read CPU1 actual state.
         self.assertIn('#define CPU0_IDLE_WFI_ENABLE 1', (PS / 'system_ctrl/cpu0_idle_config.h').read_text())
         script = (ROOT / 'build/scripts/build_frame_store_apps.ps1').read_text()
         self.assertIn('CPU0_IDLE_WFI_ENABLE=$Wfi', script)

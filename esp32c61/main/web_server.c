@@ -5,6 +5,7 @@
 #include "selftest.h"
 #include "sdio_bridge.h"
 #include "temperature_cache.h"
+#include "cpu_status_cache.h"
 #include "temperature_protocol.h"
 #include "zynq_control.h"
 #include "zynq_control_http.h"
@@ -123,6 +124,7 @@ static esp_err_t get_status(httpd_req_t *req)
     cJSON *json = cJSON_CreateObject();
     if (json) {
         zynq_control_status_json(json);
+        cpu_status_add_json(json,(uint64_t)esp_timer_get_time()/1000U);
         temperature_status_t t;
         temperature_cache_get(&t,(uint64_t)esp_timer_get_time()/1000U);
         cJSON *temperatures=cJSON_AddObjectToObject(json,"temperatures");

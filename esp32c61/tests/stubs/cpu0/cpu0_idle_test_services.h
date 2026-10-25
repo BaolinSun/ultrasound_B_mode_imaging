@@ -1,6 +1,7 @@
 #ifndef CPU0_TEST_SERVICES_H
 #define CPU0_TEST_SERVICES_H
 #include <stdint.h>
+#include <stddef.h>
 #include <stdarg.h>
 typedef uint32_t u32;
 typedef uint8_t u8;
@@ -65,6 +66,8 @@ int afe_power_sleep_confirmed(void);
 int tx_power_sleep_confirmed(void);
 int frame_store_pause_retained(void);
 uint32_t temperature_service_remaining_ms(void);
+uint32_t temperature_service_sequence(void);
+int temp_hw_send(const char *,size_t);
 void temperature_service_poll(void);
 void uart_process_commands(void);
 void usb_process_commands(void);

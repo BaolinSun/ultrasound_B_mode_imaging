@@ -38,3 +38,4 @@ uint32_t temperature_service_remaining_ms(void) {
     uint32_t now=temp_hw_now_ms();
     return !initialized || busy || temperature_due(now,next_sample)?0U:next_sample-now;
 }
+uint32_t temperature_service_sequence(void) { return sequence; }

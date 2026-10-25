@@ -1,6 +1,7 @@
 #include "fake_uart_sdk.h"
 #include "zynq_uart_bridge.h"
 #include "temperature_cache.h"
+#include "cpu_status_cache.h"
 #include "temperature_protocol.h"
 #include "zynq_control.h"
 #include <assert.h>
@@ -17,6 +18,7 @@ static void (*task_entry)(void*);
 static jmp_buf stop;
 static const char *pending;
 static char temperature_line[TEMP_LINE_BYTES];
+static char combined_line[256];
 static unsigned control_bytes,control_losses;
 void zynq_control_feed(const uint8_t *p,size_t n) { (void)p;control_bytes+=(unsigned)n; }
 void zynq_control_uart_lost(void) { control_losses++; }
@@ -59,12 +61,17 @@ int xQueueReceive(QueueHandle_t q,uart_event_t *e,unsigned wait) {
     case 10:{
         temperature_message_t t={.seq=123,.mask=7,.mc={35000,0,-10125}};
         assert(temperature_format(temperature_line,sizeof(temperature_line),&t)>0);
-        connected=false;pending=temperature_line;break;
+        cpu_status_message_t cpu={123,1,CPU_MODE_IDLE,CPU_REASON_NONE,4,30000000,4,0x22};
+        strcpy(combined_line,temperature_line);
+        assert(cpu_status_format(combined_line+strlen(combined_line),CPU_STATUS_LINE_BYTES,&cpu)==98);
+        connected=false;pending=combined_line;break;
     }
     case 11:{
         /* Parser works while monitor is disconnected, before print gate. */
         temperature_status_t t;temperature_cache_get(&t,(uint64_t)now/1000);
         assert(t.has_sample && t.seq==123 && t.mask==7 && t.mc[1]==0);
+        cpu_status_snapshot_t cpu;cpu_status_cache_get(&cpu,(uint64_t)now/1000);
+        assert(cpu.has_sample&&!cpu.stale&&cpu.message.seq==123&&cpu.message.entries==4&&cpu.message.cpu_control==0x22);
         connected=true;pending="visible\n";break;
     }
     case 12:pending="no newline";break;

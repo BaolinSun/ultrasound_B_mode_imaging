@@ -13,4 +13,5 @@ uint32_t temp_init(void);
 void temperature_service_init(void);
 void temperature_service_poll(void); /* Foreground only; never call in ISR. */
 uint32_t temperature_service_remaining_ms(void); /* zero if due/unavailable */
+uint32_t temperature_service_sequence(void); /* Read-only wake/report generation. */
 #endif

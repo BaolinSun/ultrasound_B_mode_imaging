@@ -5,6 +5,44 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 
+function cpuSnapshot(mode='idle',control=34){return {status:'ok',seq:7,age_ms:200,period_ms:10000,
+ cpu0:{mode,reason:mode==='active'?'power_active':mode==='disabled'?'disabled':mode==='blocked'?'pause_unconfirmed':'none',
+  wfi_enabled:mode!=='disabled',entries:23,wait_ms:77578.541,timer_irqs:9},
+ cpu1:{reset:!!(control&2),clock_stopped:!!(control&32),disabled:(control&34)===34,control}}}
+
+test('CPU card uses cached snapshots, shows mode/counters and does not turn WFI enabled into instant sleep',async()=>{
+ const e=setup();await e.settle();
+ assert.match(e.elements['cpu-age'].textContent,/等待/);assert.equal(e.elements['cpu0-entries'].textContent,'—');
+ for(const [mode,label] of [['active','正常前台运行'],['idle','安全空闲模式'],['blocked','待机条件未满足'],['disabled','WFI 不可用']]){
+  e.backend.status.cpus=cpuSnapshot(mode);await e.context.refresh();
+  assert.match(e.elements['cpu0-mode'].textContent,new RegExp(label));
+  assert.equal(e.elements['cpu0-entries'].textContent,'23');assert.equal(e.elements['cpu0-wait'].textContent,'77.58 秒');
+  assert.equal(e.elements['cpu0-irqs'].textContent,'9');assert.match(e.elements['cpu-age'].textContent,/0.2 秒前/);
+ }
+ assert.equal(e.backend.calls.some(c=>c.options.method==='POST'),false);
+ assert.ok(e.backend.calls.every(c=>['/api/config','/api/status'].includes(c.path)));
+});
+
+test('CPU1 card distinguishes both bits, partial control and unconfirmed execution',async()=>{
+ const e=setup();await e.settle();
+ for(const [control,label] of [[34,'已固定禁用'],[2,'仅保持复位'],[32,'仅停止时钟'],[0,'执行状态未确认']]){
+  e.backend.status.cpus=cpuSnapshot('active',control);await e.context.refresh();
+  assert.match(e.elements['cpu1-state'].textContent,new RegExp(label));
+  assert.equal(e.elements['cpu1-control'].textContent,'0x'+control.toString(16).padStart(8,'0').toUpperCase());
+ }
+});
+
+test('CPU card clears stale/lost/offline readings and never renders old zeros as current data',async()=>{
+ const e=setup();await e.settle();e.backend.status.cpus=cpuSnapshot();await e.context.refresh();
+ e.backend.status.cpus.status='stale';await e.context.refresh();
+ assert.match(e.elements['cpu-age'].textContent,/过期/);assert.equal(e.elements['cpu0-entries'].textContent,'—');
+ assert.equal(e.elements['cpu1-state'].textContent,'未知');
+ e.backend.status.cpus=cpuSnapshot();e.backend.status.cpus.cpu0.entries=null;e.backend.status.cpus.cpu1.control=null;
+ await e.context.refresh();assert.equal(e.elements['cpu0-entries'].textContent,'—');assert.equal(e.elements['cpu1-control'].textContent,'—');
+ e.backend.offline=true;await e.context.refresh();assert.match(e.elements['cpu-age'].textContent,/断开/);
+ assert.equal(e.elements['cpu0-mode'].textContent,'未知');assert.equal(e.elements['cpu1-reset'].textContent,'—');
+});
+
 const html = readFileSync(new URL('../main/index.html', import.meta.url), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 test('data-path status distinguishes direct copy, allocation, core lock and fused CRC from legacy firmware',async()=>{

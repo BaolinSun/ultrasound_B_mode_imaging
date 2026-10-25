@@ -2,6 +2,7 @@
 #include "sdkconfig.h"
 #include "esp_log.h"
 #include "temperature_cache.h"
+#include "cpu_status_cache.h"
 #include "zynq_control.h"
 
 #if CONFIG_ZYNQ_UART_BRIDGE_ENABLE
@@ -76,14 +77,16 @@ static void receive_task(void *ctx)
                 (void)xQueueReset(events);
                 uart_log_framer_reset(&framer); /* Never join text across lost data. */
                 temperature_cache_uart_lost();
+                cpu_status_cache_uart_lost();
                 zynq_control_uart_lost();
             }
         }
         for(unsigned batch=0;batch<4;batch++) {
             int count=uart_read_bytes(UART_NUM_0,bytes,sizeof(bytes),0);
-            if(count<0) { errors++; uart_log_framer_reset(&framer); temperature_cache_uart_lost(); zynq_control_uart_lost(); break; }
+            if(count<0) { errors++; uart_log_framer_reset(&framer); temperature_cache_uart_lost(); cpu_status_cache_uart_lost(); zynq_control_uart_lost(); break; }
             if(!count) break;
             temperature_cache_feed(bytes,(size_t)count,milliseconds());
+            cpu_status_cache_feed(bytes,(size_t)count,milliseconds());
             zynq_control_feed(bytes,(size_t)count); /* Parse before bounded USB logging. */
             uart_log_framer_feed(&framer,bytes,(size_t)count,milliseconds(),print_line,NULL);
             vTaskDelay(1); /* Still lower priority than SDIO. */

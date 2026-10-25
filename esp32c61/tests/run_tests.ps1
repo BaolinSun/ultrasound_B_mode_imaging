@@ -12,6 +12,7 @@ $env:PATH = "$(Split-Path $Compiler -Parent);$env:PATH"
 $env:PYTHONUTF8 = '1'
 & (Join-Path $projectRoot '../build/scripts/test_cpu1.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_cpu0.ps1') -Compiler $Compiler
+& (Join-Path $projectRoot '../build/scripts/test_cpu_status.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_usb_frame.ps1') -Compiler $Compiler -OutputDirectory (Join-Path $testOutput 'usb-frame')
 $socketOutput = Join-Path $testOutput 'tcp-socket'
 New-Item -ItemType Directory -Force -Path $socketOutput | Out-Null
@@ -220,6 +221,7 @@ foreach ($suite in @('uart_framer','uart_bridge')) {
         if ($suite -eq 'uart_bridge') {
             $sources+=(Join-Path $projectRoot 'main/zynq_uart_bridge.c')
             $sources+=(Join-Path $projectRoot 'main/temperature_cache.c')
+            $sources+=(Join-Path $projectRoot 'main/cpu_status_cache.c')
         }
         & $Compiler -std=c11 -Wall -Wextra -Werror -Wpedantic --coverage -O0 -g `
             '-I' (Join-Path $PSScriptRoot 'stubs/uart') '-I' (Join-Path $projectRoot 'main') '-I' (Join-Path $projectRoot '../common') @sources -o test_uart.exe

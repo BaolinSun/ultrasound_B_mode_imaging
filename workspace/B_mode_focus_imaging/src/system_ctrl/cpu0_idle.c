@@ -4,6 +4,7 @@
 #include "cpu0_idle_test_services.h"
 #else
 #include "temp.h"
+#include "temp_hw.h"
 #include "../GPIO/gpio.h"
 #include "../AFE5832/afe_power.h"
 #include "../TX7332/tx_power.h"
@@ -24,6 +25,7 @@
 #include <string.h>
 #include "../../../../common/cpu0_idle_core.h"
 #include "../../../../common/cpu0_idle_core.c"
+#include "../../../../common/cpu_status_protocol.h"
 
 extern XScuGic xInterruptController;
 #define TIMER_BASE XPAR_XSCUTIMER_0_BASEADDR
@@ -37,6 +39,8 @@ static uint64_t led_due;
 static XScuGic_VectorTableEntry old_handler;
 static u8 old_priority, old_trigger;
 static u32 old_control,old_load,old_counter;
+static u32 cpu_report_seq,cpu_report_temperature_seq;
+static int cpu_report_pending;
 
 static uint64_t now_us(void *ctx) {
     XTime t;(void)ctx;XTime_GetTime(&t);
@@ -173,6 +177,34 @@ static void summary(void) {
         (unsigned)idle_core.enabled,(unsigned)idle_core.entries,(unsigned)(ms>>32),
         (unsigned)ms,(unsigned)timer_irqs,idle_core.error);
 }
+static cpu_status_message_t cpu_snapshot(void) {
+    cpu_status_message_t m={.seq=cpu_report_seq,.flags=idle_core.enabled?CPU_STATUS_WFI_ENABLED:0,
+        .mode=CPU_MODE_BLOCKED,.reason=CPU_REASON_POWER_STATE,.entries=idle_core.entries,
+        .wait_us=idle_core.wait_us,.timer_irqs=timer_irqs,.cpu_control=Xil_In32(0xF8000244U)};
+    /* Policy/hardware snapshot, not a claim that the executing CPU is asleep.
+     * The strict IRQ-masked WFI entry checks remain unchanged. */
+    if(!idle_core.enabled) {
+        m.mode=CPU_MODE_DISABLED;
+        m.reason=!strcmp(idle_core.error,"MACRO_OFF")?CPU_REASON_DISABLED:CPU_REASON_TIMER;
+    } else if(uart_config_active())m.reason=CPU_REASON_CONFIG;
+    else if((!strcmp(afe_power_state_name(),"ready")||!strcmp(afe_power_state_name(),"sleep")) &&
+            (!strcmp(tx_power_state_name(),"ready")||!strcmp(tx_power_state_name(),"sleep"))) {
+        if(!both_sleep()){m.mode=CPU_MODE_ACTIVE;m.reason=CPU_REASON_POWER_ACTIVE;}
+        else if(!sdio_bridge_power_idle()||!usb_transport_power_idle())m.reason=CPU_REASON_TRANSFER;
+        else if(Beamform_GetRunRequest()||Beamform_GetSpiStartRequest()||hv_is_enabled()||
+                !afe_power_sleep_confirmed()||!tx_power_sleep_confirmed())m.reason=CPU_REASON_HARDWARE;
+        else if(frame_store_pause_retained())m.reason=CPU_REASON_PAUSE;
+        else {m.mode=CPU_MODE_IDLE;m.reason=CPU_REASON_NONE;}
+    }
+    return m;
+}
+static void publish_cpu_status(void) {
+    if(!cpu_report_pending || zynq_uart_idle_pending())return;
+    cpu_status_message_t m=cpu_snapshot();
+    char line[CPU_STATUS_LINE_BYTES];size_t n=cpu_status_format(line,sizeof line,&m);
+    cpu_report_seq++;cpu_report_pending=0;
+    if(n)(void)temp_hw_send(line,n); /* Existing bounded UART path, no retry loop. */
+}
 void cpu0_idle_init(void) {
     const cpu0_idle_ops ops={0,quiet,irq_lock,irq_restore,pending,next_ms,timer_arm,wait_irq,timer_finish,now_us};
     const char *error=timer_init();
@@ -181,10 +213,13 @@ void cpu0_idle_init(void) {
     led_due=now_us(0)+500000U;summary();
     if(CPU0_IDLE_WFI_ENABLE && !idle_core.enabled)
         xil_printf("WARNING @CPU0_IDLE WFI unavailable; foreground polling continues\r\n");
+    cpu_report_seq=0;cpu_report_temperature_seq=temperature_service_sequence();cpu_report_pending=1;
 }
 unsigned cpu0_idle_enabled(void) {return initialized && idle_core.enabled;}
 void cpu0_foreground_poll(void) {
     temperature_service_poll();
+    u32 temperature_seq=temperature_service_sequence();
+    if(temperature_seq!=cpu_report_temperature_seq){cpu_report_temperature_seq=temperature_seq;cpu_report_pending=1;}
     uart_process_commands(); /* Includes power transitions; also retained in long I/O waits. */
     usb_process_commands();
     int q=cpu0_idle_quiet();
@@ -193,8 +228,10 @@ void cpu0_foreground_poll(void) {
     if(q)led_due=now+500000U;
     else if(now>=led_due) {led_level=!led_level;XGpioPs_WritePin(&gpiops,LED_2_EMIO_PIN,led_level);led_due=now+500000U;}
     if(last_quiet && !q)summary();
+    if(last_quiet!=q)cpu_report_pending=1;
     last_quiet=q;
+    publish_cpu_status(); /* Existing temperature wake/transition, no new timer. */
     bool enabled=idle_core.enabled;
     cpu0_idle_core_try(&idle_core);
-    if(enabled && !idle_core.enabled)summary();
+    if(enabled && !idle_core.enabled){summary();cpu_report_pending=1;}
 }

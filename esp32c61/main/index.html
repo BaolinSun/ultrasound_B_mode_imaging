@@ -97,6 +97,26 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <p id="temp-chart-status" class="muted" role="status">等待新温度采样，首个有效值显示为圆点。</p>
 <p id="temp-age" class="muted">每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。</p>
 <small>旧数据在左，新数据向右追加；横轴为浏览器本地时分秒，先展开、满 30 分钟后滚动，最多 180 组，纵轴自动缩放。仅保存本页面打开后的历史，刷新页面会清空；读取失败、过期、漏采样或断连处不连线。不依赖外部网络绘图库。</small></section>
+<section class="card" aria-labelledby="cpu-title"><h2 id="cpu-title">Zynq CPU 状态</h2>
+<p id="cpu-age" class="muted" role="status">等待 Zynq CPU 状态报告；需配套 PS 与 ESP32 固件。</p>
+<div class="grid">
+<div><h3>CPU0 · 主应用</h3><dl>
+<dt>运行模式</dt><dd id="cpu0-mode">未知</dd>
+<dt>WFI 功能</dt><dd id="cpu0-wfi">—</dd>
+<dt>WFI 累计次数</dt><dd id="cpu0-entries">—</dd>
+<dt>累计等待</dt><dd id="cpu0-wait">—</dd>
+<dt>定时器中断</dt><dd id="cpu0-irqs">—</dd>
+<dt>说明</dt><dd id="cpu0-reason">等待状态</dd>
+</dl></div>
+<div><h3>CPU1 · 未使用核</h3><dl>
+<dt>控制状态</dt><dd id="cpu1-state">未知</dd>
+<dt>复位</dt><dd id="cpu1-reset">—</dd>
+<dt>时钟</dt><dd id="cpu1-clock">—</dd>
+<dt>控制寄存器</dt><dd id="cpu1-control">—</dd>
+</dl><small>保持复位并停止时钟，不等于 CPU1 独立断电；未固定禁用时不推断它正在执行任务。</small></div>
+</div>
+<small>模式是采样快照，不是 CPU0 瞬时睡眠指示。WFI 次数和等待时间用于观察实际待机活动；温度定时器与命令会短暂唤醒 CPU0。复用约 10 秒温度周期上报，网页只读 ESP32 缓存，不会周期查询唤醒 PS。</small>
+</section>
 <section class="card"><h2>设备与传输状态</h2><dl>
 <dt>网络状态</dt><dd id="network">—</dd><dt>局域网页面</dt><dd><a id="sta-link">—</a></dd>
 <dt>配置热点</dt><dd id="ap">—</dd><dt>PSRAM</dt><dd id="memory">—</dd>
@@ -184,8 +204,33 @@ function renderTemperatures(t,disconnected=false){
   t?.seq!=null&&Number.isFinite(t?.age_ms)?`每 10 秒采样；采样序号 ${t.seq}，${(t.age_ms/1000).toFixed(1)} 秒前收到。`:
   '每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。';
 }
+function renderCpus(c,disconnected=false){
+ const good=!disconnected&&c&&c.status==='ok'&&c.cpu0&&c.cpu1;
+ for(const id of ['cpu0-wfi','cpu0-entries','cpu0-wait','cpu0-irqs','cpu1-reset','cpu1-clock','cpu1-control'])el(id).textContent='—';
+ el('cpu0-mode').textContent='未知';el('cpu1-state').textContent='未知';el('cpu0-reason').textContent='等待有效状态';
+ if(!good){
+  el('cpu-age').textContent=disconnected?'网页连接已断开，CPU 状态未知。':c&&c.status==='stale'?'CPU 状态已过期，暂停显示旧值，请检查 PS/UART。':'等待 Zynq CPU 状态报告；请确认已更新配套 PS 与 ESP32 固件。';
+  return;
+ }
+ const a=c.cpu0,b=c.cpu1;
+ const modes={active:'正常前台运行',idle:'安全空闲模式（WFI 自动进出）',blocked:'前台运行（待机条件未满足）',disabled:'前台运行（WFI 不可用）'};
+ const reasons={none:'双待机及硬件排空条件已确认；仍执行严格中断与队列检查',power_active:'AFE/TX 尚未同时稳定待机',config:'配置事务进行中',transfer:'数据传输尚未排空',pause_unconfirmed:'DDR 排空证明未确认',hardware_unconfirmed:'硬件状态未确认',power_state:'AFE/TX 正在过渡、故障或状态未知',disabled:'编译宏关闭 WFI',timer_unavailable:'WFI 初始化或运行检查失败，已退回轮询'};
+ el('cpu-age').textContent=`CPU 状态快照 · 序号 ${c.seq} · ${(Math.max(0,Number(c.age_ms)||0)/1000).toFixed(1)} 秒前更新；约每 10 秒上报。`;
+ el('cpu0-mode').textContent=modes[a.mode]||'未知';el('cpu0-reason').textContent=reasons[a.reason]||'未识别的状态原因';
+ el('cpu0-wfi').textContent=a.wfi_enabled===true?'已启用且初始化通过':a.wfi_enabled===false?'未启用 / 已退回轮询':'未知';
+ el('cpu0-entries').textContent=Number.isFinite(a.entries)&&a.entries>=0?String(a.entries):'—';
+ el('cpu0-wait').textContent=Number.isFinite(a.wait_ms)&&a.wait_ms>=0?(a.wait_ms/1000).toFixed(2)+' 秒':'—';
+ el('cpu0-irqs').textContent=Number.isFinite(a.timer_irqs)&&a.timer_irqs>=0?String(a.timer_irqs):'—';
+ const reset=typeof b.reset==='boolean',clock=typeof b.clock_stopped==='boolean';
+ if(reset&&clock){
+  el('cpu1-reset').textContent=b.reset?'保持复位':'未置位';el('cpu1-clock').textContent=b.clock_stopped?'已停止':'未停止';
+  el('cpu1-state').textContent=b.reset&&b.clock_stopped?'已固定禁用（复位＋停钟）':b.reset?'仅保持复位':b.clock_stopped?'仅停止时钟':'未固定禁用（执行状态未确认）';
+ }
+ el('cpu1-control').textContent=Number.isInteger(b.control)&&b.control>=0&&b.control<=0xffffffff?'0x'+b.control.toString(16).padStart(8,'0').toUpperCase():'—';
+}
 function render(s){
  renderTemperatures(s.temperatures);
+ renderCpus(s.cpus);
  el('network').textContent=s.reconfiguring?'正在重新配网':s.connected?'已连接路由器':'未连接路由器';
  el('sta-link').textContent=s.sta_ip?`http://${s.sta_ip}/`:'等待分配 IP';if(s.sta_ip)el('sta-link').href=`http://${s.sta_ip}/`;else el('sta-link').removeAttribute('href');
  el('ap').textContent=s.ap_active?`${s.ap_ssid} · 192.168.4.1`:'已关闭';
@@ -221,7 +266,7 @@ function render(s){
  if(d.running||d.raw_busy||d.free_slots<2)el('upload').disabled=true;
  renderZynqControl(s);
 }
-async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;renderTemperatures(null,true);renderZynqControl({});el('upload').disabled=true;el('stop').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false}}
+async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;renderTemperatures(null,true);renderCpus(null,true);renderZynqControl({});el('upload').disabled=true;el('stop').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false}}
 el('config-form').addEventListener('submit',async event=>{event.preventDefault();saving=true;el('save').disabled=true;el('upload').disabled=true;const c={ssid:el('ssid').value,target_ip:el('target-ip').value.trim(),target_port:Number(el('target-port').value)};
  if(el('open-network').checked)c.password='';else if(el('password').value)c.password=el('password').value;
  try{const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});targetConfigured=!!c.target_ip;configLoaded=true;el('password').value='';el('open-network').checked=false;notify(r.message)}catch(e){notify(e.message,true)}finally{saving=false;el('save').disabled=false;await refresh()}});
