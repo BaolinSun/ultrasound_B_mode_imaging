@@ -25,10 +25,21 @@ class Cpu1Integration(unittest.TestCase):
             self.assertEqual(once, p.read_bytes())
             for name, origin in cpu1_fsbl.FILES.items():
                 self.assertEqual((d / name).read_bytes(), origin.read_bytes())
-            (d / 'cpu1_control.c').write_text('stale')
+            (d / 'cpu1_control.h').write_text('stale')
             with self.assertRaisesRegex(RuntimeError, 'Stale'):
                 cpu1_fsbl.verify_cpu1_fsbl(tmp)
             cpu1_fsbl.configure_cpu1_fsbl(tmp)
+            for name in ('cpu1_control.c', 'cpu1_platform.h'):
+                (d/name).write_bytes((ROOT/'common'/name).read_bytes())
+            cpu1_fsbl.configure_cpu1_fsbl(tmp)
+            self.assertFalse((d/'cpu1_control.c').exists())
+            self.assertFalse((d/'cpu1_platform.h').exists())
+            edited=d/'cpu1_platform.h'
+            edited.write_text('user edits')
+            with self.assertRaisesRegex(RuntimeError,'user edits'):
+                cpu1_fsbl.configure_cpu1_fsbl(tmp)
+            self.assertEqual(edited.read_text(),'user edits')
+            edited.unlink()
             p.write_text(original.replace('Status = XST_SUCCESS;', 'different_template();'))
             with self.assertRaisesRegex(RuntimeError, 'hook changed'):
                 cpu1_fsbl.configure_cpu1_fsbl(tmp)
@@ -56,6 +67,13 @@ class Cpu1Integration(unittest.TestCase):
         self.assertIn('WARNING', adapter)
         self.assertNotIn('while', adapter)
         self.assertNotIn('imaging_power', adapter)
+        init=adapter.split('void cpu1_power_init(void)')[1].split('const char *cpu1_power_disable')[0]
+        self.assertNotIn('cpu1_platform_disable(',init)
+        self.assertNotIn('Xil_Out32',init)
+        fsbl=(ROOT/'build/src/fsbl/cpu1_fsbl.h').read_text()
+        self.assertNotIn('cpu1_platform_disable',fsbl)
+        self.assertNotIn('Xil_Out32',fsbl)
+        self.assertIn('startup=observe',fsbl)
 
 
 if __name__ == '__main__':

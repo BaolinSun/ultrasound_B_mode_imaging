@@ -18,6 +18,14 @@ import wifi_config_builder as builder
 
 
 class ControlTests(unittest.TestCase):
+    def test_cpu1_is_explicit_shutdown_only_and_dry_run_is_offline(self):
+        self.assertEqual(tool.validate_command('CPU1 DISABLE'),'CPU1 DISABLE')
+        for command in ('CPU1', 'CPU1 ENABLE', 'CPU1 WAKE', 'CPU1 DISABLE 1'):
+            with self.assertRaises(ValueError):
+                tool.validate_command(command)
+        with patch.object(tool,'urlopen',side_effect=AssertionError('network')), contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(tool.main(['--device-ip','192.168.3.27','-c','CPU1 DISABLE','--dry-run']),0)
+        self.assertEqual(out.getvalue().strip(),'CPU1 DISABLE')
     def test_afe_power_commands_are_explicit_and_prepare_is_internal(self):
         for command in ('AFE SLEEP', 'AFE WAKE', 'AFE STATUS'):
             tool.validate_command(command)

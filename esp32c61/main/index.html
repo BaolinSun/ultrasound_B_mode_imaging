@@ -117,7 +117,9 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <dt>复位</dt><dd id="cpu1-reset">—</dd>
 <dt>时钟</dt><dd id="cpu1-clock">—</dd>
 <dt>控制寄存器</dt><dd id="cpu1-control">—</dd>
-</dl><small>保持复位并停止时钟，不等于 CPU1 独立断电；未固定禁用时不推断它正在执行任务。</small></div>
+</dl><small>仅网页命令关闭 CPU1，不在启动时主动复位或停钟。关闭后不提供重新启动入口；保持复位并停钟不等于独立断电。</small>
+<button id="cpu1-disable" type="button" disabled>关闭 CPU1</button><button id="cpu1-query" type="button" class="secondary" disabled>查询 CPU 状态</button>
+<p id="cpu1-action-result" class="muted" role="status">启动仅观察原状态；关闭需显式操作。</p></div>
 </div>
 <small>模式是采样快照，不是 CPU0 瞬时睡眠指示。WFI 次数和等待时间用于观察实际待机活动；温度定时器与命令会短暂唤醒 CPU0。复用约 10 秒温度周期上报，网页只读 ESP32 缓存，不会周期查询唤醒 PS。</small>
 </section>
@@ -327,6 +329,9 @@ function renderZynqControl(s){
  el('control-status').textContent=`控制服务 ${c.ready?'就绪':'不可用'}；${c.busy?'命令处理中':'空闲'}；${c.config_owned?'配置事务占用 / 上传禁止':'无 Wi-Fi 配置事务'}；PS ${c.synced?'已握手':'未知（需查询）'}；${c.ps_status||'尚无有效状态'}${c.status_age_ms>=0?'（'+(c.status_age_ms/1000).toFixed(1)+' 秒前）':''}`;
  for(const id of controlButtons)el(id).disabled=controlBusy||!!c.busy||!c.ready;
  for(const id of ['zynq-hv-off','zynq-safe-stop'])el(id).disabled=!c.ready;
+ const cpu1=s.cpus?.status==='ok'?s.cpus.cpu1:null;
+ el('cpu1-query').disabled=!!controlBusy||!!c.busy||!c.ready;
+ el('cpu1-disable').disabled=el('cpu1-query').disabled||!c.synced||!!c.config_owned||typeof cpu1?.disabled!=='boolean'||cpu1.disabled;
  const fields=c.synced?psStatusFields(c.ps_status):null,known=fields&&/^[0-4]$/.test(fields.down);
  el('down-configured').textContent=known?'PS 已下发配置：'+downsampleDescription(Number(fields.down))+'（软件记录，不是 PL 回读）':
   c.synced?'PS 已下发配置：未知，STATUS 缺少合法 down 字段，请更新 Zynq 应用。':'PS 已下发配置：未知，请查询 Zynq 状态。';
@@ -361,6 +366,7 @@ async function sendZynq(lines,options={}){
  if(hv&&!confirm('即将开启高压。请确认硬件连接及操作条件安全。是否继续？'))return;
  if(!controlClient){controlClient=controlId();controlRequest=Number.parseInt(controlId(),16)&0x7fffffff}
  controlBusy++;for(const id of controlButtons)el(id).disabled=true;
+ el('cpu1-disable').disabled=true;el('cpu1-query').disabled=true;
  for(const id of ['afe-sleep','afe-wake','afe-query','tx-sleep','tx-wake','tx-query'])el(id).disabled=true;
  for(const id of ['zynq-hv-off','zynq-safe-stop'])el(id).disabled=false;
  const output=[],results=[];
@@ -390,6 +396,15 @@ async function sendZynq(lines,options={}){
 }
 for(const [id,lines] of [['zynq-query',['STATUS']],['zynq-hv-on',['HV ENABLE']],['zynq-hv-off',['HV DISABLE']],['zynq-start',['BEAM START']],['zynq-pause',['BEAM STOP']],['zynq-safe-stop',['HV DISABLE']]])
  el(id).addEventListener('click',()=>sendZynq(lines).catch(e=>notify(e.message,true)));
+el('cpu1-query').addEventListener('click',()=>sendZynq(['STATUS']).catch(e=>notify(e.message,true)));
+el('cpu1-disable').addEventListener('click',async()=>{
+ if(el('cpu1-disable').disabled)return;
+ el('cpu1-action-result').textContent='正在请求关闭 CPU1 并读回确认…';
+ const ok=await sendZynq(['CPU1 DISABLE','STATUS'],{verify(results){
+  if(results.length!==2||results[0].command!=='CPU1 DISABLE'||!/^@ACK \d+ CPU1_DISABLE cpu1_disabled=1$/.test(results[0].response)||results[1].command!=='STATUS'||psStatusFields(results[1].response)?.cpu1_disabled!=='1')throw Error('CPU1 关闭结果未确认；请查询，不会自动重试');
+ }});
+ el('cpu1-action-result').textContent=ok?'CPU1 关闭已确认（复位＋停钟）；CPU0、AFE/TX 及扫描/高压设置保持原状态。':'关闭失败或结果未知，请查询状态；未自动重试。';
+});
 el('zynq-gain-set').addEventListener('click',()=>{
  const n=Number(el('zynq-gain').value);if(!Number.isInteger(n)||n<0||n>8){notify('数字增益必须为 0～8 的整数',true);return}
  sendZynq(['GAIN SET '+n]).catch(e=>notify(e.message,true));

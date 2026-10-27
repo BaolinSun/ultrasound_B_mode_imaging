@@ -38,6 +38,8 @@ def validate_command(line):
     t = line.split(" ")
     if t == ["STATUS"]:
         return line
+    if t == ["CPU1", "DISABLE"]:
+        return line
     if len(t) >= 2:
         root, op = t[:2]
         if root == "CFG":

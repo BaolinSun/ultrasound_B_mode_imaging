@@ -216,6 +216,7 @@ void cpu0_idle_init(void) {
     cpu_report_seq=0;cpu_report_temperature_seq=temperature_service_sequence();cpu_report_pending=1;
 }
 unsigned cpu0_idle_enabled(void) {return initialized && idle_core.enabled;}
+void cpu0_idle_report_request(void) {cpu_report_pending=1;}
 void cpu0_foreground_poll(void) {
     temperature_service_poll();
     u32 temperature_seq=temperature_service_sequence();

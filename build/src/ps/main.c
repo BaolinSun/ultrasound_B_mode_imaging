@@ -45,12 +45,12 @@ int main() {
 
 	if (zynq_uart_log_init() != XST_SUCCESS) return XST_FAILURE;
 	xil_printf("@UART_LOG UART0 MIO27/TX -> ESP32 GPIO10/RX 115200 8N1\r\n");
-	cpu1_power_init(); /* Warning only on failure; must precede IRQ init. */
+	cpu1_power_init(); /* Read-only startup observation; web command owns disable. */
 	Xil_DCacheDisable();
 	// �жϳ�ʼ��
 	intr_init();
 	sleep(1);
-	/* Application runs on CPU0; CPU1 is held reset/clock-stopped above. */
+	/* Application runs on CPU0; inherited CPU1 state is left unchanged. */
 	system_ctrl_init();
 	gpio_init(); //ok
 	uart_init(); //

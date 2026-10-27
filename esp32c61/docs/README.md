@@ -14,7 +14,8 @@
 - [AFE5832 独立掉电、恢复与控制命令](AFE_POWER.md)
 - [TX7332 独立 STDBY 待机、唤醒及安全协调](TX7332_POWER.md)
 - [TX7332 构建、验证与产物记录](TX7332_POWER_BUILD.md)
-- [CPU1 固定复位、停钟与状态查询](CPU1_CLOCK_STOP.md)
+- [CPU1 网页手动关闭、启动保持原状态](CPU1_WEB_CONTROL.md)
+- [CPU1 固定复位、停钟与状态查询（历史实现）](CPU1_CLOCK_STOP.md)
 - [CPU0 双待机安全空闲、WFI 与唤醒验证](CPU0_IDLE_WFI.md)
 - [CPU0 / CPU1 独立状态卡片与固件更新](CPU_STATUS_CARD.md)
 

@@ -583,6 +583,13 @@ static void uart_handle_hv(char **ctx)
 
 static void uart_handle_line(char *line)
 {
+    if(!strcmp(line,"CPU1 DISABLE")) {
+        if(command_source!=SOURCE_WIFI || uart_cfg_active){uart_nack(uart_cfg_seq,"CPU1_OWNER_OR_CFG");return;}
+        const char *error=cpu1_power_disable();cpu0_idle_report_request();
+        if(error)uart_emitf("@NACK %u CPU1_%s",uart_cfg_seq,error);
+        else uart_emitf("@ACK %u CPU1_DISABLE cpu1_disabled=%u",uart_cfg_seq,cpu1_power_is_disabled());
+        return;
+    }
     if(!strcmp(line,"TX7332 STATUS")) {
         uart_emitf("@TX state=%s flags=%08x idle=%u error=%s",tx_power_state_name(),(unsigned)tx_power_flags(),(unsigned)tx_power_idle(),tx_power_error());return;
     }
@@ -610,6 +617,7 @@ static void uart_handle_line(char *line)
 		uart_emitf("@NACK %u CFG_OWNER",uart_cfg_seq); return;
 	}
 	if(!strcmp(line,"STATUS")) {
+		cpu0_idle_report_request();
 		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u run_src=ps spi=%u down=%u afe=%s tx=%s cpu1_disabled=%u wfi=%u",uart_cfg_active,
 		    cfg_owner,uart_cfg_seq,(unsigned)Beamform_GetRunRequest(),(unsigned)hv_is_enabled(),
 		    (unsigned)Beamform_GetSpiStartRequest(),(unsigned)Beamform_GetDownsample(),afe_power_state_name(),tx_power_state_name(),cpu1_power_is_disabled(),cpu0_idle_enabled());

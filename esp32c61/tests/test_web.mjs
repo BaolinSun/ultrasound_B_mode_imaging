@@ -32,6 +32,44 @@ test('CPU1 card distinguishes both bits, partial control and unconfirmed executi
  }
 });
 
+test('CPU1 shutdown is explicit, accepts matching ACK plus status, and works in dual standby',async()=>{
+ const e=setup();await e.settle();
+ assert.equal(e.elements['cpu1-disable'].disabled,true);
+ e.backend.status.cpus=cpuSnapshot('idle',0);
+ e.backend.status.zynq_control.afe_state=e.backend.status.zynq_control.tx_state='sleep';
+ await e.context.refresh();assert.equal(e.elements['cpu1-disable'].disabled,false);
+ assert.equal(e.backend.calls.some(c=>c.options.method==='POST'),false);
+ e.backend.job={busy:false,state:'succeeded',count:2,completed:2,results:[
+  {command:'CPU1 DISABLE',response:'@ACK 0 CPU1_DISABLE cpu1_disabled=1'},
+  {command:'STATUS',response:'@STATUS v=1 cfg=0 run=0 hv=0 cpu1_disabled=1'}]};
+ e.backend.jobHook=()=>{e.backend.status.cpus=cpuSnapshot('idle',34)};
+ await e.elements['cpu1-disable'].listeners.click();
+ assert.deepEqual(e.backend.commandBody.commands,['CPU1 DISABLE','STATUS']);
+ assert.match(e.elements['cpu1-action-result'].textContent,/关闭已确认/);
+ assert.equal(e.elements['cpu1-disable'].disabled,true);
+ assert.equal(e.backend.calls.filter(c=>c.options.method==='POST').length,1);
+});
+
+test('CPU1 action blocks stale/busy/owned state, rejects failed or inconsistent confirmation without replay',async()=>{
+ const e=setup();await e.settle();e.backend.status.cpus=cpuSnapshot('active',0);
+ for(const field of ['busy','config_owned']) {
+  e.backend.status.zynq_control[field]=true;await e.context.refresh();
+  assert.equal(e.elements['cpu1-disable'].disabled,true);e.backend.status.zynq_control[field]=false;
+ }
+ e.backend.status.cpus.status='stale';await e.context.refresh();assert.equal(e.elements['cpu1-disable'].disabled,true);
+ e.backend.status.cpus.status='ok';
+ for(const job of [
+  {busy:false,state:'failed',error:'CPU1_RESET_TIMEOUT',count:2,completed:1,results:[{command:'CPU1 DISABLE',response:'@NACK 0 CPU1_RESET_TIMEOUT'}]},
+  {busy:false,state:'succeeded',count:2,completed:2,results:[{command:'CPU1 DISABLE',response:'@ACK 0 CPU1_DISABLE cpu1_disabled=1'},{command:'STATUS',response:'@STATUS v=1 cpu1_disabled=0'}]},
+ ]) {
+  e.backend.job=job;await e.context.refresh();await e.elements['cpu1-disable'].listeners.click();
+  assert.match(e.elements['cpu1-action-result'].textContent,/失败或结果未知/);
+ }
+ assert.equal(e.backend.calls.filter(c=>c.options.method==='POST').length,2);
+ await e.elements['cpu1-query'].listeners.click();
+ assert.deepEqual(e.backend.commandBody.commands,['STATUS']);
+});
+
 test('CPU card clears stale/lost/offline readings and never renders old zeros as current data',async()=>{
  const e=setup();await e.settle();e.backend.status.cpus=cpuSnapshot();await e.context.refresh();
  e.backend.status.cpus.status='stale';await e.context.refresh();

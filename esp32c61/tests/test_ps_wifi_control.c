@@ -8,6 +8,10 @@
 #include <stdio.h>
 static int afe_ready=1,tx_ready=1;
 static unsigned cpu1_disabled=1;
+static unsigned cpu1_calls,report_requests;
+static const char *cpu1_failure;
+void cpu0_idle_report_request(void){report_requests++;}
+const char *cpu1_power_disable(void){cpu1_calls++;if(cpu1_failure)return cpu1_failure;cpu1_disabled=1;return NULL;}
 static unsigned idle_enabled=1;
 unsigned cpu0_idle_enabled(void){return idle_enabled;}
 unsigned cpu1_power_is_disabled(void){return cpu1_disabled;}
@@ -144,6 +148,7 @@ int main(void) {
     uart_handle_wifi_line("BEAM START",12,capture);assert(strstr(answer,"BEAM_START")&&run&&!hv);
     uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"run=1 hv=0 run_src=ps spi=1"));
     uart_handle_wifi_line("BEAM STOP",12,capture);assert(!run&&!hv);
+
     int split=wc_encode(received,sizeof received,false,12,1000,"STATUS");assert(split>1);
     receive_at=0;receive_len=1;transmit_len=0;transmitted[0]=0;
     irq_handler(NULL);assert(!zynq_uart_idle_pending()); /* Partial line waits for next UART IRQ. */
@@ -215,6 +220,25 @@ int main(void) {
     uart_handle_wifi_line("HV ENABLE",12,capture);assert(hv&&run);
     uart_handle_wifi_line("HV DISABLE",12,capture);
     uart_handle_wifi_line("BEAM STOP",12,capture);assert(!run&&!hv);
+    /* Explicit Wi-Fi action, including dual standby; never an imaging operation. */
+    assert(cpu1_calls==0);
+    cpu1_disabled=0;afe_ready=tx_ready=0;previous=writes;
+    unsigned old_enables=enables,old_reports=report_requests;
+    uart_handle_usb_line("CPU1 DISABLE",capture);assert(strstr(answer,"CPU1_OWNER_OR_CFG")&&cpu1_calls==0);
+    assert(strstr(wifi(1001,"CPU1 DISABLE"),"CPU1_DISABLE cpu1_disabled=1"));
+    assert(cpu1_calls==1&&cpu1_disabled&&report_requests==old_reports+1);
+    assert(strstr(wifi(1001,"CPU1 DISABLE"),"CPU1_DISABLE"));assert(cpu1_calls==1); /* cached request */
+    assert(!hv&&!run&&!afe_ready&&!tx_ready&&writes==previous&&enables==old_enables);
+    cpu1_disabled=0;cpu1_failure="RESET_TIMEOUT";
+    uart_handle_wifi_line("CPU1 DISABLE",12,capture);
+    assert(strstr(answer,"@NACK")&&strstr(answer,"CPU1_RESET_TIMEOUT")&&!cpu1_disabled);
+    cpu1_failure=NULL;afe_ready=tx_ready=1;
+    uart_handle_wifi_line("CFG BEGIN 92",12,capture);assert(strstr(answer,"CFG_BEGIN"));
+    unsigned calls=cpu1_calls;
+    uart_handle_wifi_line("CPU1 DISABLE",12,capture);assert(strstr(answer,"CPU1_OWNER_OR_CFG")&&cpu1_calls==calls);
+    uart_handle_wifi_line("CFG ABORT",12,capture);
+    old_reports=report_requests;
+    uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"cpu1_disabled=0")&&report_requests==old_reports+1);
     puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE+TX power interlocks/bounded TX/CPU1 warning only");
     return 0;
 }

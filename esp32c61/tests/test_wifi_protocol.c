@@ -18,11 +18,11 @@ int main(int argc,char **argv) {
     uint32_t sum=wc_crc(line,(size_t)prefix);
     snprintf(line+prefix,sizeof(line)-(size_t)prefix,"*%08lx\n",(unsigned long)sum);
     assert(!wc_decode(line,false,&m)); /* Length must be decimal even with valid CRC. */
-    const char *bad[]={"", "HV SET 1", "HV ENABLE extra", "GAIN SET 9", "GAIN SET -1", "GAIN SET 4294967296",
+    const char *bad[]={"CPU1", "CPU1 ENABLE", "CPU1 WAKE", "CPU1 DISABLE extra", "", "HV SET 1", "HV ENABLE extra", "GAIN SET 9", "GAIN SET -1", "GAIN SET 4294967296",
         "CFG END 1", "BRAM WR t_timing 0 1 2048", "BRAM WR x_element 63 2 0 0", "BRAM WR x_element 0 1 0 extra",
         "AFE WR ADC 256 0", "AFE WR ADC 1 65536", "TX7332 RD 1024", " HV ENABLE", "HV  ENABLE", "HV\nENABLE"};
     for(unsigned i=0;i<sizeof(bad)/sizeof(bad[0]);i++) assert(wc_validate(bad[i]));
-    const char *good[]={"STATUS","HV ENABLE","HV DISABLE","BEAM START","BEAM STOP","CFG BEGIN 0","CFG END","CFG ABORT",
+    const char *good[]={"CPU1 DISABLE","STATUS","HV ENABLE","HV DISABLE","BEAM START","BEAM STOP","CFG BEGIN 0","CFG END","CFG ABORT",
         "AFE RD ADC 255","AFE WR DTGC 1 65535","AFE SLEEP","AFE WAKE","AFE STATUS","TX7332 RD 1023","GAIN SET 8","BRAM WR t_timing 0 1 6144"};
     for(unsigned i=0;i<sizeof(good)/sizeof(good[0]);i++) assert(!wc_validate(good[i]));
     puts("PASS protocol: boundary lengths/CRC/strict grammar/ranges/6144 layout");return 0;

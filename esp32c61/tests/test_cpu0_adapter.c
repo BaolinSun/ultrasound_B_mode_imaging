@@ -149,6 +149,11 @@ int main(void){
     cpu0_foreground_poll();cpu0_foreground_poll();assert(cpu_reports>=2&&cpu_last.entries>0&&cpu_last.wait_us>0);
     reset();cpu0_idle_init();idle_core.enabled=false;assert(cpu_snapshot().mode==CPU_MODE_DISABLED&&cpu_snapshot().reason==CPU_REASON_TIMER);
 #endif
+    /* Explicit STATUS/CPU1 commands request a passive report; no timer is armed. */
+    unsigned prior_irqs=timer_irqs;
+    cpu_report_pending=0;log_work=0;cpu0_idle_report_request();
+    assert(cpu_report_pending&&timer_irqs==prior_irqs);
+    publish_cpu_status();assert(!cpu_report_pending&&timer_irqs==prior_irqs);
     puts("PASS CPU0 adapter: private timer/selftest/conflicts, IRQs, hardware/queue guards, wake, fallback, foreground/LED");
     return 0;
 }

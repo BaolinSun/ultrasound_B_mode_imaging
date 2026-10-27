@@ -80,6 +80,7 @@ static inline const char *wc_validate(const char *line) {
     if(!n) return "EMPTY";
     if(!strcmp(t[0],"STATUS")) return n==1?NULL:"ARGUMENTS";
     if(n<2) return "ARGUMENTS";
+    if(!strcmp(t[0],"CPU1"))return n==2&&!strcmp(t[1],"DISABLE")?NULL:"CPU1_OP";
     uint32_t a=0,b=0;
     if(!strcmp(t[0],"CFG")) {
         if(!strcmp(t[1],"BEGIN")) return n==3&&wc_uint(t[2],&a)?NULL:"CFG_SEQ";

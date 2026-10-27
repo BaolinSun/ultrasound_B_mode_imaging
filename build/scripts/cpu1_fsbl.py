@@ -7,8 +7,7 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
-FILES = {name: ROOT / 'common' / name for name in
-         ('cpu1_control.h', 'cpu1_control.c', 'cpu1_platform.h')}
+FILES = {'cpu1_control.h':ROOT/'common/cpu1_control.h'}
 FILES['cpu1_fsbl.h'] = ROOT / 'build/src/fsbl/cpu1_fsbl.h'
 
 
@@ -35,6 +34,14 @@ def configure_cpu1_fsbl(workspace, platform_name='ubmi_p'):
         dest = source / name
         if not dest.exists() or dest.read_bytes() != content:
             dest.write_bytes(content)
+    # These two files were previously copied by this generator. Do not leave
+    # a shutdown implementation in regenerated boot sources; preserve user edits.
+    for name in ('cpu1_control.c','cpu1_platform.h'):
+        dest=source/name
+        if dest.exists():
+            if dest.read_bytes() != (ROOT/'common'/name).read_bytes():
+                raise RuntimeError('Legacy CPU1 FSBL file has user edits: '+name)
+            dest.unlink()
     if hooks.read_text(encoding='utf-8') != text:
         hooks.write_text(text, encoding='utf-8', newline='\n')
     verify_cpu1_fsbl(workspace, platform_name)
@@ -51,7 +58,9 @@ def verify_cpu1_fsbl(workspace, platform_name='ubmi_p'):
     for name, origin in FILES.items():
         if (source / name).read_bytes() != origin.read_bytes():
             raise RuntimeError('Stale CPU1 FSBL source: ' + name)
-    return hashlib.sha256((source / 'cpu1_control.c').read_bytes()).hexdigest()
+    if any((source/name).exists() for name in ('cpu1_control.c','cpu1_platform.h')):
+        raise RuntimeError('Stale CPU1 FSBL shutdown source')
+    return hashlib.sha256((source / 'cpu1_fsbl.h').read_bytes()).hexdigest()
 
 
 def build_cpu1_fsbl(workspace, platform_name='ubmi_p', tools=None):
@@ -63,8 +72,11 @@ def build_cpu1_fsbl(workspace, platform_name='ubmi_p', tools=None):
     subprocess.run([str(cmake), '--build', str(source / 'build'), '-j', '2'], env=env, check=True)
     verify_cpu1_fsbl(workspace, platform_name)
     elf = source / 'build/fsbl.elf'
-    if b'@CPU1_FSBL disabled=' not in elf.read_bytes():
+    if b'@CPU1_FSBL startup=observe' not in elf.read_bytes():
         raise RuntimeError('Built FSBL does not contain CPU1 diagnostic; refusing stale ELF')
+    names=subprocess.check_output([str(tools/'Vitis/gnu/aarch32/nt/gcc-arm-none-eabi/bin/arm-none-eabi-nm.exe'),str(elf)],env=env,text=True)
+    if re.search(r'\b(cpu1_disable|cpu1_platform_disable)\s*$',names,re.M):
+        raise RuntimeError('Built FSBL still links CPU1 shutdown code')
     export = Path(workspace) / platform_name / 'export' / platform_name / 'sw/boot/fsbl.elf'
     if not export.parent.is_dir():
         raise RuntimeError('FSBL export directory missing')

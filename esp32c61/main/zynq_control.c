@@ -380,7 +380,7 @@ esp_err_t zynq_control_submit(const zynq_control_job *input,bool allow_hv,uint32
     }
     if(afe_blocked||tx_blocked) for(unsigned i=0;i<input->count;i++) {
         const char *c=input->commands[i];
-        if(strcmp(c,"STATUS")&&strcmp(c,"TX7332 STATUS")&&!tx_power_op(c)&&strcmp(c,"AFE STATUS")&&strcmp(c,"AFE SLEEP")&&strcmp(c,"AFE WAKE")&&!emergency(c)) {give();return ESP_ERR_INVALID_STATE;}
+        if(strcmp(c,"CPU1 DISABLE")&&strcmp(c,"STATUS")&&strcmp(c,"TX7332 STATUS")&&!tx_power_op(c)&&strcmp(c,"AFE STATUS")&&strcmp(c,"AFE SLEEP")&&strcmp(c,"AFE WAKE")&&!emergency(c)) {give();return ESP_ERR_INVALID_STATE;}
     }
     if(lease && esp_timer_get_time()-lease_activity>=60000000 &&
        !(input->count==1 && !strcmp(input->commands[0],"HV DISABLE"))) { give(); return ESP_ERR_TIMEOUT; }

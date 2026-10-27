@@ -21,6 +21,8 @@ static unsigned tx_prepares,tx_sleeps,tx_wake_queries;
 static unsigned power_prepares,power_sleeps;
 static unsigned wake_queries;
 static unsigned host_idle_reads;
+static unsigned cpu1_actions,ps_cpu1;
+static bool nack_cpu1;
 SemaphoreHandle_t xSemaphoreCreateMutex(void) { return !strcmp(fault,"mutex")?NULL:(void*)1; }
 int xSemaphoreTake(SemaphoreHandle_t s,unsigned wait) { (void)wait;assert(s&&!held);held=1;return 1; }
 int xSemaphoreGive(SemaphoreHandle_t s) { assert(s&&held);held=0;return 1; }
@@ -60,7 +62,8 @@ void cJSON_AddStringToObject(cJSON *j,const char *key,const char *v) { (void)j;(
 esp_err_t zynq_uart_bridge_send(const char *data,size_t length) {
     (void)length;sends++;
     wc_message m;assert(wc_decode(data,false,&m));char result[128];
-    if(!strcmp(m.text,"STATUS")) snprintf(result,sizeof(result),"@STATUS v=1 cfg=%u owner=2 seq=1 run=0 hv=%u down=%u afe=%s tx=%s",ps_cfg,ps_hv,ps_down,ps_afe,ps_tx);
+    if(!strcmp(m.text,"STATUS")) snprintf(result,sizeof(result),"@STATUS v=1 cfg=%u owner=2 seq=1 run=0 hv=%u down=%u afe=%s tx=%s cpu1_disabled=%u",ps_cfg,ps_hv,ps_down,ps_afe,ps_tx,ps_cpu1);
+    else if(!strcmp(m.text,"CPU1 DISABLE")){cpu1_actions++;if(nack_cpu1)strcpy(result,"@NACK 0 CPU1_RESET_TIMEOUT");else{ps_cpu1=1;strcpy(result,"@ACK 0 CPU1_DISABLE cpu1_disabled=1");}}
     else if(!strcmp(m.text,"TX7332 PREPARE")){assert(gate);ps_hv=0;ps_tx="quiescing";tx_prepares++;strcpy(result,"@ACK 0 TX_PREPARE quiescing");}
     else if(!strcmp(m.text,"TX7332 SLEEP")){assert(gate&&drained&&!ps_hv);ps_tx="sleep";tx_sleeps++;strcpy(result,"@ACK 0 TX_SLEEP sleep");}
     else if(!strcmp(m.text,"TX7332 WAKE")){assert(gate&&drained);ps_tx="waking";tx_wake_queries=2;strcpy(result,"@ACK 0 TX_WAKE waking");}
@@ -182,6 +185,26 @@ int main(int argc,char **argv) {
     job.request=400;job.count=1;strcpy(job.commands[0],"HV ENABLE");assert(zynq_control_submit(&job,true,&id)==ESP_ERR_INVALID_STATE&&sends==dispatched);
     tx_observe("@TX state=ready flags=00000009 idle=1 error=NONE");assert(!tx_blocked);
     strcpy(job.commands[0],"TX7332 PREPARE");assert(zynq_control_submit(&job,false,&id)==ESP_ERR_INVALID_ARG);
+    assert(cpu1_actions==0); /* No shutdown during service initialization/handshake. */
+    id=submit(1,500,"AFE SLEEP",NULL);id=submit(1,501,"TX7332 SLEEP",NULL);
+    assert(gate&&!strcmp(ps_afe,"sleep")&&!strcmp(ps_tx,"sleep"));
+    unsigned old_prepares=power_prepares+tx_prepares,old_sleep=power_sleeps+tx_sleeps;
+    id=submit(1,502,"CPU1 DISABLE","STATUS");
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"succeeded")&&result.completed==2);
+    assert(cpu1_actions==1&&ps_cpu1&&gate&&!ps_hv);
+    assert(old_prepares==power_prepares+tx_prepares&&old_sleep==power_sleeps+tx_sleeps);
+    zynq_control_job cpu_again={.client=1,.request=502,.count=2};strcpy(cpu_again.commands[0],"CPU1 DISABLE");strcpy(cpu_again.commands[1],"STATUS");
+    assert(zynq_control_submit(&cpu_again,false,&duplicate)==ESP_OK&&duplicate==id&&cpu1_actions==1);
+    nack_cpu1=true;unsigned before_nack=sends;
+    id=submit(1,503,"CPU1 DISABLE","STATUS");nack_cpu1=false;
+    /* This deterministic harness re-enters the worker with its one startup
+     * STATUS handshake; the queued trailing STATUS must not be executed. */
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"failed")&&result.completed==1&&sends==before_nack+2);
+    id=submit(1,504,"AFE WAKE",NULL);id=submit(1,505,"TX7332 WAKE",NULL);
+    id=submit(1,506,"CFG BEGIN 50",NULL);
+    job.client=2;job.request=507;job.count=1;strcpy(job.commands[0],"CPU1 DISABLE");
+    assert(zynq_control_submit(&job,false,&id)==ESP_ERR_TIMEOUT);
+    id=submit(1,508,"CFG ABORT",NULL);
     cJSON json;zynq_control_status_json(&json);
     puts("PASS ESP worker: no NVS/USB credential dependency; bounded queue/segmented+late replies/dedup/owner/drain/timeout/reset/watchdog/cleanup");
     return 0;
