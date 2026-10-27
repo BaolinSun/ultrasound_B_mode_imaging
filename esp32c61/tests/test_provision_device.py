@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import tempfile
 import types
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -163,9 +164,12 @@ class ProvisioningToolTests(unittest.TestCase):
         rom.run_stub=lambda:rom
         module=types.SimpleNamespace(detect_chip=lambda port:rom,detect_flash_size=lambda esp:'4MB',
                 flash_size_bytes=lambda size:0x400000,read_flash=lambda *args,**kwargs:self.image,
-                write_flash=lambda esp,data,**kwargs:calls.append(data))
+                write_flash=lambda esp,data,**kwargs:calls.append(data),
+                run_stub=lambda esp:(calls.append('stub') or esp),
+                attach_flash=lambda esp:calls.append('attach'))
         with patch.dict('sys.modules',{'esptool':module}):
             d=P.Device('FAKE_PORT');self.assertEqual(d.mac,'102030405060')
+            self.assertEqual(calls[:2],['stub','attach'])
             self.assertEqual(d.read(P.OFFSET,P.SIZE),self.image)
             d.write_identity(self.image);self.assertEqual(calls[-1],[(P.OFFSET,self.image)])
             with self.assertRaises(ValueError):d.write_identity(b'x')
@@ -176,6 +180,90 @@ class ProvisioningToolTests(unittest.TestCase):
             module.flash_size_bytes=lambda size:0x200000
             with self.assertRaises(ValueError):P.Device('FAKE_PORT')
             self.assertEqual(calls[-1],'close')
+
+    def test_real_esptool_flash_initialization_without_physical_serial(self):
+        import esptool
+        calls=[]
+        class Rom:
+            CHIP_NAME='ESP32-C61'
+            IS_STUB=False
+            secure_download_mode=False
+            _port=types.SimpleNamespace(close=lambda:calls.append('close'))
+            attached=False
+            def read_mac(self):return bytes.fromhex('102030405060')
+            def flash_spi_attach(self,value):
+                self.attached=True;calls.append('attach')
+            def flash_id(self,cache=True):
+                if not self.attached:raise RuntimeError('SPI must be attached first')
+                return 0x1640EF
+            def read_spiflash_sfdp(self,*args):return 0
+            def run_spiflash_command(self,command):calls.append(('flash_command',command))
+            def flash_set_parameters(self,size):assert self.attached and size==0x400000
+            def read_flash(self,address,size,progress_fn):
+                assert self.attached;calls.append(('read',address,size));return b'x'*size
+            def hard_reset(self):calls.append('reset')
+        rom=Rom()
+        # Real vendor attach/detect/read functions; only hardware transport is replaced.
+        with patch.object(esptool,'detect_chip',return_value=rom),patch.object(esptool,'run_stub',return_value=rom),contextlib.redirect_stdout(io.StringIO()):
+            try:
+                d=P.Device('SIMULATED_PORT')
+            except P.StageError as error:
+                raise error.cause  # This transport is synthetic, not a real device.
+            self.assertEqual(d.read(0x8000,32),b'x'*32)
+            d.close()
+        self.assertLess(calls.index('attach'),calls.index(('read',0x8000,32)))
+        self.assertLess(calls.index(('flash_command',0x99)),calls.index(('read',0x8000,32)))
+        self.assertEqual(calls[-2:],['reset','close'])
+
+    def test_dependency_and_existing_output_errors_happen_before_connect(self):
+        with patch.object(P,'Device') as device,contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(P.main(['export','--port','NEVER_OPEN','--output-dir',str(self.output)]),1)
+        device.assert_not_called();self.assertIn('already exists',err.getvalue());self.assertIn('stage=preflight',err.getvalue())
+        with patch.object(P.importlib.util,'find_spec',return_value=None),patch.object(P,'Device') as device,contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(P.main(['export','--port','NEVER_OPEN']),1)
+        device.assert_not_called();self.assertIn('esp-idf-nvs-partition-gen',err.getvalue())
+
+    def test_errors_record_stage_but_not_raw_secret_messages(self):
+        secret='UNPRINTABLE_SECRET_MARKER'
+        e=OSError(13,secret)
+        with patch.object(P,'Device',side_effect=P.StageError('connect',e)),contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(P.main(['export','--port','NEVER_OPEN']),1)
+        self.assertIn('stage=connect',err.getvalue());self.assertIn('type=PermissionError',err.getvalue())
+        self.assertNotIn(secret,err.getvalue())
+        path=Path(err.getvalue().split('Diagnostic: ')[1].strip())
+        diagnostic=json.loads(path.read_text(encoding='utf-8'))
+        self.assertEqual(diagnostic['python'],sys.executable);self.assertEqual(diagnostic['errno'],13)
+        self.assertNotIn(secret,path.read_text(encoding='utf-8'))
+
+    def test_cleanup_failure_does_not_mask_primary_read_error(self):
+        class Broken:
+            mac='102030405060'
+            def read(self,*args):raise ValueError('SENSITIVE_FLASH_BYTES')
+            def close(self):P.stage('reset');raise OSError('secondary reset failure')
+        with patch.object(P,'Device',return_value=Broken()),contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(P.main(['export','--port','NEVER_OPEN']),1)
+        self.assertIn('stage=read_partition_table',err.getvalue());self.assertIn('type=ValueError',err.getvalue())
+        self.assertNotIn('SENSITIVE_FLASH_BYTES',err.getvalue())
+
+    def test_generator_uses_active_conda_python_by_default(self):
+        self.assertEqual(P.idf_python(),sys.executable)
+        self.assertEqual(P.idf_python('explicit_python'),'explicit_python')
+
+    def test_interrupt_still_resets_and_closes_without_writing_flash(self):
+        calls=[]
+        class Interrupted:
+            mac='102030405060'
+            def read(self,*args):raise KeyboardInterrupt
+            def close(self):calls.append('closed')
+        with patch.object(P,'Device',return_value=Interrupted()),self.assertRaises(KeyboardInterrupt):
+            P.main(['export','--port','NEVER_OPEN'])
+        self.assertEqual(calls,['closed'])
+
+    def test_monitor_port_error_is_specific_without_echoing_vendor_text(self):
+        raw=ValueError('Could not open COM3: SECRET_VALUE')
+        with patch.object(P,'Device',side_effect=P.StageError('connect',raw)),contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(P.main(['export','--port','NEVER_OPEN']),1)
+        self.assertIn('Ctrl+]',err.getvalue());self.assertNotIn('SECRET_VALUE',err.getvalue())
 
 
 class ProvisioningContracts(unittest.TestCase):

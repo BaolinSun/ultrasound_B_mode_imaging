@@ -21,10 +21,13 @@
 先在运行工具的 Python 环境安装依赖：
 
 ```powershell
+conda activate esp32c61
 python -m pip install -r .\pc_tools\requirements-provisioning.txt
 ```
 
-工具默认使用本机 ESP-IDF 6.1 源码 `D:\Program Files\esp\v6.1\esp-idf`，并调用安装器 Python 生成 NVS；不依赖参考上位机工程。其他安装位置可在子命令前指定 `--idf-path` 和 `--idf-python`。
+工具默认使用本机 ESP-IDF 6.1 源码 `D:\Program Files\esp\v6.1\esp-idf`，PC 工具、NVS 生成及 Python 回归统一使用当前 `esp32c61` conda 解释器，不再静默切换到 IDF 安装器 Python；不依赖参考上位机工程。ESP-IDF 固件编译仍使用 IDF 自己的工具环境。其他源码位置可指定 `--idf-path`；`--idf-python` 仅用于显式选择另一个 NVS 生成解释器。
+
+注意 `build.ps1` 会激活 IDF 环境，终端的 `python` 可能因此改变，即使提示符仍显示 conda 名称。下面推荐使用 `conda run -n esp32c61` 明确指定 PC 工具环境。也可在烧录后重新执行 `conda activate esp32c61`，再用 `python`。
 
 ### 已有设备：升级后导出原凭据
 
@@ -39,36 +42,55 @@ python -m pip install -r .\pc_tools\requirements-provisioning.txt
 导出并生成二维码标签：
 
 ```powershell
-python .\pc_tools\provision_device.py export --port COM3
+conda run -n esp32c61 python .\pc_tools\provision_device.py export --port COM3
 ```
 
 默认资料目录为 `provisioning/<出厂MAC12位>/`。目录已存在时拒绝覆盖；需要另存时显式指定新目录：
 
 ```powershell
-python .\pc_tools\provision_device.py export --port COM3 --output-dir .\provisioning\existing_device_export
+conda run -n esp32c61 python .\pc_tools\provision_device.py export --port COM3 --output-dir .\provisioning\existing_device_export
 ```
 
 **export 不写 Flash，但会使用 ROM 下载模式并复位 ESP32。** write 也会复位 ESP32。准备设备时应停止上传并关闭占用该端口的其他工具；不应在正常成像过程中调用它们。
+
+停止上传不等于退出 monitor。执行 export 前，在所有使用 COM3 的 IDF monitor 终端按 `Ctrl+]` 退出，或者关闭其串口监视面板；不用关闭整个 VS Code。端口仍被占用时，工具会明确报告 `stage=connect`，不会把它误报为配网密码或二维码错误。
+
+### 导出失败时看什么
+
+工具在打开串口前检查 QR/NVS 依赖及已指定的输出目录。错误输出包含失败阶段、异常类型和实际 Python 路径；安全诊断保存在 `logs/provision_device_*.diagnostic.json`。诊断记录不包含密码、凭据内容、原始异常消息或内存/Flash 数据。
+
+|阶段/提示|处理|
+|---|---|
+|`preflight` / dependency|在 `esp32c61` conda 环境安装上述 requirements|
+|`connect` / could not be opened|确认 COM 端口存在，并退出所有占用该端口的 monitor|
+|`load_stub` / `attach_flash`|核对 esptool 5.4.0 和下载连接；工具现使用官方 stub、Flash 初始化流程|
+|`read_partition_table`|核对当前已更新配套分区表|
+|`read_identity` / unprepared|核对旧配置迁移或执行新设备准备流程|
+|`export_bundle` / already exists|保留原标签资料，使用新的 `--output-dir`，不覆盖原目录|
+
+2026-10-27 导出问题修复：已补齐 `esptool.attach_flash()`，初始化 Flash 接口及其运行残留状态；初始化/读取失败或用户中断时尽力复位并关闭串口，清理失败不会覆盖主要错误。该修复仅修改 PC 工具及测试环境，不需要重新烧录 ESP32 或 Zynq。本轮首次实机复现错误在打开 COM3 时发生，并发现多组指向 COM3 的 IDF monitor 进程；不能将这一连接失败归因于后续 Flash 读取或二维码生成。
+
+后续测试默认使用 `esp32c61` conda 环境，`tests/run_tests.ps1` 自动选择该环境的 python.exe，不再默认使用 base。本轮 conda 全量回归 234 项（233 通过、1 项历史 TXT 样本缺失跳过），网页 33 项、图像网页 5 项通过；新增工具定向自检查覆盖真实 esptool 初始化函数、安全诊断、不泄漏原始异常内容和中断清理。真实设备导出必须在释放 COM3 后单独确认结果。
 
 ### 新设备：预先生成、写入并贴码
 
 已知出厂 MAC 时，生成完全离线的设备资料：
 
 ```powershell
-python .\pc_tools\provision_device.py generate --mac 10:20:30:40:50:60
+conda run -n esp32c61 python .\pc_tools\provision_device.py generate --mac 10:20:30:40:50:60
 ```
 
 若尚不知道 MAC，可在准备阶段使用烧录工具读取，无需 monitor：
 
 ```powershell
-python -m esptool --chip esp32c61 --port COM3 read-mac
+conda run -n esp32c61 python -m esptool --chip esp32c61 --port COM3 read-mac
 ```
 
 先更新本工程固件和分区表，再写入为该 MAC 生成的资料：
 
 ```powershell
 .\build.ps1 -Action flash -Port COM3
-python .\pc_tools\provision_device.py write --port COM3 --bundle .\provisioning\102030405060
+conda run -n esp32c61 python .\pc_tools\provision_device.py write --port COM3 --bundle .\provisioning\102030405060
 ```
 
 写入前核对芯片、出厂 MAC、实际分区表、镜像内容和哈希；仅写 `device_nvs` 的 24 KiB，完成后逐字节读回验证。不擦除用户 NVS，不改写应用。相同凭据重复写入返回无需写入；不同凭据、MAC 不匹配、损坏数据或不兼容分区表均拒绝，不提供强制覆盖开关。

@@ -1,4 +1,5 @@
 qrcode[pil]>=8,<9
 Pillow>=10,<13
 esptool==5.4.0
-# NVS generation/parsing uses the selected ESP-IDF 6.1 installation and its Python.
+esp-idf-nvs-partition-gen==0.1.9
+# SDK source tools use this active Python (conda esp32c61); no silent environment switch.

@@ -1,10 +1,16 @@
 param(
     [string]$Compiler = 'D:\AMDDesignTools\2026.1\tps\mingw\10.0.0\win64.o\nt\bin\gcc.exe',
-    [string]$Python = 'python',
+    [string]$Python = '',
     [string]$Node = 'node'
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
+if(-not $Python) {
+    $prefix=if($env:CONDA_DEFAULT_ENV -eq 'esp32c61') {$env:CONDA_PREFIX} else {Join-Path $env:USERPROFILE 'miniconda3/envs/esp32c61'}
+    $Python=Join-Path $prefix 'python.exe'
+    if(-not (Test-Path -LiteralPath $Python)) {throw 'Activate conda esp32c61 or supply its python.exe via -Python; base Python is not used.'}
+}
+Write-Host "PC regression Python: $Python"
 $testOutput = Join-Path (Join-Path $PSScriptRoot 'output') (Get-Date -Format 'yyyyMMdd-HHmmssfff')
 New-Item -ItemType Directory -Force -Path $testOutput | Out-Null
 if (-not (Test-Path -LiteralPath $Compiler)) { throw 'Supply -Compiler with a host GCC path.' }

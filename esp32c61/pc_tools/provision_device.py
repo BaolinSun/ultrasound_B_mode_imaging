@@ -8,6 +8,8 @@ import argparse
 import csv
 import hashlib
 import importlib.util
+import importlib.metadata
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -15,15 +17,101 @@ import re
 import secrets
 import subprocess
 import sys
+import traceback
 
 PROJECT = Path(__file__).resolve().parents[1]
 OFFSET, SIZE = 0x3F0000, 0x6000
 IDF_DEFAULT = Path(os.environ.get('IDF_PATH', r'D:\Program Files\esp\v6.1\esp-idf'))
 ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+STAGE = 'preflight'
 
 
 class ProvisioningError(ValueError):
     """Only fixed diagnostic messages; never include credential values."""
+
+
+class StageError(ProvisioningError):
+    def __init__(self, stage, cause):
+        self.stage, self.cause = stage, cause
+        super().__init__('Device operation failed')
+
+
+def stage(value):
+    global STAGE
+    STAGE = value
+
+
+def package_version(name):
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def preflight(action, idf, python=None, output=None):
+    stage('preflight')
+    for name, package in (('qrcode', 'qrcode[pil]'), ('PIL.Image', 'Pillow')):
+        try:
+            importlib.import_module(name)
+        except ImportError:
+            raise ProvisioningError(f'Missing/unusable {package}; run python -m pip install -r .\\pc_tools\\requirements-provisioning.txt') from None
+    load_module(idf/'components/nvs_flash/nvs_partition_tool/nvs_parser.py', '_ub_preflight_nvs')
+    if python is None or Path(python).resolve() == Path(sys.executable).resolve():
+        if importlib.util.find_spec('esp_idf_nvs_partition_gen') is None:
+            raise ProvisioningError('Missing esp-idf-nvs-partition-gen in current Python; install requirements-provisioning.txt')
+    else:
+        result = subprocess.run([python, '-c', 'import esp_idf_nvs_partition_gen'], capture_output=True)
+        if result.returncode:
+            raise ProvisioningError('Selected --idf-python lacks esp-idf-nvs-partition-gen')
+    if output is not None and Path(output).exists():
+        raise ProvisioningError('Output directory already exists; use a new --output-dir or keep the existing label files')
+    if action != 'generate':
+        import esptool
+        if package_version('esptool') != '5.4.0':
+            raise ProvisioningError('esptool 5.4.0 is required; install requirements-provisioning.txt in this Python environment')
+        for name in ('detect_chip','run_stub','attach_flash','detect_flash_size','flash_size_bytes','read_flash','write_flash'):
+            if not callable(getattr(esptool,name,None)):
+                raise ProvisioningError('esptool API is incomplete; reinstall requirements-provisioning.txt')
+
+
+def report_error(error, args):
+    current_stage = error.stage if isinstance(error, StageError) else STAGE
+    cause = error.cause if isinstance(error, StageError) else error
+    hints = {'connect':'Cannot connect to serial port/ROM loader; check port, cable and port ownership',
+             'load_stub':'Cannot start the flasher stub; check esptool installation and download mode',
+             'attach_flash':'Cannot attach/initialize SPI Flash',
+             'detect_flash':'Cannot detect Flash capacity',
+             'read_partition_table':'Cannot read partition table',
+             'read_identity':'Cannot read device credential partition',
+             'reset':'ESP reset failed; reset ESP manually; exported files may already be complete'}
+    if isinstance(cause, ProvisioningError):
+        detail = str(cause)
+    elif isinstance(cause, FileExistsError):
+        detail = 'Output directory already exists; choose a new --output-dir'
+    elif isinstance(cause, ImportError):
+        detail = 'Python dependency import failed; install requirements-provisioning.txt in the displayed environment'
+    else:
+        detail = hints.get(current_stage, 'Operation failed; check the stage and exception type below')
+        if current_stage=='connect' and 'could not open' in str(cause).lower():
+            detail='Serial port could not be opened (busy or unavailable); exit ESP-IDF monitor with Ctrl+] and check the assigned COM port'
+    diagnostic = {'utc':datetime.now(timezone.utc).isoformat(), 'action':args.action, 'stage':current_stage,
+                  'error_type':type(cause).__name__, 'errno':getattr(cause,'errno',None),
+                  'winerror':getattr(cause,'winerror',None), 'hint':detail,
+                  'python':sys.executable, 'python_version':sys.version.split()[0],
+                  'conda_environment':Path(sys.prefix).name,
+                  'shell_conda_environment':os.environ.get('CONDA_DEFAULT_ENV'),
+                  'esptool_version':package_version('esptool'),
+                  'frames':[{'file':Path(f.filename).name,'line':f.lineno,'function':f.name}
+                            for f in traceback.extract_tb(cause.__traceback__)]}
+    print(f"Provisioning failed [stage={current_stage}, type={type(cause).__name__}]: {detail}.", file=sys.stderr)
+    print(f'Python: {sys.executable}. No credential values are printed.', file=sys.stderr)
+    try:
+        folder=PROJECT/'logs';folder.mkdir(exist_ok=True)
+        path=folder/('provision_device_'+datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S_%f')+'.diagnostic.json')
+        path.write_text(json.dumps(diagnostic,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
+        print(f'Diagnostic: {path}',file=sys.stderr)
+    except OSError:
+        pass  # Diagnostics must not mask the original failure.
 
 
 def normalize_mac(value):
@@ -125,15 +213,11 @@ def check_table(data, idf):
 
 
 def idf_python(explicit=None):
-    if explicit:
-        return explicit
-    root = os.environ.get('IDF_PYTHON_ENV_PATH')
-    candidates = [Path(root) / 'Scripts/python.exe'] if root else []
-    candidates.append(Path(r'C:\Espressif\tools\python\v6.1\venv\Scripts\python.exe'))
-    return str(next((p for p in candidates if p.is_file()), Path(sys.executable)))
+    return explicit or sys.executable
 
 
 def save_bundle(identity, output, idf, python=None):
+    stage('export_bundle')
     import qrcode
     text = record(identity['mac'], identity['ssid'], identity['password'])
     identity = parse_record(text)
@@ -167,18 +251,32 @@ class Device:
     def __init__(self, port):
         import esptool
         self.tool = esptool
-        self.esp = esptool.detect_chip(port)
+        self.esp = None
         try:
+            stage('connect')
+            self.esp = esptool.detect_chip(port)
+            stage('check_chip')
             if self.esp.CHIP_NAME != 'ESP32-C61':
                 raise ProvisioningError('Only ESP32-C61 is supported')
+            stage('read_mac')
             self.mac = normalize_mac(bytes(self.esp.read_mac()).hex())
-            self.esp = self.esp.run_stub()
+            stage('load_stub')
+            self.esp = esptool.run_stub(self.esp)
+            stage('attach_flash')
+            esptool.attach_flash(self.esp)
+            stage('detect_flash')
             flash_size = esptool.detect_flash_size(self.esp)
             if not flash_size or esptool.flash_size_bytes(flash_size) < 0x400000:
                 raise ProvisioningError('At least 4 MiB of detected Flash is required')
-        except BaseException:
-            self.esp._port.close()
-            raise
+        except BaseException as error:
+            failed_stage=STAGE
+            try:
+                self.close()
+            except Exception:
+                pass
+            if not isinstance(error,Exception):
+                raise
+            raise StageError(failed_stage,error) from None
 
     def read(self, offset, size):
         return bytes(self.tool.read_flash(self.esp, offset, size, no_progress=True))
@@ -189,6 +287,9 @@ class Device:
         self.tool.write_flash(self.esp, [(OFFSET, image)], flash_size='keep')
 
     def close(self):
+        if self.esp is None:
+            return
+        stage('reset')
         try:
             self.esp.hard_reset()
         finally:
@@ -196,7 +297,9 @@ class Device:
 
 
 def on_device(action, device, idf, bundle=None, output=None, python=None):
+    stage('read_partition_table')
     check_table(device.read(0x8000, 0x1000), idf)
+    stage('read_identity')
     existing = decode_nvs(device.read(OFFSET, SIZE), idf)
     if existing and existing['mac'] != device.mac:
         raise ProvisioningError('Stored identity belongs to another MAC; refusing operation')
@@ -214,7 +317,9 @@ def on_device(action, device, idf, bundle=None, output=None, python=None):
         if existing != identity:
             raise ProvisioningError('Different credentials already exist; refusing overwrite')
         return 'already provisioned; no write'
+    stage('write_identity')
     device.write_identity(image)
+    stage('readback')
     if device.read(OFFSET, SIZE) != image:
         raise ProvisioningError('Flash read-back verification failed; do not use label yet')
     return 'identity written and read-back verified'
@@ -235,13 +340,16 @@ def main(argv=None):
     write.add_argument('--port', required=True)
     write.add_argument('--bundle', type=Path, required=True)
     args = p.parse_args(argv)
+    stage('preflight')
     try:
+        preflight(args.action,args.idf_path,args.idf_python,getattr(args,'output_dir',None))
         if args.action == 'generate':
             mac = normalize_mac(args.mac)
             identity = parse_record(record(mac, 'Ultrasound-C61-' + mac[-6:], ''.join(secrets.choice(ALPHABET) for _ in range(16))))
             out = save_bundle(identity, args.output_dir or PROJECT / 'provisioning' / mac, args.idf_path, args.idf_python)
             print(f'Prepared bundle: {out} (credentials are in the label files, not console)')
         else:
+            stage('validate_local_bundle')
             # Check local bundle before entering the ROM loader.
             bundle = None
             if args.action == 'write':
@@ -257,13 +365,20 @@ def main(argv=None):
                 out = on_device(args.action, device, args.idf_path, bundle,
                                 args.output_dir or PROJECT / 'provisioning' / device.mac, args.idf_python)
                 print(out)
-            finally:
+            except BaseException as error:
+                failed_stage=STAGE
+                try:
+                    device.close()
+                except Exception:
+                    pass
+                if not isinstance(error,Exception):
+                    raise
+                raise StageError(failed_stage,error) from None
+            else:
                 device.close()
         return 0
     except Exception as error:
-        # Vendor exceptions may include raw credential data; no traceback/row echo.
-        detail = str(error) if isinstance(error, ProvisioningError) else 'Check dependencies, MAC, partition table, bundle integrity and existing output directory'
-        print('Provisioning failed: '+detail+'. No credential values are printed.', file=sys.stderr)
+        report_error(error,args)
         return 1
 
 
