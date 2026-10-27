@@ -18,7 +18,7 @@ def ps_quote(value):
                      (IDF_ENV / "Scripts/python.exe").exists(),
                      "Requires Windows PowerShell and installed IDF Python")
 class BuildActionsTests(unittest.TestCase):
-    def run_action(self, action, tail="", version="ESP-IDF v6.1", experiment=None, tamper=False):
+    def run_action(self, action, tail="", version="ESP-IDF v6.1", experiment=None, tamper=False, legacy_partition=False):
         with tempfile.TemporaryDirectory(prefix="ubmi-build-actions-") as folder:
             base = Path(folder)
             project = base / "project with spaces"
@@ -44,6 +44,11 @@ class BuildActionsTests(unittest.TestCase):
                 (output/'config').mkdir(parents=True)
                 tampered=config.replace('CONFIG_PSRAM_TCP_DIRECT=y','# CONFIG_PSRAM_TCP_DIRECT is not set')
                 (output/'sdkconfig').write_text(tampered)
+                (output/'config/sdkconfig.h').write_text('// fixture\n')
+            if legacy_partition:
+                output=project/f'build-throughput-fast-socket-exp-{selected}'
+                (output/'config').mkdir(parents=True)
+                (output/'sdkconfig').write_text(config+'CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y\nCONFIG_PARTITION_TABLE_FILENAME="partitions_singleapp_large.csv"\n')
                 (output/'config/sdkconfig.h').write_text('// fixture\n')
             tool = base / "fake IDF/tools"
             tool.mkdir(parents=True)
@@ -77,6 +82,12 @@ class BuildActionsTests(unittest.TestCase):
             argv = [json.loads(line) for line in calls.read_text().splitlines()]
             builds = sorted(p.name for p in project.glob("build*"))
             if tamper:self.assertEqual((output/'sdkconfig').read_text(),tampered)
+            if legacy_partition:
+                migrated=(output/'sdkconfig').read_text(encoding='utf-8-sig')
+                for line in config.splitlines():self.assertIn(line,migrated)
+                self.assertIn('CONFIG_PARTITION_TABLE_CUSTOM=y',migrated)
+                self.assertIn('CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"',migrated)
+                self.assertNotIn('CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y',migrated)
             return result, argv, builds
 
     def test_activate_persists_command_and_does_not_build(self):
@@ -100,6 +111,11 @@ class BuildActionsTests(unittest.TestCase):
         self.assertIn('build-throughput-fast-socket-exp-combined',builds)
         self.assertTrue(any('sdkconfig.tcp-fast.defaults' in x and
                             'sdkconfig.experiment-combined.defaults' in x for x in calls[-1]))
+        self.assertFalse(any('flash' in call for call in calls))
+
+    def test_existing_configuration_migrates_only_partition_selection(self):
+        result,calls,_=self.run_action('build',legacy_partition=True)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertFalse(any('flash' in call for call in calls))
 
     def test_explicit_legacy_root_directory_remains_selectable(self):

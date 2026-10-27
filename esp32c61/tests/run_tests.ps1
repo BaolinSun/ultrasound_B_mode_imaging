@@ -10,6 +10,7 @@ New-Item -ItemType Directory -Force -Path $testOutput | Out-Null
 if (-not (Test-Path -LiteralPath $Compiler)) { throw 'Supply -Compiler with a host GCC path.' }
 $env:PATH = "$(Split-Path $Compiler -Parent);$env:PATH"
 $env:PYTHONUTF8 = '1'
+& (Join-Path $projectRoot '../build/scripts/test_provisioning.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_cpu1.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_cpu0.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_cpu_status.ps1') -Compiler $Compiler

@@ -75,6 +75,34 @@ try {
     # clear the cache override and select the C header, never a sticky -D value.
     $override = if ($Transport -eq 'tcp') { '1' } elseif ($Transport -eq 'udp') { '0' } else { '' }
     $profileArgs += "-DWIFI_FRAME_TRANSPORT_OVERRIDE=$override"
+    $checks = @{
+        'CONFIG_PSRAM_TCP_DIRECT' = $Experiment -in @('direct','combined','psram80')
+        'CONFIG_LWIP_TCPIP_CORE_LOCKING' = $Experiment -in @('core','combined','psram80')
+        'CONFIG_LWIP_TCPIP_CORE_LOCKING_INPUT' = $Experiment -in @('core','combined','psram80')
+        'CONFIG_LWIP_CHECK_THREAD_SAFETY' = $Experiment -in @('core','combined','psram80')
+    }
+    # Migrate only partition selection in generated configs, preserving all tuning.
+    # Device credentials are NOT an application flash input.
+    if(Test-Path -LiteralPath $configFile) {
+        $raw=Get-Content -LiteralPath $configFile -Raw
+        if(-not (Select-String -LiteralPath $configFile -Pattern '^CONFIG_IDF_TARGET="esp32c61"$' -Quiet)) {
+            throw 'Existing sdkconfig has a different target; select esp32c61 explicitly in an IDF shell.'
+        }
+        if($Experiment -ne 'none') {
+            foreach($key in $checks.Keys) {
+                $enabled=Select-String -LiteralPath $configFile -Pattern "^$key=y$" -Quiet
+                if($enabled -ne $checks[$key]) {throw "Experiment config mismatch: $key; inspect $configFile (not overwritten)."}
+            }
+        }
+        if($raw -notmatch '(?m)^CONFIG_PARTITION_TABLE_CUSTOM=y\r?$' -or $raw -notmatch '(?m)^CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"\r?$') {
+            $raw=[regex]::Replace($raw,'(?m)^(?:# )?CONFIG_PARTITION_TABLE_(?:SINGLE_APP|SINGLE_APP_LARGE|TWO_OTA|CUSTOM|CUSTOM_FILENAME|FILENAME)(?:=.*| is not set)\r?\n?','')
+            $raw+="`nCONFIG_PARTITION_TABLE_CUSTOM=y`nCONFIG_PARTITION_TABLE_CUSTOM_FILENAME=`"partitions.csv`"`nCONFIG_PARTITION_TABLE_FILENAME=`"partitions.csv`"`n"
+            Set-Content -LiteralPath $configFile -Value $raw -Encoding utf8
+            Write-Host 'Selected device credential partition table; existing tuning and user NVS are retained.'
+            & $idfPython $idfTool @profileArgs reconfigure
+            if($LASTEXITCODE -ne 0) { throw 'Partition selection refresh failed' }
+        }
+    }
     if (-not (Test-Path -LiteralPath $configFile)) {
         if (Test-Path -LiteralPath $buildDir) {
             # A failed first configure may leave a directory that fullclean
@@ -102,12 +130,6 @@ try {
     # sdkconfig. Refuse mislabeled experiment directories rather than flashing
     # a stale/mutated config that would invalidate the A/B comparison.
     if ($Experiment -ne 'none') {
-        $checks = @{
-            'CONFIG_PSRAM_TCP_DIRECT' = $Experiment -in @('direct','combined','psram80')
-            'CONFIG_LWIP_TCPIP_CORE_LOCKING' = $Experiment -in @('core','combined','psram80')
-            'CONFIG_LWIP_TCPIP_CORE_LOCKING_INPUT' = $Experiment -in @('core','combined','psram80')
-            'CONFIG_LWIP_CHECK_THREAD_SAFETY' = $Experiment -in @('core','combined','psram80')
-        }
         foreach ($key in $checks.Keys) {
             $enabled = Select-String -LiteralPath $configFile -Pattern "^$key=y$" -Quiet
             if ($enabled -ne $checks[$key]) { throw "Experiment config mismatch: $key; inspect $configFile (not overwritten)." }

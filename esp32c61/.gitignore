@@ -11,6 +11,8 @@ __pycache__/
 /tcp_capture/
 /sdio_capture/
 /captures/
+# Per-device labels/images contain Wi-Fi credentials; retain outside source control.
+/provisioning/
 
 # Runtime reports/logs are local artifacts, not project inputs.
 /logs/

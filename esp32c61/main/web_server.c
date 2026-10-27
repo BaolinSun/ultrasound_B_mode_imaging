@@ -1,5 +1,6 @@
 #include "web_server.h"
 #include "config_store.h"
+#include "device_identity.h"
 #include "psram_udp.h"
 #include "tcp_transfer.h"
 #include "selftest.h"
@@ -153,6 +154,9 @@ static esp_err_t get_status(httpd_req_t *req)
         cJSON_AddBoolToObject(json, "reconfiguring", wifi.reconfiguring);
         cJSON_AddStringToObject(json, "sta_ip", wifi.sta_ip);
         cJSON_AddStringToObject(json, "ap_ssid", wifi.ap_ssid);
+        cJSON_AddStringToObject(json,"provisioning_state",device_store_state());
+        cJSON_AddNumberToObject(json,"ap_close_remaining_ms",wifi.ap_close_remaining_ms);
+        cJSON_AddNumberToObject(json,"wifi_disconnect_reason",wifi.disconnect_reason);
         cJSON_AddNumberToObject(json, "psram_total", heap_caps_get_total_size(MALLOC_CAP_SPIRAM));
         cJSON_AddNumberToObject(json, "psram_free", heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
         cJSON_AddNumberToObject(json, "psram_largest", heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));

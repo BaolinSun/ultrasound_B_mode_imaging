@@ -131,7 +131,7 @@ static int persist_mock(void *ctx, const app_config_t *c)
 }
 static void config_tests(void)
 {
-    app_config_t a = {.version = 1, .target_port = 50001, .ap_password = "abcdefgh12345678"};
+    app_config_t a = {.version = APP_CONFIG_VERSION, .target_port = 50001};
     assert(config_valid(&a));
     const char *valid[] = {"", "192.168.1.1", "10.1.0.2", "223.255.255.255"};
     const char *invalid[] = {"256.0.1.1", "1.2.3", "1.2.3.4.5", " 1.2.3.4", "1.2.3.4 ",
@@ -146,12 +146,11 @@ static void config_tests(void)
     assert(config_commit(&a, &b, persist_mock, NULL) == 0 && !memcmp(&a, &b, sizeof(a)));
     app_config_t restored = stored; assert(config_valid(&restored) && !memcmp(&restored, &b, sizeof(b)));
     b.target_port = 0; assert(config_commit(&a, &b, persist_mock, NULL) == -1);
-    b = a; b.version = 2; assert(!config_valid(&b));
+    b = a; b.version = 1; assert(!config_valid(&b));
     assert(!config_valid(NULL));
     b = a; memset(b.ssid, 'a', sizeof(b.ssid)); assert(!config_valid(&b));
     b = a; memset(b.password, 'a', sizeof(b.password)); assert(!config_valid(&b));
     b = a; memset(b.target_ip, 'a', sizeof(b.target_ip)); assert(!config_valid(&b));
-    b = a; memset(b.ap_password, 'a', sizeof(b.ap_password)); assert(!config_valid(&b));
     b = a; strcpy(b.password, "short"); assert(!config_valid(&b));
     b = a; memset(b.password, 'a', 64); b.password[64] = 0; assert(config_valid(&b));
     b.password[0] = 'z'; assert(!config_valid(&b));
@@ -159,7 +158,6 @@ static void config_tests(void)
     b.password[0] = ':'; assert(!config_valid(&b));
     for (unsigned i = 0; i < 64; ++i) b.password[i] = "0123456789abcdefABCDEF"[i % 22];
     assert(config_valid(&b));
-    b = a; strcpy(b.ap_password, "short"); assert(!config_valid(&b));
     b = a; strcpy(b.target_ip, "bad"); assert(!config_valid(&b));
 }
 int main(void)

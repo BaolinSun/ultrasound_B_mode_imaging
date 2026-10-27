@@ -8,6 +8,8 @@ Set-Location 'D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61'
 
 本文 `COM3` 仅为示例，请替换为当前设备端口。本文提供操作说明，不表示已经执行烧录或板测。
 
+二维码配网版使用新的 `partitions.csv`：旧 NVS 和应用位置不变，独立设备凭据位于 `0x3F0000`。首次升级需更新 ESP32 分区表及应用。脚本会迁移生成 sdkconfig 的分区选择；日常 flash 不生成、写入或清除设备凭据。首次准备/旧设备导出二维码见[无 USB 控制台配网](WIFI_PROVISIONING.md)，正常配网不需要运行 monitor。
+
 ## 1. 日常使用：性能配置
 
 当前默认就是 **combined 40 MHz 性能档**：`Profile=throughput`、`TcpTuning=fast`、`Experiment=combined`。

@@ -2,14 +2,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define APP_CONFIG_VERSION 1U
+#define APP_CONFIG_VERSION 2U
 typedef struct {
     uint32_t version;
     char ssid[33];
     char password[65];
     char target_ip[16];
     uint16_t target_port;
-    char ap_password[17];
 } app_config_t;
 bool config_ipv4_valid(const char *text, bool allow_empty);
 bool config_valid(const app_config_t *config);

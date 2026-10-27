@@ -26,8 +26,7 @@ bool config_valid(const app_config_t *c)
     if (!c || c->version != APP_CONFIG_VERSION || !c->target_port ||
         !memchr(c->ssid, 0, sizeof(c->ssid)) ||
         !memchr(c->password, 0, sizeof(c->password)) ||
-        !memchr(c->target_ip, 0, sizeof(c->target_ip)) ||
-        !memchr(c->ap_password, 0, sizeof(c->ap_password))) return false;
+        !memchr(c->target_ip, 0, sizeof(c->target_ip))) return false;
     size_t n = strlen(c->password);
     if (n && n < 8) return false;
     if (n == 64) {
@@ -37,7 +36,7 @@ bool config_valid(const app_config_t *c)
                   (v >= 'A' && v <= 'F'))) return false;
         }
     }
-    return strlen(c->ap_password) >= 8 && config_ipv4_valid(c->target_ip, true);
+    return config_ipv4_valid(c->target_ip, true);
 }
 
 int config_commit(app_config_t *active, const app_config_t *candidate,

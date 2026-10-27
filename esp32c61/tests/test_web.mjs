@@ -133,6 +133,22 @@ function setup() {
 }
 const submit = env => env.elements['config-form'].listeners.submit({preventDefault(){}});
 
+test('provisioning is console-free, shows countdown/new address, copy and HTTP clipboard fallback',async()=>{
+ const e=setup();await e.settle();const s=e.backend.status;s.provisioning_state='ready';s.reconfiguring=true;await e.context.refresh();
+ assert.match(e.elements['provisioning-message'].textContent,/正在连接/);assert.equal(e.elements['copy-sta-address'].disabled,true);
+ s.reconfiguring=false;s.connected=true;s.sta_ip='192.168.3.27';s.ap_close_remaining_ms=30000;await e.context.refresh();
+ assert.match(e.elements['provisioning-message'].textContent,/30 秒/);assert.match(e.elements['provisioning-address'].textContent,/http:\/\/192.168.3.27\//);
+ assert.equal(e.elements['copy-sta-address'].disabled,false);
+ let copied='';e.context.navigator={clipboard:{async writeText(v){copied=v}}};await e.elements['copy-sta-address'].listeners.click();assert.equal(copied,'http://192.168.3.27/');
+ e.context.navigator={};await e.elements['copy-sta-address'].listeners.click();assert.match(e.elements.message.textContent,/手动复制/);
+ s.ap_close_remaining_ms=900;await e.context.refresh();assert.match(e.elements['provisioning-message'].textContent,/1 秒/);
+ s.ap_active=false;await e.context.refresh();assert.match(e.elements['provisioning-message'].textContent,/已关闭/);
+ s.connected=false;s.sta_ip='';s.ap_active=true;s.wifi_disconnect_reason=202;await e.context.refresh();assert.match(e.elements['provisioning-message'].textContent,/202/);assert.equal(e.elements['copy-sta-address'].disabled,true);
+ for(const state of ['unprepared','invalid','mac_mismatch','missing_partition','migration_failed']){s.provisioning_state=state;await e.context.refresh();assert.doesNotMatch(e.elements['provisioning-message'].textContent,/路由器连接成功/);}
+ s.provisioning_state='ready';s.connected=true;s.sta_ip='192.168.3.27';await e.context.refresh();e.backend.offline=true;await e.context.refresh();assert.equal(e.elements['copy-sta-address'].disabled,true);assert.equal(e.elements['provisioning-address'].textContent,'');assert.match(e.elements['provisioning-message'].textContent,/断开/);
+ assert.equal(e.backend.calls.some(c=>c.options.method==='POST'),false);
+});
+
 test('AFE-only power controls use existing jobs, block starts while asleep and never trigger imaging',async()=>{
  const e=setup();await e.settle();
  e.backend.status.zynq_control={ready:true,synced:true,afe_state:'sleep',afe_flags:0,afe_error:'NONE',afe_age_ms:0};

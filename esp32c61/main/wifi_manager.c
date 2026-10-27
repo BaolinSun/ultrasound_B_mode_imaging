@@ -1,8 +1,12 @@
 #include "wifi_manager.h"
 #include "config_store.h"
 #include "psram_udp.h"
+#include "device_identity.h"
 #include <stdio.h>
 #include <string.h>
+#ifdef PROVISIONING_HOST_TEST
+#include "provisioning_fake.h"
+#else
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_mac.h"
@@ -12,6 +16,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#endif
 
 static SemaphoreHandle_t lock;
 static wifi_manager_status_t state;
@@ -28,6 +33,7 @@ static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *ev
         (base == IP_EVENT && id == IP_EVENT_STA_LOST_IP)) {
         if (state.connected) disconnected_at = millis();
         state.connected = false;
+        if(base==WIFI_EVENT && event)state.disconnect_reason=((wifi_event_sta_disconnected_t *)event)->reason;
         state.sta_ip[0] = 0;
         connected_at = 0;
         psram_udp_set_link(false);
@@ -44,6 +50,7 @@ static void event_handler(void *arg, esp_event_base_t base, int32_t id, void *ev
         }
         if (!state.connected) connected_at = millis();
         state.connected = true;
+        state.disconnect_reason=0;
         snprintf(state.sta_ip, sizeof(state.sta_ip), IPSTR, IP2STR(&got->ip_info.ip));
         retry_delay_ms = 1000;
         ESP_LOGI("wifi", "STA configuration page: http://%s/", state.sta_ip);
@@ -62,12 +69,14 @@ static esp_err_t set_station_config(const app_config_t *config)
     return esp_wifi_set_config(WIFI_IF_STA, &wifi);
 }
 
-static esp_err_t enable_ap(const app_config_t *config)
+static esp_err_t enable_ap(void)
 {
+    device_identity_t identity;
+    if(!device_store_get(&identity))return ESP_ERR_INVALID_STATE;
     wifi_config_t ap = {0};
     memcpy(ap.ap.ssid, state.ap_ssid, strlen(state.ap_ssid));
     ap.ap.ssid_len = strlen(state.ap_ssid);
-    memcpy(ap.ap.password, config->ap_password, strlen(config->ap_password));
+    memcpy(ap.ap.password, identity.password, strlen(identity.password));
     ap.ap.channel = 1;
     ap.ap.max_connection = 2;
     ap.ap.authmode = WIFI_AUTH_WPA2_PSK;
@@ -77,22 +86,21 @@ static esp_err_t enable_ap(const app_config_t *config)
         xSemaphoreTake(lock, portMAX_DELAY);
         state.ap_active = true;
         xSemaphoreGive(lock);
-        ESP_LOGI("wifi", "Configuration hotspot SSID=%s password=%s URL=http://192.168.4.1/",
-                 state.ap_ssid, config->ap_password);
-    }
+        ESP_LOGI("wifi", "Configuration hotspot SSID=%s URL=http://192.168.4.1/; use device QR label",state.ap_ssid);
+    } else (void)esp_wifi_set_mode(WIFI_MODE_STA);
     return err;
 }
 
-static void supervisor(void *arg)
-{
-    (void)arg;
-    for (;;) {
+static void supervisor_step(void) {
         uint64_t now = millis();
+        xSemaphoreTake(lock,portMAX_DELAY);
+        uint32_t generation=request_generation;
+        xSemaphoreGive(lock);
         app_config_t config;
         config_store_get(&config);
         xSemaphoreTake(lock, portMAX_DELAY);
+        if(generation!=request_generation){xSemaphoreGive(lock);return;}
         bool apply = request_generation != applied_generation && now >= apply_at;
-        uint32_t generation = request_generation;
         wifi_manager_status_t snapshot = state;
         uint64_t since_down = disconnected_at, since_up = connected_at;
         bool retry = !state.reconfiguring && !state.connected &&
@@ -109,6 +117,7 @@ static void supervisor(void *arg)
             xSemaphoreTake(lock, portMAX_DELAY);
             state.connected = false;
             state.sta_ip[0] = 0;
+            state.disconnect_reason=0;
             disconnected_at = now;
             connected_at = 0;
             retry_at = now;
@@ -129,24 +138,31 @@ static void supervisor(void *arg)
                 esp_err_t err = esp_wifi_connect();
                 if (err != ESP_OK) ESP_LOGW("wifi", "STA connect: %s", esp_err_to_name(err));
             }
-            if (!snapshot.ap_active && (!config.ssid[0] ||
+            if (device_store_get(NULL) && !snapshot.ap_active && (!config.ssid[0] ||
                 (!snapshot.connected && now - since_down >= 30000))) {
-                esp_err_t err = enable_ap(&config);
+                esp_err_t err = enable_ap();
                 if (err != ESP_OK) ESP_LOGE("wifi", "Enable AP: %s", esp_err_to_name(err));
             }
             if (snapshot.ap_active && snapshot.connected && !snapshot.reconfiguring &&
-                since_up && now - since_up >= 15000) {
-                esp_err_t err = esp_wifi_set_mode(WIFI_MODE_STA);
-                if (err == ESP_OK) {
-                    xSemaphoreTake(lock, portMAX_DELAY);
-                    state.ap_active = false;
-                    xSemaphoreGive(lock);
+                now >= since_up && now - since_up >= 30000) {
+                /* A new HTTP apply may arrive after the snapshot. Serialize the
+                 * close with reconfigure so it cannot remove that user's AP. */
+                xSemaphoreTake(lock,portMAX_DELAY);
+                esp_err_t err=ESP_ERR_INVALID_STATE;
+                if(generation==request_generation && state.ap_active && state.connected && !state.reconfiguring) {
+                    err=esp_wifi_set_mode(WIFI_MODE_STA);
+                    if(err==ESP_OK)state.ap_active=false;
+                }
+                xSemaphoreGive(lock);
+                if(err==ESP_OK) {
                     ESP_LOGI("wifi", "Configuration AP disabled; use http://%s/", snapshot.sta_ip);
                 }
             }
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
+}
+static void supervisor(void *arg) {
+    (void)arg;
+    for(;;){supervisor_step();vTaskDelay(pdMS_TO_TICKS(100));}
 }
 
 esp_err_t wifi_manager_init(void)
@@ -163,11 +179,8 @@ esp_err_t wifi_manager_init(void)
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
     err = esp_wifi_init(&init);
     if (err != ESP_OK) return err;
-    uint8_t mac[6];
-    err = esp_read_mac(mac, ESP_MAC_WIFI_SOFTAP);
-    if (err != ESP_OK) return err;
-    snprintf(state.ap_ssid, sizeof(state.ap_ssid), "Ultrasound-C61-%02X%02X%02X",
-             mac[3], mac[4], mac[5]);
+    device_identity_t identity;
+    if(device_store_get(&identity))memcpy(state.ap_ssid,identity.ssid,sizeof state.ap_ssid);
     err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
     if (err != ESP_OK) return err;
     err = esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, event_handler, NULL);
@@ -181,8 +194,8 @@ esp_err_t wifi_manager_init(void)
     err = set_station_config(&config);
     if (err != ESP_OK) return err;
     /* Default AP interface is 192.168.4.1/24; do not enable NAPT/routing. */
-    if (!config.ssid[0]) {
-        err = enable_ap(&config);
+    if (!config.ssid[0] && device_store_get(NULL)) {
+        err = enable_ap();
         if (err != ESP_OK) return err;
     }
     err = esp_wifi_start();
@@ -205,5 +218,8 @@ void wifi_manager_reconfigure(void)
 }
 void wifi_manager_get_status(wifi_manager_status_t *out)
 {
-    xSemaphoreTake(lock, portMAX_DELAY); *out = state; xSemaphoreGive(lock);
+    xSemaphoreTake(lock, portMAX_DELAY); *out = state;
+    uint64_t now=millis();
+    out->ap_close_remaining_ms=state.ap_active && state.connected && !state.reconfiguring && now>=connected_at && now-connected_at<30000 ? (uint32_t)(30000-(now-connected_at)):0;
+    xSemaphoreGive(lock);
 }

@@ -1,3 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(ultrasound_psram_udp)
+if(NOT CONFIG_PARTITION_TABLE_CUSTOM OR NOT CONFIG_PARTITION_TABLE_CUSTOM_FILENAME STREQUAL "partitions.csv")
+    message(FATAL_ERROR "Device provisioning requires partitions.csv. Run .\\build.ps1 once to migrate this generated sdkconfig; no device credentials are overwritten.")
+endif()

@@ -33,8 +33,12 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <label>上位机 IPv4<input id="target-ip" placeholder="192.168.1.100" inputmode="decimal"><small>填写运行相应 TCP/UDP 接收程序的电脑地址。</small></label>
 <label>TCP/UDP 端口<input id="target-port" type="number" min="1" max="65535" value="50001" required><small>共用目标端口；PSRAM 自测仍使用 UDP。</small></label></div>
 <label><input id="open-network" type="checkbox"> 使用开放 Wi-Fi（清空已保存密码）</label>
-<button id="save" type="submit">保存并应用</button><small>目标地址下一次上传生效。修改 Wi-Fi 后会重新连接；连接成功 15 秒后关闭配置热点。</small>
-</form></section>
+<button id="save" type="submit">保存并应用</button><small>目标地址下一次上传生效。修改 Wi-Fi 后会重新连接；连接成功 30 秒后关闭配置热点。</small>
+</form>
+<div class="notice" role="status" aria-live="polite"><strong id="provisioning-message">正在读取配网状态…</strong>
+<div id="provisioning-address"></div><button id="copy-sta-address" type="button" class="secondary" disabled>复制局域网地址</button>
+<small id="provisioning-help">换网络时，等待设备热点出现，扫描机身 Wi-Fi 二维码连接，再手动打开 http://192.168.4.1/。不需要 USB 控制台。</small></div>
+</section>
 <section class="card"><h2>Zynq 控制与配置</h2>
 <p class="muted">无需 USB 或控制口令，电池供电时可直接控制。接口不鉴权且 HTTP 未加密，仅限可信局域网，禁止开放到公网。</p>
 <p id="control-status" class="muted">等待控制服务状态</p>
@@ -228,7 +232,27 @@ function renderCpus(c,disconnected=false){
  }
  el('cpu1-control').textContent=Number.isInteger(b.control)&&b.control>=0&&b.control<=0xffffffff?'0x'+b.control.toString(16).padStart(8,'0').toUpperCase():'—';
 }
+function renderProvisioning(s,disconnected=false){
+ if(disconnected){el('provisioning-message').textContent='网页连接已断开，请重新连接设备热点或路由器。';el('provisioning-address').textContent='';el('copy-sta-address').disabled=true;el('copy-sta-address').setAttribute('data-address','');return;}
+ const labels={unprepared:'设备未准备：请先写入设备凭据并贴二维码',missing_partition:'缺少设备凭据分区：请更新配套分区表',invalid:'设备凭据损坏或格式不合法，请恢复原设备资料',mac_mismatch:'设备凭据与本机 MAC 不符，请核对设备标签',migration_failed:'旧设备凭据迁移失败，请保留原资料并修复存储'};
+ const validIp=typeof s.sta_ip==='string'&&/^\d{1,3}(\.\d{1,3}){3}$/.test(s.sta_ip);
+ const url=s.connected&&validIp?`http://${s.sta_ip}/`:'';
+ el('provisioning-address').textContent=url?'新的局域网地址：'+url:'';
+ el('copy-sta-address').disabled=!url;el('copy-sta-address').setAttribute('data-address',url);
+ const remaining=Math.ceil(Math.max(0,Number(s.ap_close_remaining_ms)||0)/1000);
+ el('provisioning-message').textContent=s.provisioning_state&&s.provisioning_state!=='ready'?(labels[s.provisioning_state]||'设备凭据状态未知'):
+  s.reconfiguring?'正在连接新 Wi-Fi，请保持本页打开…':s.connected?(s.ap_active?`路由器连接成功，配置热点约 ${remaining} 秒后关闭。`:'路由器已连接，配置热点已关闭。'):
+  s.wifi_disconnect_reason?`尚未连接路由器（原因码 ${s.wifi_disconnect_reason}），请检查网络名称/密码并重新保存。`:
+  s.ap_active?(el('ssid').value?'暂未连接路由器，请检查网络和密码；可在本页重新配置。':'配置热点已就绪，请填写路由器信息。'):'正在尝试连接已保存网络；持续失败约 30 秒后开启配置热点。';
+ el('provisioning-help').textContent=url?'请先复制上方地址，再将手机/电脑切回该路由器网络，通过新地址访问设备。无需 USB 控制台。':'扫描机身 Wi-Fi 二维码连接设备热点，再手动打开 http://192.168.4.1/。扫码不会自动填写路由器密码。';
+}
+el('copy-sta-address').addEventListener('click',async()=>{
+ const address=el('copy-sta-address').getAttribute('data-address');if(!address)return;
+ try{await navigator.clipboard.writeText(address);notify('局域网地址已复制，请切换到路由器网络。')}
+ catch(e){notify('浏览器未允许自动复制，请手动复制：'+address)}
+});
 function render(s){
+ renderProvisioning(s);
  renderTemperatures(s.temperatures);
  renderCpus(s.cpus);
  el('network').textContent=s.reconfiguring?'正在重新配网':s.connected?'已连接路由器':'未连接路由器';
@@ -266,7 +290,7 @@ function render(s){
  if(d.running||d.raw_busy||d.free_slots<2)el('upload').disabled=true;
  renderZynqControl(s);
 }
-async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;renderTemperatures(null,true);renderCpus(null,true);renderZynqControl({});el('upload').disabled=true;el('stop').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false}}
+async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;renderProvisioning({},true);renderTemperatures(null,true);renderCpus(null,true);renderZynqControl({});el('upload').disabled=true;el('stop').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false}}
 el('config-form').addEventListener('submit',async event=>{event.preventDefault();saving=true;el('save').disabled=true;el('upload').disabled=true;const c={ssid:el('ssid').value,target_ip:el('target-ip').value.trim(),target_port:Number(el('target-port').value)};
  if(el('open-network').checked)c.password='';else if(el('password').value)c.password=el('password').value;
  try{const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});targetConfigured=!!c.target_ip;configLoaded=true;el('password').value='';el('open-network').checked=false;notify(r.message)}catch(e){notify(e.message,true)}finally{saving=false;el('save').disabled=false;await refresh()}});
