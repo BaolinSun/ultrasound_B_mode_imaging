@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>超声 PSRAM · TCP/UDP 上传</title>
+<title>超声成像系统控制台</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#eef2f6;color:#172b42;font:16px/1.6 system-ui,sans-serif}
 main{max-width:840px;margin:36px auto;padding:0 18px}h1{font-size:28px;margin-bottom:8px}h2{font-size:20px;margin:0 0 16px}
@@ -20,8 +20,8 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 .control-actions{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.action-group{padding:14px;border:1px solid #dce5eb;border-radius:12px}.action-group h3,.chip-panel h3{margin:0 0 10px;font-size:16px}.button-row{display:flex;flex-wrap:wrap;gap:8px}.button-row button{margin:0;flex:1;min-width:110px}.control-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0}.control-footer button{margin:0}.danger{background:#a53737}.chip-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.chip-panel .status-pill{font-size:15px;margin-bottom:10px}.chip-panel dl{grid-template-columns:75px 1fr;font-size:14px}.chip-panel .button-row{margin-top:14px}.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.metric{border-radius:9px;background:white;border:1px solid #e2e8ee;padding:10px}.metric strong{display:block;font-size:20px}.chip-error{color:#a42f2f;overflow-wrap:anywhere;font-size:14px}.diagnostics{margin-top:12px;color:#53657a;font-size:14px}.diagnostics pre{white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:600px){.status-grid{grid-template-columns:1fr 1fr}.chip-grid,.control-actions{grid-template-columns:1fr}.control-footer{align-items:flex-start;flex-direction:column}.button-row button{padding:10px 12px}}
 </style></head><body><main>
-<p class="muted">ESP32-C61 / B-mode imaging</p><h1>PSRAM 数据上传</h1>
-<p class="muted">配置 Wi-Fi 与上位机地址。PSRAM 自测使用原始 UDP；SDIO 帧使用编译选择的 TCP/UDP。</p>
+<p class="muted">ESP32-C61 / B-mode imaging</p><h1>超声成像系统控制台</h1>
+<p class="muted">超声成像控制、芯片电源管理与运行监测，支持 Wi-Fi 配网、图像传输和实时显示入口。</p>
 <div id="message" class="notice" role="status" aria-live="polite">正在读取设备配置…</div>
 <section class="card"><h2>Zynq 控制与配置</h2>
 <p class="muted">无需 USB 或控制口令，电池供电时可直接控制。接口不鉴权且 HTTP 未加密，仅限可信局域网，禁止开放到公网。</p>
