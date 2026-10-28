@@ -9,6 +9,8 @@
 
 ## 文档位置与索引
 
+- [停止接收保留 SDIO 链路、停流握手及更新要求](SDIO_STOP_HANDSHAKE.md)
+
 - [可视化状态面板、AFE/TX 合并布局及停扫关闭高压](VISUAL_STATUS.md)
 
 - [无 USB 控制台的二维码配网、设备准备及旧配置迁移](WIFI_PROVISIONING.md)

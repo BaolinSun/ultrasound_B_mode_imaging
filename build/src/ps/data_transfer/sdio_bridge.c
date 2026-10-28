@@ -55,6 +55,23 @@ static void fail_link(void) {
     failures++; online=0; phase=IDLE; offset=0; reset_on_connect=1; retry_at=milliseconds()+500;
     xil_printf("@SDIO ERROR failures=%u; re-enumerate, no payload replay\r\n",(unsigned)failures);
 }
+static void acknowledge_stop(void) {
+    u8 request,ack;u32 session;
+    if(read8(BR_STOP_REQ,&request) || !request || read8(BR_STOP_ACK,&ack) ||
+       read32(BR_SESSION,&session)) {fail_link();return;}
+    if(ack==request && phase==IDLE && !frame.lease) return;
+    /* Executed in foreground, after any synchronous CMD53/window ACK returns.
+     * Prove local DMA idle and retire DDR ownership before telling the slave
+     * that it can discard receive storage. No card reset on the idle path. */
+    if(sdio_host_quiesce(&host)!=SDIO_HOST_OK || frame_store_release(&frame)!=0) {fail_link();return;}
+    phase=IDLE;offset=0;waiting_since=0;host.last_grant_seq=0;
+    u8 current;u32 current_session;
+    if(read8(BR_STOP_REQ,&current) || read32(BR_SESSION,&current_session) ||
+       current!=request || current_session!=session || write8(BR_STOP_ACK,request)) {
+        fail_link();return;
+    }
+    xil_printf("@SDIO STOPPED token=%u; DMA idle, DDR lease released; link retained\r\n",(unsigned)request);
+}
 int sdio_bridge_power_idle(void) { return phase==IDLE && !frame.lease; }
 int sdio_bridge_source_recovery_begin(void) {
     if(!sdio_bridge_power_idle()) return -1;
@@ -113,8 +130,9 @@ static void poll_once(void) {
         if(write8(BR_SOURCE_FLAGS,8U) || write8(BR_HOST_MODE,0U)) fail_link();
         return;
     }
-    if(phase!=IDLE && now>=deadline) { fail_link(); return; }
     if(read8(BR_STATUS,&state)) { fail_link(); return; }
+    if(state&BR_STOPPING) {acknowledge_stop();return;}
+    if(phase!=IDLE && now>=deadline) { fail_link(); return; }
     u8 next_grant=0;
     if(phase==WINDOW && (state&BR_STREAM) && !(state&BR_BACKPRESSURE)) {
         /* No new credit: avoid re-reading four session bytes and metadata

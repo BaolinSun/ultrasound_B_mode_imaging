@@ -127,7 +127,7 @@ def main():
     transport=before.get('sdio_transport','udp')
     if transport not in ('tcp','udp'): raise SystemExit('Unknown compiled transport')
     sdio = before.get('sdio', {})
-    if before.get('busy') or sdio.get('running') or not sdio.get('host_sdio') or sdio.get('free_slots') != 2:
+    if before.get('busy') or sdio.get('stopping') or sdio.get('running') or not sdio.get('host_sdio') or sdio.get('free_slots') != 2:
         raise SystemExit('Device must be idle, handshaken, with two free slots')
     # Unique names avoid mixing different tests in an append-mode receiver log.
     if args.log.exists():
@@ -248,12 +248,15 @@ def main():
                 if process and process.poll() is None:
                     process.stdin.write(b'QUIESCE\n');process.stdin.flush()
                 api('/api/sdio/stop', {})
-                deadline=time.monotonic()+2
+                deadline=time.monotonic()+7
                 while time.monotonic()<deadline:
-                    if not api('/api/status').get('busy'): break
+                    stop_state=api('/api/status')
+                    if (not stop_state.get('busy') and not stop_state.get('sdio',{}).get('running')
+                        and not stop_state.get('sdio',{}).get('stopping')
+                        and stop_state.get('sdio',{}).get('free_slots') == 2): break
                     time.sleep(.05)
                 else:
-                    control_error='device sender did not stop within 2 seconds'
+                    control_error='device stop/ownership handshake did not finish within 7 seconds'
         except Exception as exc:
             control_error = str(exc)
         if process and process.poll() is None:

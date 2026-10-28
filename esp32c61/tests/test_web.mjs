@@ -487,6 +487,12 @@ test('SDIO starts only after explicit host selection and shares stop control',as
   e.backend.status.sdio.host_sdio=true;await vm.runInContext('refresh()',e.context);
   assert.equal(e.elements['sdio-once'].disabled,false);
   assert.match(e.elements['sdio-gate'].textContent,/可启动/);
+  e.backend.status.sdio.stopping=true;await vm.runInContext('refresh()',e.context);
+  assert.equal(e.elements['sdio-once'].disabled,true);
+  assert.equal(e.elements['sdio-stream'].disabled,true);
+  assert.equal(e.elements.upload.disabled,true);
+  assert.match(e.elements['sdio-status'].textContent,/正在停止/);
+  e.backend.status.sdio.stopping=false;await vm.runInContext('refresh()',e.context);
   await e.elements['sdio-once'].listeners.click();
   assert.equal(e.backend.status.sdio.running,true);
   assert.equal(e.elements.upload.disabled,true);

@@ -22,20 +22,22 @@ static u8 *image_ddr;
 static u8 image_seed;
 static int overwrite_during_send;
 static u32 source_frame, source_length=BR_FRAME_BYTES, source_down;
-static unsigned lease_releases, quiesced;
+static unsigned lease_releases, quiesced, lease_live, stop_acks;
+static int quiesce_failure, release_failure, stop_ack_failure, stop_during_dma;
 static int source_ready=1;
 static int recovery_blocked;
 int frame_store_is_ready(void) { return source_ready; }
 static u32 hardware_busy;
 u32 Xil_In32(UINTPTR address) { return address==0xE0101024U?hardware_busy:0; }
-int sdio_host_quiesce(sdio_host_t *host) { (void)host;quiesced=1;return 0; }
+int sdio_host_quiesce(sdio_host_t *host) { (void)host;if(quiesce_failure)return -1;quiesced=1;return 0; }
 int frame_store_acquire(frame_lease_t *f,u32 watermark) {
     (void)watermark;assert(!f->lease);
     f->data=image_ddr;f->frame=++source_frame;f->bytes=source_length;
-    f->decimation=source_down;f->slot=0;f->lease=source_frame;quiesced=0;return 0;
+    f->decimation=source_down;f->slot=0;f->lease=source_frame;quiesced=0;lease_live=1;return 0;
 }
 int frame_store_release(frame_lease_t *f) {
-    assert(f->lease && quiesced);lease_releases++;f->lease=0;f->data=NULL;return 0;
+    if(!f->lease)return 0;
+    assert(quiesced);if(release_failure)return -1;lease_live=0;lease_releases++;f->lease=0;f->data=NULL;return 0;
 }
 static void fill_image(u8 seed) {
     image_seed=seed;
@@ -64,7 +66,9 @@ int sdio_read_reg(sdio_host_t *host,u32 p,u8 *n) {
     (void)host;assert(p<sizeof(regs));if(io_failure || injected())return -1;*n=regs[p];return 0;
 }
 int sdio_write_reg(sdio_host_t *host,u32 p,u8 n) {
-    (void)host;assert(p<sizeof(regs) && !(p>=28 && p<=31));if(io_failure || injected())return -1;regs[p]=n;
+    (void)host;assert(p<sizeof(regs) && !(p>=28 && p<=31));if(io_failure || injected())return -1;
+    if(p==BR_STOP_ACK) {assert(quiesced && !lease_live);if(stop_ack_failure)return -1;stop_acks++;}
+    regs[p]=n;
     if(p==BR_CMD_SEQ && regs[BR_CMD]==BR_ABORT) {
         aborts++;memset(regs,0,sizeof(regs));regs[BR_PROTOCOL]=BR_SDIO_VERSION;
         regs[BR_STATUS]=BR_READY|BR_BACKPRESSURE;put32(BR_SESSION,100+aborts);
@@ -90,6 +94,7 @@ int sdio_host_send_blocks(sdio_host_t *host,const u8 *p,u32 count) {
             assert(p[i]==(u8)(pos*37U+(pos>>9)+image_seed));
     }
     crc=br_crc32(crc,p,count*512);received+=count*512;blocks+=count;windows++;
+    if(stop_during_dma) {stop_during_dma=0;regs[BR_STOP_REQ]=br_next_seq(regs[BR_STOP_REQ]);regs[BR_STATUS]=BR_READY|BR_BACKPRESSURE|BR_STOPPING;}
     if(received==source_length) {
         assert(count==2);
         if(overwrite_during_send)assert(crc!=get32(BR_CRC));
@@ -223,6 +228,35 @@ int main(void) {
         assert(get32(BR_LENGTH)==source_length && blocks-before==source_length/512);
         sdio_bridge_poll();
     }
+    /* Normal STOP is acknowledged only after local DMA and DDR ownership end. */
+    connect();unsigned init_before=inits,abort_before=aborts,ack_before=stop_acks;
+    regs[BR_STOP_REQ]=255;regs[BR_STOP_ACK]=254;regs[BR_STATUS]=BR_READY|BR_BACKPRESSURE|BR_STOPPING;
+    sdio_bridge_poll();assert(regs[BR_STOP_ACK]==255 && stop_acks==ack_before+1 && inits==init_before && aborts==abort_before);
+    for(unsigned i=0;i<20;i++)sdio_bridge_poll();assert(stop_acks==ack_before+1);
+    regs[BR_STOP_REQ]=1;sdio_bridge_poll();assert(regs[BR_STOP_ACK]==1 && !lease_live); /* wrap */
+    stream();hold_ack=1;sdio_bridge_poll();assert(lease_live);
+    unsigned data_before=blocks;
+    regs[BR_STOP_REQ]=2;regs[BR_STATUS]=BR_READY|BR_BACKPRESSURE|BR_STOPPING;
+    tick+=30001;sdio_bridge_poll(); /* Explicit stop takes priority over frame timeout. */
+    assert(regs[BR_STOP_ACK]==2 && !lease_live && blocks==data_before && inits==init_before);
+    hold_ack=0;stream();sdio_bridge_poll();stop_during_dma=1;data_before=blocks;
+    sdio_bridge_poll();assert(blocks>data_before && lease_live);
+    data_before=blocks;sdio_bridge_poll();assert(!lease_live && blocks==data_before && regs[BR_STOP_ACK]==regs[BR_STOP_REQ]);
+    stream();unsigned target=complete+1;while(complete<target){tick++;sdio_bridge_poll();}
+    regs[BR_STOP_REQ]=br_next_seq(regs[BR_STOP_REQ]);regs[BR_STATUS]=BR_READY|BR_BACKPRESSURE|BR_STOPPING;
+    sdio_bridge_poll();assert(!lease_live && regs[BR_STOP_ACK]==regs[BR_STOP_REQ]);
+    assert(inits==init_before && aborts==abort_before);
+    /* Cleanup failures do not publish an ACK or revoke the outstanding lease. */
+    stream();hold_ack=1;sdio_bridge_poll();assert(lease_live);
+    regs[BR_STOP_REQ]=br_next_seq(regs[BR_STOP_REQ]);regs[BR_STATUS]=BR_READY|BR_BACKPRESSURE|BR_STOPPING;
+    ack_before=stop_acks;quiesce_failure=1;sdio_bridge_poll();assert(lease_live && stop_acks==ack_before);
+    quiesce_failure=0;hold_ack=0;connect();stream();hold_ack=1;sdio_bridge_poll();
+    regs[BR_STOP_REQ]=1;regs[BR_STATUS]=BR_READY|BR_BACKPRESSURE|BR_STOPPING;
+    release_failure=1;ack_before=stop_acks;sdio_bridge_poll();assert(lease_live && stop_acks==ack_before);
+    release_failure=0;hold_ack=0;connect();
+    regs[BR_STOP_REQ]=1;regs[BR_STATUS]=BR_READY|BR_BACKPRESSURE|BR_STOPPING;
+    stop_ack_failure=1;ack_before=stop_acks;sdio_bridge_poll();assert(!lease_live && stop_acks==ack_before);
+    stop_ack_failure=0;connect();
     assert(lease_releases>0);
     assert(flushes==0);
     puts("PASS: live 0x20000000 DDR / no initialization writes / per-frame CRC / overwrite CRC error / metadata / sequence wrap / backpressure / timeout / no DMA replay / reset");

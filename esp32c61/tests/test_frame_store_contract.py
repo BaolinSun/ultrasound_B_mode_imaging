@@ -55,7 +55,7 @@ class FrameStoreContract(unittest.TestCase):
             self.assertLessEqual(int(origin,16)+int(length,16),0x1c000000)
     def test_raw_udp_and_reserved_registers(self):
         proto=(ROOT/'esp32c61/protocol/bridge_protocol.h').read_text()
-        self.assertIn('BR_SDIO_VERSION 3U',proto)
+        self.assertIn('BR_SDIO_VERSION 4U',proto)
         self.assertIn('BR_SOURCE_PUBLISHED=52',proto)
         for name,value in re.findall(r'(BR_SOURCE_\w+)=(\d+)',proto):
             size=4 if name in ('BR_SOURCE_DROPS','BR_SOURCE_ERRORS','BR_SOURCE_LATEST','BR_SOURCE_PUBLISHED') else 1

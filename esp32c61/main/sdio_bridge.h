@@ -4,7 +4,9 @@
 #include <stddef.h>
 #include <stdint.h>
 typedef struct {
-    bool ready, running, host_sdio, raw_busy;
+    bool ready, running, host_sdio, raw_busy, stopping;
+    uint32_t reset_count;
+    const char *reset_reason; /* static diagnostic string; no allocation */
     uint32_t session, received_frames, crc_errors, errors, backpressure,
              sent_frames, dropped_frames;
     uint64_t sent_bytes;

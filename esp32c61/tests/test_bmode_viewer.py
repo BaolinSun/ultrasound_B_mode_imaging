@@ -90,6 +90,38 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual([p for p, body in device.calls if body is not None], ['/api/sdio/start', '/api/sdio/stop'])
         self.assertEqual(service.snapshot()['received_frames'], 1)
 
+    def test_stop_waits_for_host_and_callback_ownership_before_closing_receiver(self):
+        service, device = self.make_service()
+        stopped = threading.Event()
+        def delayed(path, body=None):
+            result = device(path, body)
+            if path == '/api/sdio/stop' and body is not None:
+                device.status['sdio'].update(stopping=True, free_slots=1)
+                stopped.set()
+            return result
+        service.api = delayed
+        service.start();wait_for(lambda: service.snapshot()['state'] == 'running')
+        transport = service.transport
+        service.stop();service.stop();self.assertTrue(stopped.wait(2))
+        time.sleep(.15)
+        self.assertEqual(service.snapshot()['state'], 'stopping')
+        self.assertFalse(transport.stop.is_set())
+        device.status['sdio']['stopping'] = False
+        time.sleep(.1)
+        self.assertFalse(transport.stop.is_set())  # Callback/slot still outstanding.
+        device.status['sdio']['free_slots'] = 2
+        wait_for(lambda: service.snapshot()['state'] == 'idle')
+        self.assertTrue(transport.stop.is_set())
+        self.assertFalse(service.snapshot()['source_status']['running'])
+        self.assertFalse(service.snapshot()['source_status']['stopping'])
+        self.assertEqual(sum(p == '/api/sdio/stop' and b is not None for p, b in device.calls), 1)
+
+    def test_stopping_device_is_not_taken_over(self):
+        service, device = self.make_service()
+        device.status['sdio']['stopping'] = True
+        service.start();wait_for(lambda: service.snapshot()['state'] == 'error')
+        self.assertFalse(any(body is not None for _, body in device.calls))
+
     def test_wrong_target_busy_protocol_and_port_occupied_never_stop_other_task(self):
         for issue in ('target', 'busy', 'protocol', 'port'):
             with self.subTest(issue=issue):

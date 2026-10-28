@@ -26,6 +26,7 @@ static void *completion_ctx;
 static const char *fault="";
 static bool target_configured=true;
 static unsigned wait_inject, wait_delivered;
+static bool auto_stop_ack=true, stop_in_wait;
 SemaphoreHandle_t xSemaphoreCreateMutex(void) { return !strcmp(fault,"mutex")?NULL:(void*)1; }
 int xSemaphoreTake(SemaphoreHandle_t p,uint32_t t) { (void)p;(void)t;assert(!locked);locked=true;return 1; }
 int xSemaphoreGive(SemaphoreHandle_t p) { (void)p;assert(locked);locked=false;return 1; }
@@ -61,6 +62,7 @@ esp_err_t sdio_slave_recv(sdio_slave_buf_handle_t*h,uint8_t**p,size_t*n,uint32_t
     }
     if(t && wait_inject) {
         wait_inject=0; wait_delivered=512;
+        if(stop_in_wait) {stop_in_wait=false;sdio_bridge_stop();}
         descriptor_t*d=&desc[0]; assert(d->loaded);
         memcpy(d->data,reference,512);d->loaded=false;
         *h=d;*p=d->data;*n=512;return ESP_OK;
@@ -69,7 +71,7 @@ esp_err_t sdio_slave_recv(sdio_slave_buf_handle_t*h,uint8_t**p,size_t*n,uint32_t
     return ESP_ERR_TIMEOUT;
 }
 uint8_t sdio_slave_read_reg(unsigned p) { assert(p<64);return regs[p]; }
-esp_err_t sdio_slave_write_reg(unsigned p,uint8_t v) { assert(p<64 && !(p>=28 && p<=31));regs[p]=v;return !strcmp(fault,"write")?ESP_ERR_INVALID_STATE:ESP_OK; }
+esp_err_t sdio_slave_write_reg(unsigned p,uint8_t v) { assert(p<64 && !(p>=28 && p<=31));regs[p]=v;if(auto_stop_ack && p==BR_STATUS && (v&BR_STOPPING))regs[BR_STOP_ACK]=regs[BR_STOP_REQ];return !strcmp(fault,"write")?ESP_ERR_INVALID_STATE:ESP_OK; }
 void config_store_get(app_config_t*c) { memset(c,0,sizeof(*c));if(target_configured)strcpy(c->target_ip,"192.168.3.31");c->target_port=50001; }
 void *psram_udp_alloc(size_t n) {
     static unsigned allocations;
@@ -125,7 +127,8 @@ int main(int argc,char **argv) {
         fault=argv[1];
         if(!strncmp(fault,"runtime-",8)) {
             const char *next=fault+8;fault="";assert(sdio_bridge_init()==ESP_OK);step();
-            select_host();assert(sdio_bridge_start(0)==ESP_OK);step();sdio_bridge_stop();
+            select_host();assert(sdio_bridge_start(0)==ESP_OK);step();
+            regs[BR_CMD]=BR_ABORT;regs[BR_CMD_SEQ]=br_next_seq(regs[BR_CMD_ACK]);step();
             fault=next;step();assert(!status().ready && !status().running);return 0;
         }
         assert(sdio_bridge_init()!=ESP_OK);
@@ -169,10 +172,10 @@ int main(int argc,char **argv) {
     begin(4,checksum);batch(0,16,true,false);
     regs[BR_CMD_SEQ]=br_next_seq(regs[BR_CMD_ACK]);step();assert(regs[BR_RESULT]==BR_REJECTED);
     sdio_bridge_stop();step();
-    assert(!status().running && !status().host_sdio);
+    assert(!status().running && status().host_sdio && status().stopping);
     assert(status().free_slots==1); /* SENDING lease cannot be returned yet. */
-    assert(!status().last_received_bytes && !status().last_received_frame); /* New session clears old facts. */
-    finish(RAW_CANCELLED);assert(status().free_slots==2);
+    assert(status().last_received_bytes==BR_FRAME_BYTES && status().last_received_frame==3); /* Stop keeps verified facts and the link. */
+    finish(RAW_CANCELLED);assert(status().free_slots==2 && !status().stopping && status().host_sdio);
     select_host();assert(sdio_bridge_start(0)==ESP_OK);step();begin(5,checksum);
     batch(0,16,true,false);clock_us+=31000000;step();
     assert(!status().running && status().free_slots==2);
@@ -215,7 +218,7 @@ int main(int argc,char **argv) {
     begin(32,checksum);frame(true,false);connected=false;step();
     assert(!status().running && status().free_slots==2);udp_busy=false;connected=true;
     sdio_bridge_stop();assert(sdio_bridge_start(1)==ESP_ERR_TIMEOUT);
-    assert(sdio_bridge_selftest()==ESP_ERR_TIMEOUT);step();
+    assert(sdio_bridge_selftest()==ESP_OK);finish(RAW_OK);step();
     select_host();assert(sdio_bridge_start(0)==ESP_OK);step();
     put32(BR_SESSION_ECHO,status().session);put32(BR_FRAME_ID,40);put32(BR_LENGTH,512);
     regs[BR_CMD]=BR_BEGIN;regs[BR_CMD_SEQ]=br_next_seq(regs[BR_CMD_ACK]);step();assert(regs[BR_RESULT]==BR_REJECTED);

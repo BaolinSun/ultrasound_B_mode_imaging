@@ -207,7 +207,7 @@ class ViewerService:
         if (not state.get('connected') or not state.get('upload_ready') or
                 not sdio.get('ready') or not sdio.get('host_sdio')):
             raise RuntimeError('设备 Wi-Fi/SDIO 尚未就绪，请检查原配置页')
-        if (state.get('busy') or sdio.get('running') or sdio.get('raw_busy') or
+        if (state.get('busy') or sdio.get('stopping') or sdio.get('running') or sdio.get('raw_busy') or
                 sdio.get('free_slots') != 2 or control.get('config_owned') or control.get('busy')):
             raise RuntimeError('设备被其他上传或配置占用，不接管现有任务')
         protocol = state.get('sdio_transport')
@@ -263,10 +263,14 @@ class ViewerService:
             if armed:
                 try:
                     self.api('/api/sdio/stop', {})
-                    deadline = time.monotonic()+2
+                    deadline = time.monotonic()+7
                     while True:
                         status = self.api('/api/status')
-                        if not status.get('busy') and not status.get('sdio', {}).get('running'):
+                        if (not status.get('busy') and not status.get('sdio', {}).get('running')
+                            and not status.get('sdio', {}).get('stopping')
+                            and status.get('sdio', {}).get('free_slots') == 2):
+                            with self.lock:
+                                self.device_history.append((time.monotonic(), dict(status['sdio'])))
                             break
                         if time.monotonic() >= deadline:
                             raise RuntimeError('设备未在截止时间内停止；请在原页面核对上传状态')

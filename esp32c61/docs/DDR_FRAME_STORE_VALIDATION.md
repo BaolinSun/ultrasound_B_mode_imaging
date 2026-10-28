@@ -8,7 +8,7 @@
 本次没有下载、烧录、启动扫描、开启高压，也没有重新打包或覆盖 BOOT.BIN。
 
 源码和使用说明见 [DDR_FRAME_STORE.md](DDR_FRAME_STORE.md)。
-必须配套使用 UBF1 bit、PS 帧租约代码和 SDIO v3 ESP32 固件；旧版不兼容时拒绝上传。
+必须配套使用 UBF1 bit、PS 帧租约代码和 SDIO v4 ESP32 固件；旧版不兼容时拒绝上传。
 网络 TCP/UDP 协议仍为 v1，原始 PSRAM UDP 自测不变。
 
 ## 已完成的软件与仿真检查

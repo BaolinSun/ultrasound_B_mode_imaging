@@ -146,11 +146,16 @@ class BenchmarkTests(unittest.TestCase):
 
     def test_tcp_auto_selection_and_device_stop_before_socket_close(self):
         with tempfile.TemporaryDirectory() as folder:
-            log=pathlib.Path(folder)/'tcp.jsonl';order=[];clock=[0.0]
+            log=pathlib.Path(folder)/'tcp.jsonl';order=[];clock=[0.0];stop_polls=[0]
             state={'busy':False,'sdio_transport':'tcp','sdio':{'host_sdio':True,'free_slots':2,'running':False}}
             def request(req,timeout):
                 if req.full_url.endswith('/start'):state['sdio']['running']=True;order.append('start')
-                if req.full_url.endswith('/stop'):state['sdio']['running']=False;order.append('device-stop')
+                if req.full_url.endswith('/stop'):
+                    state['sdio'].update(running=False,stopping=True,free_slots=1)
+                    stop_polls[0]=2;order.append('device-stop')
+                if req.full_url.endswith('/status') and stop_polls[0]:
+                    order.append('wait-stop');stop_polls[0]-=1
+                    if not stop_polls[0]:state['sdio'].update(stopping=False,free_slots=2)
                 return io.BytesIO(json.dumps(state).encode())
             class Control:
                 def write(self,data):order.append(data.decode().strip())
@@ -171,7 +176,7 @@ class BenchmarkTests(unittest.TestCase):
                  patch.object(b.time,'sleep',side_effect=lambda s:clock.__setitem__(0,clock[0]+s)), \
                  patch.object(b,'print',lambda *a,**kw:None,create=True):
                 self.assertEqual(b.main(),0)
-            self.assertEqual(order,['listening','start','QUIESCE','device-stop','STOP'])
+            self.assertEqual(order,['listening','start','QUIESCE','device-stop','wait-stop','wait-stop','STOP'])
 
 
 if __name__ == '__main__': unittest.main()

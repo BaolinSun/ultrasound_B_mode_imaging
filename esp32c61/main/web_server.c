@@ -237,6 +237,9 @@ static esp_err_t get_status(httpd_req_t *req)
         if (sdio) {
             cJSON_AddBoolToObject(sdio,"ready",s.ready);
             cJSON_AddBoolToObject(sdio,"running",s.running);
+            cJSON_AddBoolToObject(sdio,"stopping",s.stopping);
+            cJSON_AddNumberToObject(sdio,"reset_count",s.reset_count);
+            cJSON_AddStringToObject(sdio,"reset_reason",s.reset_reason?s.reset_reason:"none");
             cJSON_AddBoolToObject(sdio,"host_sdio",s.host_sdio);
             cJSON_AddBoolToObject(sdio,"raw_busy",s.raw_busy);
             cJSON_AddNumberToObject(sdio,"session",s.session);
@@ -294,7 +297,7 @@ static esp_err_t upload(httpd_req_t *req)
 static esp_err_t stop(httpd_req_t *req)
 {
     sdio_bridge_stop();
-    return message(req, "202 Accepted", "停止请求已提交；正在发送的数据报可能已进入本地协议栈");
+    return message(req, "202 Accepted", "停止请求已提交；等待 SDIO 主机与发送回调结束");
 }
 static esp_err_t sdio_start(httpd_req_t *req)
 {
