@@ -127,7 +127,10 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <span id="cpu0-mode" class="status-pill">未知</span><small id="cpu0-reason">等待有效状态</small>
 <span id="cpu0-wfi" class="status-pill">—</span>
 <div class="metric-grid"><div class="metric"><small>WFI 累计次数</small><strong id="cpu0-entries">—</strong></div><div class="metric"><small>累计等待</small><strong id="cpu0-wait">—</strong></div></div>
-<small>定时器中断：<span id="cpu0-irqs">—</span></small></div>
+<small>定时器中断：<span id="cpu0-irqs">—</span></small>
+<div class="button-row"><button id="cpu0-sleep" disabled>CPU0 待机</button><button id="cpu0-wake" class="secondary" disabled>唤醒 CPU0</button></div>
+<p id="cpu0-power-status" role="status" class="muted">等待组合电源控制状态</p>
+<small>仅组合控制 TX/AFE：待机 TX → 等 1 秒 → AFE；唤醒 AFE → 等 1 秒 → TX。CPU0 按原有条件自动进入 WFI；唤醒后不会自动开启扫描、高压或上传。</small></div>
 <div class="chip-panel"><h3>CPU1 · 未使用核</h3>
 <span id="cpu1-state" class="status-pill">未知</span><dl>
 <dt>复位</dt><dd><span id="cpu1-reset" class="status-pill">—</span></dd>
@@ -395,6 +398,12 @@ function renderZynqControl(s){
  previewDownsample();
  const afe=c.afe_state||'unknown',afeReady=c.synced&&afe==='ready';
  const tx=c.tx_state||'unknown',txReady=c.synced&&tx==='ready';
+ const combinedBlocked=!!controlBusy||!!c.busy||!c.ready||!c.cpu0_power_supported||!!c.config_owned||fields?.cfg==='1';
+ const bothSleeping=afe==='sleep'&&tx==='sleep',bothReady=afeReady&&txReady;
+ el('cpu0-sleep').disabled=combinedBlocked||!c.synced||bothSleeping||![afe,tx].every(v=>v==='ready'||v==='sleep');
+ el('cpu0-wake').disabled=combinedBlocked||bothReady;
+ const stages={idle:'尚未执行组合操作',tx_sleep:'TX 正在待机…',sleep_delay:'TX 待机已确认，等待 1 秒…',afe_sleep:'AFE 正在待机…',sleeping:'上次流程完成：TX 与 AFE 均已待机',afe_wake:'AFE 正在唤醒…',wake_delay:'AFE 就绪已确认，等待 1 秒…',tx_wake:'TX 正在唤醒…',awake:'上次流程完成：两颗就绪，扫描与高压仍关闭',failed:'组合操作失败，后续阶段已停止；请查询状态',unknown:'通信重置，操作结果未知；请查询状态'};
+ el('cpu0-power-status').textContent=c.cpu0_power_supported?(stages[c.cpu0_power_stage]||'组合操作状态未知'):'请更新支持 CPU0 一键待机的 ESP32 固件';
  renderPower(c,'tx');
  for(const id of ['tx-sleep','tx-wake','tx-query'])el(id).disabled=!!controlBusy||!!c.busy||!c.ready;
  el('tx-sleep').disabled=el('tx-sleep').disabled||!txReady||!!c.config_owned;
@@ -421,6 +430,7 @@ async function sendZynq(lines,options={}){
  controlBusy++;for(const id of controlButtons)el(id).disabled=true;
  el('control-feedback').textContent='命令处理中，请勿重复提交…';el('control-feedback').classList.toggle('chip-error',false);
  el('cpu1-disable').disabled=true;el('cpu1-query').disabled=true;
+ el('cpu0-sleep').disabled=true;el('cpu0-wake').disabled=true;
  for(const id of ['afe-sleep','afe-wake','afe-query','tx-sleep','tx-wake','tx-query'])el(id).disabled=true;
  for(const id of ['zynq-hv-off','zynq-safe-stop'])el(id).disabled=false;
  const output=[],results=[];
@@ -452,6 +462,11 @@ async function sendZynq(lines,options={}){
 for(const [id,lines] of [['zynq-query',['STATUS']],['zynq-hv-on',['HV ENABLE']],['zynq-hv-off',['HV DISABLE']],['zynq-start',['BEAM START']],['zynq-safe-stop',['HV DISABLE']]])
  el(id).addEventListener('click',()=>sendZynq(lines).catch(e=>notify(e.message,true)));
 el('cpu1-query').addEventListener('click',()=>sendZynq(['STATUS']).catch(e=>notify(e.message,true)));
+for(const [id,line] of [['cpu0-sleep','CPU0 SLEEP'],['cpu0-wake','CPU0 WAKE']])
+ el(id).addEventListener('click',()=>{if(el(id).disabled)return;return sendZynq([line],{verify(results){
+  const expected=line==='CPU0 SLEEP'?'@ACK 0 CPU0_SLEEP sleep':'@ACK 0 CPU0_WAKE ready';
+  if(results.length!==1||results[0].command!==line||results[0].response!==expected)throw Error('CPU0 组合操作结果未确认，请查询状态');
+ }}).catch(e=>notify(e.message,true))});
 el('cpu1-disable').addEventListener('click',async()=>{
  if(el('cpu1-disable').disabled)return;
  el('cpu1-action-result').textContent='正在请求关闭 CPU1 并读回确认…';

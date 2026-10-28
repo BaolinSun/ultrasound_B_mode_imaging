@@ -44,7 +44,7 @@ static esp_err_t commands(httpd_req_t *r) {
     for(int i=0;valid && i<count;i++) {
         cJSON *line=cJSON_GetArrayItem(list,i);
         if(!cJSON_IsString(line) || strlen(line->valuestring)>=WC_COMMAND) { valid=false; break; }
-        const char *reason=wc_validate(line->valuestring);
+        const char *reason=zynq_control_validate(line->valuestring);
         if(reason) { valid=false; why=reason; break; }
         strcpy(job->commands[i],line->valuestring);
     }

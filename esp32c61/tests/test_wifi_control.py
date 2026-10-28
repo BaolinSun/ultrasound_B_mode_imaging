@@ -18,6 +18,11 @@ import wifi_config_builder as builder
 
 
 class ControlTests(unittest.TestCase):
+    def test_cpu0_commands_are_explicit_esp_orchestration(self):
+        for command in ('CPU0 SLEEP','CPU0 WAKE'):
+            self.assertEqual(tool.validate_command(command),command)
+        for command in ('CPU0 START','CPU0 SLEEP 1','CPU0 WFI','CPU0'):
+            with self.assertRaises(ValueError):tool.validate_command(command)
     def test_cpu1_is_explicit_shutdown_only_and_dry_run_is_offline(self):
         self.assertEqual(tool.validate_command('CPU1 DISABLE'),'CPU1 DISABLE')
         for command in ('CPU1', 'CPU1 ENABLE', 'CPU1 WAKE', 'CPU1 DISABLE 1'):

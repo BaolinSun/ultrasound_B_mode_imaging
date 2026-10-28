@@ -83,6 +83,36 @@ test('CPU card clears stale/lost/offline readings and never renders old zeros as
 
 const html = readFileSync(new URL('../main/index.html', import.meta.url), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+test('CPU0 buttons submit one server-side workflow, respect gates and never start HV or scan',async()=>{
+ const e=setup();await e.settle();
+ assert.equal(e.elements['cpu0-sleep'].disabled,true); // Older firmware cannot silently accept.
+ Object.assign(e.backend.status.zynq_control,{cpu0_power_supported:true,cpu0_power_stage:'idle',afe_state:'ready',tx_state:'ready'});
+ await e.context.refresh();assert.equal(e.elements['cpu0-sleep'].disabled,false);assert.equal(e.elements['cpu0-wake'].disabled,true);
+ for(const field of ['busy','config_owned']){
+  e.backend.status.zynq_control[field]=true;await e.context.refresh();assert.equal(e.elements['cpu0-sleep'].disabled,true);e.backend.status.zynq_control[field]=false;
+ }
+ e.backend.job={busy:false,state:'succeeded',count:1,completed:1,results:[{command:'CPU0 SLEEP',response:'@ACK 0 CPU0_SLEEP sleep'}]};
+ e.backend.jobHook=()=>Object.assign(e.backend.status.zynq_control,{afe_state:'sleep',tx_state:'sleep',cpu0_power_stage:'sleeping'});
+ await e.context.refresh();await e.elements['cpu0-sleep'].listeners.click();
+ assert.deepEqual(e.backend.commandBody.commands,['CPU0 SLEEP']);assert.equal(e.elements['cpu0-sleep'].disabled,true);assert.equal(e.elements['cpu0-wake'].disabled,false);
+ assert.match(e.elements['cpu0-power-status'].textContent,/均已待机/);
+ e.backend.job={busy:false,state:'succeeded',count:1,completed:1,results:[{command:'CPU0 WAKE',response:'@ACK 0 CPU0_WAKE ready'}]};
+ e.backend.jobHook=()=>Object.assign(e.backend.status.zynq_control,{afe_state:'ready',tx_state:'ready',cpu0_power_stage:'awake'});
+ await e.elements['cpu0-wake'].listeners.click();assert.deepEqual(e.backend.commandBody.commands,['CPU0 WAKE']);
+ assert.match(e.elements['cpu0-power-status'].textContent,/扫描与高压仍关闭/);
+ assert.equal(e.backend.calls.filter(c=>c.options.method==='POST').length,2);
+ for(const stage of ['sleep_delay','wake_delay','failed','unknown']){
+  e.backend.status.zynq_control.cpu0_power_stage=stage;await e.context.refresh();assert.ok(e.elements['cpu0-power-status'].textContent.length>3);
+ }
+ e.backend.offline=true;await e.context.refresh();assert.equal(e.elements['cpu0-sleep'].disabled,true);assert.equal(e.elements['cpu0-wake'].disabled,true);
+});
+test('CPU0 rejects mismatched completion and supports wake from mixed chip states',async()=>{
+ const e=setup();await e.settle();Object.assign(e.backend.status.zynq_control,{cpu0_power_supported:true,afe_state:'ready',tx_state:'sleep'});
+ await e.context.refresh();assert.equal(e.elements['cpu0-wake'].disabled,false);
+ e.backend.job={busy:false,state:'succeeded',count:1,completed:1,results:[{command:'CPU0 WAKE',response:'@ACK 0 OK'}]};
+ await e.elements['cpu0-wake'].listeners.click();assert.match(e.elements['control-feedback'].textContent,/未确认/);
+ assert.equal(e.backend.calls.filter(c=>c.options.method==='POST').length,1);
+});
 test('visual control tiles decode PS fields, mark old snapshots and clear disconnected values',async()=>{
  const e=setup();await e.settle();
  Object.assign(e.backend.status.zynq_control,{ps_status:'@STATUS v=1 cfg=0 run=1 hv=1 down=0',status_age_ms:500});

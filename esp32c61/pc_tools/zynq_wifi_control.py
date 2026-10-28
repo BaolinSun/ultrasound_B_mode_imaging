@@ -40,6 +40,8 @@ def validate_command(line):
         return line
     if t == ["CPU1", "DISABLE"]:
         return line
+    if t in (["CPU0", "SLEEP"], ["CPU0", "WAKE"]):
+        return line
     if len(t) >= 2:
         root, op = t[:2]
         if root == "CFG":

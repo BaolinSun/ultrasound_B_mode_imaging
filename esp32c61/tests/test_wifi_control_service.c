@@ -23,6 +23,11 @@ static unsigned wake_queries;
 static unsigned host_idle_reads;
 static unsigned cpu1_actions,ps_cpu1;
 static bool nack_cpu1;
+static const char *fail_command;
+static bool reset_in_delay,off_in_delay;
+static unsigned trace_count;
+static char wire_trace[1024][WC_COMMAND];
+static int64_t wire_time[1024];
 SemaphoreHandle_t xSemaphoreCreateMutex(void) { return !strcmp(fault,"mutex")?NULL:(void*)1; }
 int xSemaphoreTake(SemaphoreHandle_t s,unsigned wait) { (void)wait;assert(s&&!held);held=1;return 1; }
 int xSemaphoreGive(SemaphoreHandle_t s) { assert(s&&held);held=0;return 1; }
@@ -49,7 +54,14 @@ int xTaskCreate(void(*fn)(void*),const char *name,unsigned stack,void *ctx,unsig
 }
 void xTaskNotifyGive(TaskHandle_t t) { assert(t);notifications++; }
 unsigned ulTaskNotifyTake(int clear,unsigned wait) { (void)clear;(void)wait;longjmp(idle,1);return 0; }
-void vTaskDelay(unsigned ticks) { clock_us+=(int64_t)ticks*1000;if(drain_steps&&!--drain_steps)drained=true; }
+void vTaskDelay(unsigned ticks) {
+    clock_us+=(int64_t)ticks*1000;if(drain_steps&&!--drain_steps)drained=true;
+    if(cpu0_sequence_active)assert(gate);
+    if(cpu0_sequence_active&&!strcmp(cpu0_power_stage,"sleep_delay")) {
+        if(reset_in_delay){reset_in_delay=false;zynq_control_uart_lost();}
+        if(off_in_delay){off_in_delay=false;zynq_control_job j={.client=2,.request=9999,.count=1};strcpy(j.commands[0],"HV DISABLE");assert(zynq_control_submit(&j,false,&injected_id)==ESP_OK);}
+    }
+}
 int64_t esp_timer_get_time(void) { return clock_us; }
 uint32_t esp_random(void) { static uint32_t next=1;return ++next; }
 bool zynq_uart_bridge_available(void) { return true; }
@@ -62,7 +74,11 @@ void cJSON_AddStringToObject(cJSON *j,const char *key,const char *v) { (void)j;(
 esp_err_t zynq_uart_bridge_send(const char *data,size_t length) {
     (void)length;sends++;
     wc_message m;assert(wc_decode(data,false,&m));char result[128];
-    if(!strcmp(m.text,"STATUS")) snprintf(result,sizeof(result),"@STATUS v=1 cfg=%u owner=2 seq=1 run=0 hv=%u down=%u afe=%s tx=%s cpu1_disabled=%u",ps_cfg,ps_hv,ps_down,ps_afe,ps_tx,ps_cpu1);
+    assert(strncmp(m.text,"CPU0 ",5)); /* CPU0 commands terminate at ESP, never PS. */
+    assert(trace_count<1024);strcpy(wire_trace[trace_count],m.text);wire_time[trace_count++]=clock_us;
+    if(cpu0_sequence_active)assert(gate);
+    if(fail_command&&!strcmp(m.text,fail_command))strcpy(result,"@NACK 0 INJECTED_POWER_FAILURE");
+    else if(!strcmp(m.text,"STATUS")) snprintf(result,sizeof(result),"@STATUS v=1 cfg=%u owner=2 seq=1 run=0 hv=%u down=%u afe=%s tx=%s cpu1_disabled=%u",ps_cfg,ps_hv,ps_down,ps_afe,ps_tx,ps_cpu1);
     else if(!strcmp(m.text,"CPU1 DISABLE")){cpu1_actions++;if(nack_cpu1)strcpy(result,"@NACK 0 CPU1_RESET_TIMEOUT");else{ps_cpu1=1;strcpy(result,"@ACK 0 CPU1_DISABLE cpu1_disabled=1");}}
     else if(!strcmp(m.text,"TX7332 PREPARE")){assert(gate);ps_hv=0;ps_tx="quiescing";tx_prepares++;strcpy(result,"@ACK 0 TX_PREPARE quiescing");}
     else if(!strcmp(m.text,"TX7332 SLEEP")){assert(gate&&drained&&!ps_hv);ps_tx="sleep";tx_sleeps++;strcpy(result,"@ACK 0 TX_SLEEP sleep");}
@@ -96,6 +112,10 @@ static void run_worker(void) { if(setjmp(idle)==0)control_task(NULL);assert(!hel
 static uint32_t submit(uint32_t client,uint32_t request,const char *a,const char *b) {
     zynq_control_job job={.client=client,.request=request,.count=b?2:1};strcpy(job.commands[0],a);if(b)strcpy(job.commands[1],b);
     uint32_t id;assert(zynq_control_submit(&job,true,&id)==ESP_OK);run_worker();return id;
+}
+static unsigned find_wire(unsigned start,const char *command) {
+    for(unsigned i=start;i<trace_count;i++)if(!strcmp(wire_trace[i],command))return i;
+    return trace_count;
 }
 int main(int argc,char **argv) {
     if(argc>1) { fault=argv[1];assert(zynq_control_start()!=ESP_OK);assert(!ready);return 0; }
@@ -205,6 +225,46 @@ int main(int argc,char **argv) {
     job.client=2;job.request=507;job.count=1;strcpy(job.commands[0],"CPU1 DISABLE");
     assert(zynq_control_submit(&job,false,&id)==ESP_ERR_TIMEOUT);
     id=submit(1,508,"CFG ABORT",NULL);
+    unsigned begin=trace_count;
+    id=submit(1,600,"CPU0 SLEEP",NULL);
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"succeeded")&&!cpu0_sequence_active&&gate);
+    assert(!strcmp(ps_tx,"sleep")&&!strcmp(ps_afe,"sleep")&&!ps_hv&&!strcmp(cpu0_power_stage,"sleeping"));
+    unsigned tx_done=find_wire(find_wire(begin,"TX7332 SLEEP"),"TX7332 STATUS"),afe_begin=find_wire(begin,"AFE PREPARE");
+    assert(tx_done<afe_begin&&wire_time[afe_begin]-wire_time[tx_done]>=1000000);
+    zynq_control_job combined_again={.client=1,.request=600,.count=1};strcpy(combined_again.commands[0],"CPU0 SLEEP");
+    unsigned before_again=sends;assert(zynq_control_submit(&combined_again,false,&duplicate)==ESP_OK&&duplicate==id&&sends==before_again);
+    begin=trace_count;id=submit(1,601,"CPU0 WAKE",NULL);
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"succeeded")&&!gate&&!ps_hv);
+    assert(!strcmp(ps_afe,"ready")&&!strcmp(ps_tx,"ready")&&!strcmp(cpu0_power_stage,"awake"));
+    unsigned tx_wake=find_wire(begin,"TX7332 WAKE"),afe_done=find_wire(begin,"AFE STATUS");
+    while(find_wire(afe_done+1,"AFE STATUS")<tx_wake)afe_done=find_wire(afe_done+1,"AFE STATUS");
+    assert(afe_done<tx_wake&&wire_time[tx_wake]-wire_time[afe_done]>=1000000);
+    /* Repeated explicit operations remain safe; no automatic imaging/HV action. */
+    id=submit(1,602,"CPU0 SLEEP",NULL);id=submit(1,603,"CPU0 SLEEP",NULL);
+    id=submit(1,604,"CPU0 WAKE",NULL);assert(!ps_hv&&!gate);
+    job.client=1;job.request=605;job.count=2;strcpy(job.commands[0],"CPU0 SLEEP");strcpy(job.commands[1],"STATUS");
+    assert(zynq_control_submit(&job,false,&id)==ESP_ERR_INVALID_ARG);
+    id=submit(1,606,"CFG BEGIN 60",NULL);job.count=1;job.request=607;
+    assert(zynq_control_submit(&job,false,&id)==ESP_ERR_TIMEOUT);id=submit(1,608,"CFG ABORT",NULL);
+    ps_cfg=1;begin=trace_count;id=submit(1,609,"CPU0 SLEEP",NULL);ps_cfg=0;
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"failed")&&find_wire(begin,"TX7332 PREPARE")==trace_count);
+    fail_command="TX7332 PREPARE";begin=trace_count;id=submit(1,610,"CPU0 SLEEP",NULL);fail_command=NULL;
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"failed")&&find_wire(begin,"AFE PREPARE")==trace_count);
+    fail_command="AFE PREPARE";id=submit(1,611,"CPU0 SLEEP",NULL);fail_command=NULL;
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"failed")&&!strcmp(ps_tx,"sleep")&&!ps_hv);
+    id=submit(1,612,"CPU0 WAKE",NULL);
+    id=submit(1,620,"CPU0 SLEEP",NULL);
+    fail_command="AFE WAKE";begin=trace_count;id=submit(1,621,"CPU0 WAKE",NULL);fail_command=NULL;
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"failed")&&find_wire(begin,"TX7332 WAKE")==trace_count);
+    fail_command="TX7332 WAKE";id=submit(1,622,"CPU0 WAKE",NULL);fail_command=NULL;
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"failed")&&!strcmp(ps_afe,"ready")&&!strcmp(ps_tx,"sleep")&&!ps_hv);
+    id=submit(1,623,"CPU0 WAKE",NULL);
+    off_in_delay=true;begin=trace_count;id=submit(1,613,"CPU0 SLEEP",NULL);
+    assert(find_wire(begin,"AFE PREPARE")==trace_count&&!ps_hv);
+    assert(zynq_control_job_get(injected_id,&result)&&!strcmp(result.state,"succeeded"));
+    id=submit(1,614,"CPU0 WAKE",NULL);
+    reset_in_delay=true;begin=trace_count;id=submit(1,615,"CPU0 SLEEP",NULL);
+    assert(zynq_control_job_get(id,&result)&&!strcmp(result.state,"unknown")&&find_wire(begin,"AFE PREPARE")==trace_count&&gate&&!cpu0_sequence_active);
     cJSON json;zynq_control_status_json(&json);
     puts("PASS ESP worker: no NVS/USB credential dependency; bounded queue/segmented+late replies/dedup/owner/drain/timeout/reset/watchdog/cleanup");
     return 0;

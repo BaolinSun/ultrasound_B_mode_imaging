@@ -56,6 +56,12 @@ int main(void) {
     commands(&r);assert(strstr(r.status,"400")); /* Removing authentication must not remove HV confirmation. */
     r=request("{\"client_id\":\"00000001\",\"request_id\":\"00000002\",\"commands\":[\"HV ENABLE\"],\"allow_hv\":true}");
     commands(&r);assert(strstr(r.status,"202"));
+    r=request("{\"client_id\":\"00000001\",\"request_id\":\"00000002\",\"commands\":[\"CPU0 SLEEP\"]}");
+    commands(&r);assert(strstr(r.status,"202"));
+    r=request("{\"client_id\":\"00000001\",\"request_id\":\"00000002\",\"commands\":[\"CPU0 WAKE\"]}");
+    commands(&r);assert(strstr(r.status,"202"));
+    r=request("{\"client_id\":\"00000001\",\"request_id\":\"00000002\",\"commands\":[\"CPU0 SLEEP 1\"]}");
+    unsigned previous=submitted;commands(&r);assert(strstr(r.status,"400")&&submitted==previous);
     assert(zynq_control_http_register(NULL)==0&&registered==2);
     puts("PASS actual HTTP: token-free commands and jobs/service readiness/type/size/fragmented body/invalid JSON/geometry/injection/HV confirmation/async submit/job bounds");return 0;
 }

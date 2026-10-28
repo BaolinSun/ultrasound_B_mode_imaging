@@ -2,6 +2,13 @@
 #include "esp_err.h"
 #include "wifi_control_protocol.h"
 #include "cJSON.h"
+/* ESP-only orchestration commands: never forward these to PS UART grammar. */
+static inline bool zynq_cpu0_power_op(const char *s) {
+    return !strcmp(s,"CPU0 SLEEP") || !strcmp(s,"CPU0 WAKE");
+}
+static inline const char *zynq_control_validate(const char *s) {
+    return s && zynq_cpu0_power_op(s)?NULL:wc_validate(s);
+}
 typedef struct {
     uint32_t client, request, id;
     unsigned count, completed;
