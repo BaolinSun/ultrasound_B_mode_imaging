@@ -157,3 +157,5 @@ int main(void){
     puts("PASS CPU0 adapter: private timer/selftest/conflicts, IRQs, hardware/queue guards, wake, fallback, foreground/LED");
     return 0;
 }
+
+void startup_recovery_poll(void) {}

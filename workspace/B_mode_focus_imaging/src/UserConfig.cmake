@@ -49,6 +49,7 @@ set(USER_INCLUDE_DIRECTORIES
 set(USER_COMPILE_SOURCES
 "system_ctrl/cpu1_power.c"
 "system_ctrl/cpu0_idle.c"
+"system_ctrl/startup_recovery.c"
 "AFE5832/afe_power.c"
 "TX7332/tx_power.c"
 "data_transfer/frame_crc.c"

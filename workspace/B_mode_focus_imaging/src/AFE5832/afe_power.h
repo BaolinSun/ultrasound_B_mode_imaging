@@ -2,6 +2,7 @@
 #define UB_AFE_POWER_H
 #include "xil_types.h"
 void afe_power_init(void);
+u32 afe_power_operation_sequence(void);
 void afe_power_poll(void);
 int afe_power_allowed(void);
 int afe_power_idle(void);

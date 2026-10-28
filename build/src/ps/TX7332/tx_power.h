@@ -2,6 +2,7 @@
 #define UB_TX_POWER_H
 #include "xil_types.h"
 void tx_power_init(void);
+u32 tx_power_operation_sequence(void);
 void tx_power_poll(void);
 int tx_power_allowed(void);
 int tx_power_command(const char *,u32);

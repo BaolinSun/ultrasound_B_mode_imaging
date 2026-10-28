@@ -20,6 +20,7 @@
 - [CPU1 固定复位、停钟与状态查询（历史实现）](CPU1_CLOCK_STOP.md)
 - [CPU0 双待机安全空闲、WFI 与唤醒验证](CPU0_IDLE_WFI.md)
 - [CPU0 面板一键 TX/AFE 待机与唤醒](CPU0_COMBINED_POWER.md)
+- [冷启动帧缓存失败后达到 60°C 自动恢复 PS 图像源](COLD_START_RECOVERY.md)
 - [CPU0 / CPU1 独立状态卡片与固件更新](CPU_STATUS_CARD.md)
 
 工程说明统一放在 `esp32c61/docs/`。除非另有说明，本文及同目录文档中的 PC 接收、ESP32 构建命令仍在 `esp32c61` 目录执行，不是在 `docs` 目录执行；明确要求在成像工程根目录执行的命令保持原要求。代码、脚本、固件和图像文件均未移动。

@@ -5,6 +5,7 @@
 /* Canonical definition: esp32c61/protocol/bridge_protocol.h; checked by tests. */
 void sdio_bridge_init(void);
 void sdio_bridge_poll(void);
+int sdio_bridge_source_recovery_begin(void); /* idle-only detach, no lease revocation */
 int sdio_bridge_power_idle(void);
 int sdio_bridge_idle_pending(void); /* read-only SD1 CMD/DAT/DMA snapshot */
 int sdio_bridge_output_is_sdio(void);

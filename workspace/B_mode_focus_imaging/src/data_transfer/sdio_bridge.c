@@ -56,6 +56,13 @@ static void fail_link(void) {
     xil_printf("@SDIO ERROR failures=%u; re-enumerate, no payload replay\r\n",(unsigned)failures);
 }
 int sdio_bridge_power_idle(void) { return phase==IDLE && !frame.lease; }
+int sdio_bridge_source_recovery_begin(void) {
+    if(!sdio_bridge_power_idle()) return -1;
+    /* Successful boot cleanup plus no live lease; never touch an invalid base. */
+    if(online && sdio_host_quiesce(&host)!=SDIO_HOST_OK) return -1;
+    online=0;store_ready=0;phase=IDLE;offset=0;reset_on_connect=1;
+    return 0;
+}
 int sdio_bridge_idle_pending(void) {
     /* SD1 only: PSTATE CMD/DAT inhibit, DAT active, write/read active.
      * Never reset the bus, clear status or issue CMD52 from the atomic check. */
@@ -91,7 +98,7 @@ static void poll_once(void) {
                 (unsigned)version,(unsigned)BR_SDIO_VERSION);
             fail_link(); return;
         }
-        int source_ready=frame_store_is_ready();
+        int source_ready=frame_store_is_ready() && !startup_recovery_blocks();
         if(read8(BR_CMD_ACK,&command_seq) ||
            write8(BR_SOURCE_FLAGS,source_ready?1U:8U) ||
            write8(BR_HOST_MODE,source_ready?1U:0U)) { fail_link(); return; }
@@ -102,7 +109,7 @@ static void poll_once(void) {
     /* Enumeration alone does not prove a usable image source. Keep host mode
      * unavailable so the existing ESP start check rejects immediately. Never
      * retry INIT here: it could revoke a live lease after a runtime fault. */
-    if(!frame_store_is_ready() && phase==IDLE) {
+    if((!frame_store_is_ready() || startup_recovery_blocks()) && phase==IDLE) {
         if(write8(BR_SOURCE_FLAGS,8U) || write8(BR_HOST_MODE,0U)) fail_link();
         return;
     }
@@ -230,6 +237,7 @@ void sdio_bridge_poll(void) {
 /* USB build: no SDIO DDR frame allocation or SD1 register/DMA access. */
 void sdio_bridge_init(void) { xil_printf("@OUTPUT compiled=USB\r\n"); }
 void sdio_bridge_poll(void) { }
+int sdio_bridge_source_recovery_begin(void) { return 0; }
 int sdio_bridge_power_idle(void) { return 1; }
 int sdio_bridge_idle_pending(void) { return 0; }
 #endif

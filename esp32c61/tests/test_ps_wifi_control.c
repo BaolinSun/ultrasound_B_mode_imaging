@@ -6,7 +6,9 @@
 #include "../../build/src/ps/data_transfer/frame_store.h"
 #include <assert.h>
 #include <stdio.h>
+int uart_config_active(void);
 static int afe_ready=1,tx_ready=1;
+static int boot_wait;
 static unsigned cpu1_disabled=1;
 static unsigned cpu1_calls,report_requests;
 static const char *cpu1_failure;
@@ -195,6 +197,14 @@ int main(void) {
     uart_handle_wifi_line("BRAM WR t_timing 9 1 0",12,capture);
     assert(strstr(answer,"NO_CFG")&&writes==previous);
     usb_drain_failure=0;
+    boot_wait=1;hv=run=0;previous=writes;
+    uart_handle_wifi_line("HV ENABLE",12,capture);assert(strstr(answer,"BOOT_RECOVERY_WAIT")&&!hv);
+    uart_handle_wifi_line("BEAM START",12,capture);assert(strstr(answer,"BOOT_RECOVERY_WAIT")&&!run);
+    uart_handle_wifi_line("CFG BEGIN 55",12,capture);assert(strstr(answer,"BOOT_RECOVERY_WAIT")&&!uart_config_active()&&writes==previous);
+    uart_handle_wifi_line("HV DISABLE",12,capture);assert(strstr(answer,"ACK")&&!hv&&!run);
+    uart_handle_wifi_line("BEAM STOP",12,capture);assert(strstr(answer,"ACK")&&!hv&&!run);
+    uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"@STATUS"));
+    boot_wait=0;
     afe_ready=0;
     uart_handle_usb_line("CFG BEGIN 901",capture);assert(strstr(answer,"AFE_NOT_READY"));
     uart_handle_usb_line("HV ENABLE",capture);assert(strstr(answer,"AFE_NOT_READY"));
@@ -251,3 +261,5 @@ int main(void) {
     puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE+TX power interlocks/bounded TX/CPU1 warning only/STOP closes HV first");
     return 0;
 }
+
+int startup_recovery_blocks(void) { return boot_wait; }

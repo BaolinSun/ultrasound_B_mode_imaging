@@ -208,3 +208,5 @@ int main(void) {
     assert(power_blocks==1&&image.blocked);usb_transport_power_gate(0);
     puts("PASS real USB adapter: IN descriptors, persistent replies, stream isolation, flush/reset, config drain, independent power votes, macro mode");
 }
+
+int startup_recovery_blocks(void) { return 0; }

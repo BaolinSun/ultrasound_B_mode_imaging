@@ -5,7 +5,7 @@
 #include "xbram.h"
 void hv_enable(void);
 void hv_disable(void);
-static int resume_failure;
+static int resume_failure,boot_wait;
 int afe_power_allowed(void) { return 1; }
 int tx_power_allowed(void) { return 1; }
 int frame_store_resume(void) { return resume_failure?-1:0; }
@@ -39,6 +39,10 @@ static void check_resume(void) {
 }
 int main(void) {
     assert(!Beamform_GetRunRequest());
+    boot_wait=1;count=0;
+    assert(Beamform_Resume()==-1 && Beamform_Start()==-1 && !count && !hv);
+    Beamform_SetControl(1,1);assert(!count);
+    boot_wait=0;
     Beamform_Halt();check_resume();
     u32 data=0xdeadbeefU;count=0;
     assert(Tx7332_ReadRegister(1,&data)==BRAM_CFG_STATUS_BUSY&&data==0xdeadbeefU&&!count&&!reads);
@@ -74,3 +78,5 @@ int main(void) {
     puts("PASS actual PS MMIO: clean SPI edge/resume/pause/halt/run shadow/no write-only reads/TX busy/legacy start-stop");
     return 0;
 }
+
+int startup_recovery_blocks(void) { return boot_wait; }

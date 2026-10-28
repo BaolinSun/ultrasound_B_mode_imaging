@@ -4,6 +4,7 @@
 #include "cpu0_idle_test_services.h"
 #else
 #include "temp.h"
+#include "startup_recovery.h"
 #include "temp_hw.h"
 #include "../GPIO/gpio.h"
 #include "../AFE5832/afe_power.h"
@@ -223,6 +224,7 @@ void cpu0_foreground_poll(void) {
     if(temperature_seq!=cpu_report_temperature_seq){cpu_report_temperature_seq=temperature_seq;cpu_report_pending=1;}
     uart_process_commands(); /* Includes power transitions; also retained in long I/O waits. */
     usb_process_commands();
+    startup_recovery_poll(); /* Cold-start only, before SDIO foreground work. */
     int q=cpu0_idle_quiet();
     if(!q)sdio_bridge_poll(); /* USB build supplies a no-op; no protocol change. */
     uint64_t now=now_us(0);

@@ -24,6 +24,7 @@ static int overwrite_during_send;
 static u32 source_frame, source_length=BR_FRAME_BYTES, source_down;
 static unsigned lease_releases, quiesced;
 static int source_ready=1;
+static int recovery_blocked;
 int frame_store_is_ready(void) { return source_ready; }
 static u32 hardware_busy;
 u32 Xil_In32(UINTPTR address) { return address==0xE0101024U?hardware_busy:0; }
@@ -143,7 +144,12 @@ int main(void) {
     assert(regs[BR_HOST_MODE]==0 && regs[BR_SOURCE_FLAGS]==8 && !commits && !source_frame);
     stream();sdio_bridge_poll();
     assert(regs[BR_HOST_MODE]==0 && regs[BR_SOURCE_FLAGS]==8 && !commits && !source_frame);
-    source_ready=1;
+    source_ready=1;recovery_blocked=1;
+    assert(sdio_bridge_source_recovery_begin()==0);
+    sdio_bridge_poll();tick+=501;sdio_bridge_poll();
+    assert(regs[BR_HOST_MODE]==0 && !commits && !source_frame);
+    recovery_blocked=0;
+    sdio_bridge_init();
     connect();unsigned old=commits;
     for(unsigned i=0;i<10;i++)sdio_bridge_poll();assert(commits==old);
     /* Four frames cross the 255 -> 1 window-sequence boundary. */
@@ -228,3 +234,5 @@ int main(void) {
 #endif
     return 0;
 }
+
+int startup_recovery_blocks(void) { return recovery_blocked; }

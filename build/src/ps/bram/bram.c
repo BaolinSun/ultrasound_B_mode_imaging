@@ -142,7 +142,7 @@ void Beamform_Halt(void)
 
 int Beamform_Start(void)
 {
-    if(!afe_power_allowed()) return -1;
+    if(!imaging_power_allowed()) return -1;
     if(frame_store_resume()!=0) {
         hv_disable(); Beamform_Halt();
         xil_printf("@DDR ERROR resume/ABI; scan not started\r\n"); return -1;

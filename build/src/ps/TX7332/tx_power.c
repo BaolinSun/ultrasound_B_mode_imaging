@@ -13,6 +13,8 @@
 #include "../../../../common/tx_power_machine.c"
 static tx_power_machine machine;
 static int initialized;
+static u32 operation_sequence;
+u32 tx_power_operation_sequence(void) { return operation_sequence; }
 static uint64_t ms(void *c) {(void)c;XTime t;XTime_GetTime(&t);return (uint64_t)t*1000U/(uint64_t)(COUNTS_PER_SECOND);}
 static uint32_t read_reg(void *c,unsigned a) {(void)c;return Xil_In32(TP_BASE+a);}
 static void write_reg(void *c,unsigned a,uint32_t v) {
@@ -54,6 +56,7 @@ const char *tx_power_state_name(void) {
 }
 const char *tx_power_error(void) {return initialized?machine.error:"TX_NOT_INITIALIZED";}
 int tx_power_command(const char *op,u32 owner) {
+    operation_sequence++; /* Explicit commands supersede automatic boot recovery. */
     if(!initialized)return -1;
     if(machine.state==TX_READY)machine.settle=0;
     tp_poll(&machine);

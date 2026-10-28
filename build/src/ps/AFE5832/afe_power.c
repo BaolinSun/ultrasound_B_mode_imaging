@@ -15,6 +15,8 @@
 #include "../../../../common/afe_power_machine.c"
 static afe_power_machine machine;
 static int initialized;
+static u32 operation_sequence;
+u32 afe_power_operation_sequence(void) { return operation_sequence; }
 static const u8 saved_addresses[]={1,2,3,4,0xc6,0xc7,0xc8,0x41,0x42};
 static u32 saved[sizeof(saved_addresses)];
 static int have_saved;
@@ -76,6 +78,7 @@ void afe_power_init(void) {
     if(machine.state==AFE_READY && (!boot_epoch || rd(0,AP_EPOCH)!=boot_epoch || rd(0,AP_ACK_EPOCH)!=boot_epoch)) {
         machine.state=AFE_FAULT;machine.error="AFE_BOOT_EPOCH";stop(0);gate(0,true);
     }
+    if(machine.state==AFE_READY) gate(0,false); /* Release only this AFE vote after a confirmed rebind. */
 }
 void afe_power_poll(void) { if(initialized) ap_poll(&machine); }
 int afe_power_idle(void) { return idle(0); }
@@ -94,6 +97,7 @@ const char *afe_power_state_name(void) {
 const char *afe_power_error(void) { return initialized?machine.error:"AFE_NOT_INITIALIZED"; }
 u32 afe_power_flags(void) { return initialized && rd(0,AP_VERSION)==AP_MAGIC?rd(0,AP_STATUS):0; }
 int afe_power_command(const char *op,u32 owner) {
+    operation_sequence++; /* Explicit commands supersede automatic boot recovery. */
     if(!initialized) return -1;
     if(!strcmp(tx_power_state_name(),"quiescing")||!strcmp(tx_power_state_name(),"waking")) {
         machine.error="AFE_TX_TRANSITION";return -1;

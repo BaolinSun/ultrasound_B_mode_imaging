@@ -28,6 +28,7 @@
 #include "usb/usb_transport.h"
 #include "xiltimer.h"
 #include "system_ctrl/temp.h"
+#include "system_ctrl/startup_recovery.h"
 #include "system_ctrl/cpu1_power.h"
 #include "system_ctrl/cpu0_idle.h"
 #include "bram/bram.h"
@@ -69,7 +70,8 @@ int main() {
 
 	/* A hot application download can inherit USB IN DMA using a DDR slot. */
 	int frame_init_rc = -1;
-	if (usb_transport_boot_quiesce() == 0) frame_init_rc = frame_store_init();
+	int inherited_usb_idle = usb_transport_boot_quiesce() == 0;
+	if (inherited_usb_idle) frame_init_rc = frame_store_init();
 	else xil_printf("@USB FATAL inherited DMA not idle; DDR INIT blocked\r\n");
 	const volatile frame_store_init_diag_t *fd=frame_store_init_diagnostic();
 	xil_printf("@DDR INIT rc=%d stage=%u version=%08x seq=%u ack=%u result=%u flags=%08x\r\n",
@@ -96,6 +98,7 @@ int main() {
     tx_power_init();
     xil_printf("@TX state=%s flags=%08x error=%s\r\n",tx_power_state_name(),(unsigned)tx_power_flags(),tx_power_error());
 	xil_printf("@AFE state=%s flags=%08x error=%s\r\n",afe_power_state_name(),(unsigned)afe_power_flags(),afe_power_error());
+	startup_recovery_init(frame_init_rc,inherited_usb_idle);
 	temperature_service_init();
 	xil_printf("@READY CONFIG\r\n");
 	xil_printf("Beamform ready; STOP.\r\n");

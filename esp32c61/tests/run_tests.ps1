@@ -19,6 +19,7 @@ $env:PYTHONUTF8 = '1'
 & (Join-Path $projectRoot '../build/scripts/test_provisioning.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_cpu1.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_cpu0.ps1') -Compiler $Compiler
+& (Join-Path $projectRoot '../build/scripts/test_startup_recovery.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_cpu_status.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_usb_frame.ps1') -Compiler $Compiler -OutputDirectory (Join-Path $testOutput 'usb-frame')
 $socketOutput = Join-Path $testOutput 'tcp-socket'

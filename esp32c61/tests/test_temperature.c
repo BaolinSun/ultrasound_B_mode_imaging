@@ -112,6 +112,9 @@ static void cache_tests(void) {
     assert(!strcmp(temperature_channel_status(&s,3),"waiting"));
 }
 static void service_tests(void) {
+    int32_t local_mc;
+    assert(temperature_service_zynq_mc(&local_mc)!=0);
+    assert(temperature_service_zynq_mc(NULL)!=0);
     assert(temperature_service_remaining_ms()==0);
     unsigned before=reports;temperature_service_poll();assert(reports==before);
     now=100;temperature_service_init();temperature_service_poll();
@@ -119,6 +122,8 @@ static void service_tests(void) {
     assert(reports==before+1 && reads[0]==1 && reads[1]==1 && reads[2]==1);
     temperature_message_t m;assert(temperature_parse(sent,strlen(sent)-2,&m));
     assert(m.mask==7 && m.seq==0 && m.mc[1]==0 && m.mc[2]==-10125);
+    assert(!temperature_service_zynq_mc(&local_mc) && local_mc==m.mc[0]);
+    now=10101;assert(temperature_service_zynq_mc(&local_mc)!=0);
     now=10099;temperature_service_poll();assert(reports==before+1);
     assert(temperature_service_remaining_ms()==1);
     failures=2;now=10100;temperature_service_poll();
@@ -128,9 +133,11 @@ static void service_tests(void) {
     assert(temp_read_checked(0x48,NULL)!=0);
     failures=1|4|8;now=100000;temperature_service_poll();
     assert(temperature_parse(sent,strlen(sent)-2,&m) && m.mask==2 && m.seq==2);
+    assert(temperature_service_zynq_mc(&local_mc)!=0);
     temperature_service_poll();assert(reports==before+3); // No catch-up on send failure.
     failures=0;now=UINT32_MAX-5000;temperature_service_init();temperature_service_poll();
     assert(temperature_service_remaining_ms()==10000);
+    assert(!temperature_service_zynq_mc(&local_mc));
     before=reports;now=4998;temperature_service_poll();assert(reports==before);
     now=4999;temperature_service_poll();assert(reports==before+1);
 }

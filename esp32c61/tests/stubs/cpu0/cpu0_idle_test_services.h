@@ -72,4 +72,5 @@ void temperature_service_poll(void);
 void uart_process_commands(void);
 void usb_process_commands(void);
 void sdio_bridge_poll(void);
+void startup_recovery_poll(void);
 #endif

@@ -612,7 +612,8 @@ static void uart_handle_line(char *line)
         uart_emitf("@ACK %u AFE_%s %s",uart_cfg_seq,op,afe_power_state_name());return;
     }
     if(!imaging_power_allowed() && strcmp(line,"HV DISABLE") && strcmp(line,"BEAM STOP") && strcmp(line,"STATUS")) {
-        uart_nack(uart_cfg_seq,afe_power_allowed()?"TX_NOT_READY":"AFE_NOT_READY");return;
+        uart_nack(uart_cfg_seq,startup_recovery_blocks()?"BOOT_RECOVERY_WAIT_TEMP_OR_CLOCK":
+            afe_power_allowed()?"TX_NOT_READY":"AFE_NOT_READY");return;
     }
 	/* Other inputs cannot enter this transaction. Stop/off remain available. */
 	if(uart_cfg_active && !owns_cfg() && strcmp(line,"HV DISABLE") &&
