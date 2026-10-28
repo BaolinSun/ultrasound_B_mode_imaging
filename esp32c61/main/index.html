@@ -119,7 +119,7 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 </svg>
 <p id="temp-chart-status" class="muted" role="status">等待新温度采样，首个有效值显示为圆点。</p>
 <p id="temp-age" class="muted">每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。</p>
-<small>旧数据在左，新数据向右追加；横轴为浏览器本地时分秒，先展开、满 30 分钟后滚动，最多 180 组，纵轴自动缩放。仅保存本页面打开后的历史，刷新页面会清空；读取失败、过期、漏采样或断连处不连线。不依赖外部网络绘图库。</small></section>
+<small>旧数据在左，新数据向右追加；仅显示最近 6 分钟，超过后向左滚动，纵轴自动缩放。仅保存本页面打开后的历史，刷新页面会清空；真实漏采样、读取失败或报告失效处保留断点。短暂网页请求失败后按采样序号判断连续性，不补造数据。不依赖外部网络绘图库。</small></section>
 <section class="card" aria-labelledby="cpu-title"><h2 id="cpu-title">Zynq CPU 状态</h2>
 <p id="cpu-age" class="muted" role="status">等待 Zynq CPU 状态报告；需配套 PS 与 ESP32 固件。</p>
 <div class="chip-grid">
@@ -164,30 +164,37 @@ async function api(path,options={}){const r=await fetch(path,{cache:'no-store',.
 async function loadConfig(){const c=await api('/api/config');el('ssid').value=c.ssid;el('target-ip').value=c.target_ip;el('target-port').value=c.target_port;targetConfigured=!!c.target_ip;configLoaded=true}
 const results={sent_local:'本地发送完成（请核对接收端）',invalid:'参数无效',busy:'正在发送',not_ready:'等待配置 / 尚未上传',cancelled:'已停止',link_down:'网络中断',timeout:'上传超时',send_error:'发送失败'};
 const temperatureHistory={points:[],seq:null,gap:true};
+const TEMP_CHART_WINDOW_MS=6*60*1000,TEMP_CHART_MAX_POINTS=37;
 function updateTemperatureChart(t,disconnected){
  const h=temperatureHistory,now=Date.now(),names=['zynq','power','afe'];
  const hasSample=Number.isInteger(t?.seq)&&t.seq>=0&&t.seq<=0xffffffff&&Number.isFinite(t?.age_ms)&&t.age_ms>=0;
  const fresh=!disconnected&&hasSample&&t.age_ms<=30000;
  if(!disconnected&&!hasSample){h.points=[];h.seq=null;h.gap=true}
- if(!fresh)h.gap=true;
+ // One failed HTTP poll is not evidence of a lost UART temperature sample.
+ // On recovery, sequence and source receipt time establish continuity.
+ if(!disconnected&&!fresh)h.gap=true;
  if(fresh&&t.seq!==h.seq){
   const step=h.seq===null?1:(t.seq-h.seq)>>>0;
   if(step>=0x80000000){h.points=[];h.gap=true} // Source restarted, not uint32 wrap.
   const at=now-t.age_ms,last=h.points.at(-1);
   if(last&&at<=last.at){h.points=[];h.gap=true} // Browser clock moved backwards.
   const values=names.map(n=>t[n]?.status==='ok'&&Number.isFinite(t[n]?.celsius)?t[n].celsius:null);
-  h.points.push({at,values,gap:h.gap||step!==1||!!last&&at-last.at>20000});
+  const missing=step>1&&step<0x80000000;
+  const delayed=!!last&&at-last.at>20000;
+  const reason=missing?`采样序号缺失 ${step-1} 组`:delayed?'采样间隔超过 20 秒':h.gap?'温度报告失效或重新开始':'';
+  h.points.push({at,values,gap:h.gap||step!==1||delayed,reason});
   h.seq=t.seq;h.gap=false;
  }
- h.points=h.points.filter(p=>p.at>=now-1800000).slice(-180);
+ // Leave one sample period ahead of the newest point; total visible span <=6 min.
+ const first=h.points[0]?.at??now,end=Math.max(first+120000,now+10000);
+ const start=Math.max(first,end-TEMP_CHART_WINDOW_MS),span=end-start;
+ h.points=h.points.filter(p=>p.at>=start).slice(-TEMP_CHART_MAX_POINTS);
  const values=h.points.flatMap(p=>p.values.filter(Number.isFinite));
  let low=0,high=100;
  if(values.length){low=Math.floor((Math.min(...values)-3)/5)*5;high=Math.ceil((Math.max(...values)+3)/5)*5;if(high-low<20){low-=5;high+=5}}
  for(let i=0;i<5;i++)el('temp-y-'+i).textContent=values.length?(high-(high-low)*i/4).toFixed(1):'—';
  // Start at the first sample, append to the right; roll only after the window fills.
  // Keep one sample period of space ahead, rather than pinning new samples to the edge.
- const first=h.points[0]?.at??now,end=Math.max(first+120000,now+10000);
- const start=Math.max(first,end-1800000),span=end-start;
  for(let i=0;i<4;i++){
   const tick=new Date(start+span*i/3);
   el('temp-x-'+i).textContent=h.points.length?[tick.getHours(),tick.getMinutes(),tick.getSeconds()].map(v=>String(v).padStart(2,'0')).join(':'):'—';
@@ -209,9 +216,10 @@ function updateTemperatureChart(t,disconnected){
   dot.setAttribute('r',last&&current&&!tailConnected?'2':'0');
   if(last){dot.setAttribute('cx',last.x.toFixed(2));dot.setAttribute('cy',last.y.toFixed(2))}
  }
- el('temp-chart-status').textContent=disconnected?'连接中断：保留历史，恢复后不跨断点连线。':
+ const breaks=h.points.slice(1).filter(p=>p.gap);
+ el('temp-chart-status').textContent=disconnected?'网页连接中断：保留历史，恢复后按采样序号确认连续性。':
   !fresh?(h.points.length?'温度报告已过期或不可用：保留历史，不补零。':'等待新温度采样，首个有效值显示为圆点。'):
-  `已记录 ${h.points.length} 组采样；${values.length?'折线仅连接连续有效数据。':'当前各通道均读取失败，等待下一次采样。'}`;
+  `最近 6 分钟已记录 ${h.points.length} 组采样；${values.length?'折线仅连接连续有效数据。':'当前各通道均读取失败，等待下一次采样。'}${breaks.length?' 最近断点：'+breaks.at(-1).reason+'。':''}`;
 }
 function renderTemperatures(t,disconnected=false){
  updateTemperatureChart(t,disconnected);

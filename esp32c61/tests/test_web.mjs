@@ -334,7 +334,7 @@ test('temperature time axis handles midnight and rolls bounded history without r
  assert.equal(e.elements['temp-x-3'].textContent,'00:01:50');
  for(let seq=1;seq<200;seq++)await sample(e,temperatureSample(seq));
  const points=chartHistory(e),xs=[...e.elements['temp-path-zynq'].d.matchAll(/[ML]([\d.]+) /g)].map(m=>Number(m[1]));
- assert.equal(points.length,180);assert.equal(xs.length,180);
+ assert.equal(points.length,36);assert.equal(xs.length,36);
  assert.ok(xs.every((x,i)=>x>=64&&x<=680&&(!i||x>xs[i-1])));
  assert.ok(xs.at(-1)<680);assert.notEqual(e.elements['temp-x-0'].textContent,'23:59:50');
 });
@@ -352,17 +352,17 @@ test('temperature chart gaps only failed channel and never records missing value
  assert.equal(e.elements['temp-dot-zynq'].r,'0');
 });
 
-test('temperature chart keeps history but breaks lines after stale/disconnect/skipped samples',async()=>{
+test('temperature chart reconnects consecutive reports after HTTP failure, but breaks stale/skipped samples',async()=>{
  const e=setup();await e.settle();await sample(e,temperatureSample(1));
  e.backend.offline=true;await e.context.refresh();
  assert.equal(chartHistory(e).length,1);assert.equal(e.elements['temp-dot-zynq'].r,'0');
  e.backend.offline=false;await sample(e,temperatureSample(2));
- assert.equal(chartHistory(e).at(-1).gap,true);
+ assert.equal(chartHistory(e).at(-1).gap,false);
  const old=temperatureSample(2);old.age_ms=30001;await sample(e,old,31000);
  assert.equal(chartHistory(e).length,2);
  await sample(e,temperatureSample(3));assert.equal(chartHistory(e).at(-1).gap,true);
  await sample(e,temperatureSample(5));assert.equal(chartHistory(e).at(-1).gap,true);
- assert.equal((e.elements['temp-path-zynq'].d.match(/M/g)||[]).length,4);
+ assert.equal((e.elements['temp-path-zynq'].d.match(/M/g)||[]).length,3);
 });
 
 test('temperature chart clears old session, accepts uint32 wrap and handles clock changes',async()=>{
@@ -390,12 +390,35 @@ test('realistic 1.2 s polling draws continuous lines for 10 s source, but not st
  }
 });
 
-test('temperature chart storage is bounded to 180 groups and thirty minutes',async()=>{
+test('temperature chart survives repeated short HTTP failures without making false sample gaps',async()=>{
+ const e=setup();await e.settle();
+ for(let seq=0;seq<12;seq++){
+  await sample(e,temperatureSample(seq));
+  e.backend.now+=500;e.backend.offline=true;await e.context.refresh();
+  e.backend.now+=500;e.backend.offline=false;
+  const same=temperatureSample(seq);same.age_ms=1000;e.backend.status.temperatures=same;await e.context.refresh();
+ }
+ assert.equal(chartHistory(e).length,12);
+ assert.equal((e.elements['temp-path-zynq'].d.match(/M/g)||[]).length,1);
+ assert.equal((e.elements['temp-path-zynq'].d.match(/L/g)||[]).length,11);
+ await sample(e,temperatureSample(15));
+ assert.match(e.elements['temp-chart-status'].textContent,/采样序号缺失 3 组/);
+});
+test('long real sampling delay stays a visible gap even across a disconnected page',async()=>{
+ const e=setup();await e.settle();await sample(e,temperatureSample(1));
+ e.backend.offline=true;await e.context.refresh();e.backend.offline=false;
+ await sample(e,temperatureSample(2),40000);
+ assert.equal(chartHistory(e).at(-1).gap,true);
+ assert.match(e.elements['temp-chart-status'].textContent,/采样间隔超过 20 秒/);
+});
+test('temperature chart storage and axis are bounded to six minutes',async()=>{
  const e=setup();await e.settle();
  for(let seq=0;seq<200;seq++)await sample(e,temperatureSample(seq));
- assert.equal(chartHistory(e).length,180);
- assert.match(e.elements['temp-chart-status'].textContent,/180/);
- e.backend.now+=1800001;e.backend.status.temperatures.age_ms=1800001;await e.context.refresh();
+ assert.equal(chartHistory(e).length,36);
+ assert.match(e.elements['temp-chart-status'].textContent,/最近 6 分钟.*36/);
+ const ticks=[0,3].map(i=>e.elements['temp-x-'+i].textContent.split(':').map(Number)).map(([h,m,s])=>h*3600+m*60+s);
+ assert.equal((ticks[1]-ticks[0]+86400)%86400,360);
+ e.backend.now+=360001;e.backend.status.temperatures.age_ms=360001;await e.context.refresh();
  assert.equal(chartHistory(e).length,0);assert.equal(e.elements['temp-path-zynq'].d,'');
  assert.equal(e.elements['temp-dot-zynq'].r,'0');
 });
