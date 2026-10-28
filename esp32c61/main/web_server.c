@@ -148,6 +148,7 @@ static esp_err_t get_status(httpd_req_t *req)
                 else cJSON_AddNullToObject(channel,"celsius");
             }
         }
+        cJSON_AddNumberToObject(json,"uptime_ms",esp_timer_get_time()/1000);
         cJSON_AddBoolToObject(json, "connected", wifi.connected);
         cJSON_AddBoolToObject(json, "upload_ready", udp.connected && config.target_ip[0] != 0);
         cJSON_AddBoolToObject(json, "ap_active", wifi.ap_active);

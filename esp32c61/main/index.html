@@ -23,25 +23,6 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <p class="muted">ESP32-C61 / B-mode imaging</p><h1>PSRAM 数据上传</h1>
 <p class="muted">配置 Wi-Fi 与上位机地址。PSRAM 自测使用原始 UDP；SDIO 帧使用编译选择的 TCP/UDP。</p>
 <div id="message" class="notice" role="status" aria-live="polite">正在读取设备配置…</div>
-<section class="card" aria-labelledby="viewer-title"><h2 id="viewer-title">实时超声图像</h2>
-<p class="muted">先在接收电脑启动图像服务，再从同一台电脑打开本页并点击下方入口。图像在新标签页显示，当前配置页保留。</p>
-<code style="display:block;overflow-wrap:anywhere">python .\pc_tools\bmode_web_viewer.py --device-ip 192.168.3.27</code>
-<a id="image-viewer-link" class="viewer-link" href="http://127.0.0.1:8080/" target="_blank" rel="noopener noreferrer">打开实时图像显示 ↗</a>
-<small>在 esp32c61 目录运行上述命令。打开图像页后点击“开始接收”；无需再点击本页的 SDIO 单帧或连续测试。此入口不会开启高压或启动扫描。</small>
-<small>127.0.0.1 指浏览器所在电脑；手机或其他电脑不能通过此入口访问接收电脑。使用自定义 HTTP 端口时，请直接打开 Python 提示的地址。无法打开通常表示本机图像服务尚未启动。</small>
-</section>
-<section class="card"><h2>连接与目标地址</h2><form id="config-form">
-<div class="grid"><label>路由器 SSID<input id="ssid" maxlength="32" autocomplete="off"><small>为空时保留配置热点；长度按 UTF-8 字节计算。</small></label>
-<label>Wi-Fi 密码<input id="password" type="password" maxlength="64" autocomplete="new-password"><small>留空保留已有密码；开放网络请勾选下方选项。</small></label>
-<label>上位机 IPv4<input id="target-ip" placeholder="192.168.1.100" inputmode="decimal"><small>填写运行相应 TCP/UDP 接收程序的电脑地址。</small></label>
-<label>TCP/UDP 端口<input id="target-port" type="number" min="1" max="65535" value="50001" required><small>共用目标端口；PSRAM 自测仍使用 UDP。</small></label></div>
-<label><input id="open-network" type="checkbox"> 使用开放 Wi-Fi（清空已保存密码）</label>
-<button id="save" type="submit">保存并应用</button><small>目标地址下一次上传生效。修改 Wi-Fi 后会重新连接；连接成功 30 秒后关闭配置热点。</small>
-</form>
-<div class="notice" role="status" aria-live="polite"><strong id="provisioning-message">正在读取配网状态…</strong>
-<div id="provisioning-address"></div><button id="copy-sta-address" type="button" class="secondary" disabled>复制局域网地址</button>
-<small id="provisioning-help">换网络时，等待设备热点出现，扫描机身 Wi-Fi 二维码连接，再手动打开 http://192.168.4.1/。不需要 USB 控制台。</small></div>
-</section>
 <section class="card"><h2>Zynq 控制与配置</h2>
 <p class="muted">无需 USB 或控制口令，电池供电时可直接控制。接口不鉴权且 HTTP 未加密，仅限可信局域网，禁止开放到公网。</p>
 <div class="status-grid" role="group" aria-label="Zynq 控制状态">
@@ -59,67 +40,12 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 </div>
 <details class="diagnostics"><summary>通信诊断</summary><pre id="control-raw">暂无 PS 回执</pre></details>
 <p class="muted">开始扫描不自动开启高压；Wi-Fi 配置结束后保持停机。上传按钮只传输 DDR，不启动成像。软件状态不是实际高压或物理收发完成的证明。</p>
-<label>数字增益（0～8）<input id="zynq-gain" type="number" min="0" max="8" value="0"></label><button id="zynq-gain-set">设置数字增益</button>
-<h3>图像下采样</h3>
-<label>待设置抽取倍率<select id="zynq-down" disabled>
-<option value="0">1 倍（不抽取） · 6144 点/线 · 787456 B/帧</option>
-<option value="1">2 倍 · 3072 点/线 · 394240 B/帧</option>
-<option value="2">4 倍 · 1536 点/线 · 197632 B/帧</option>
-<option value="3">8 倍 · 768 点/线 · 99328 B/帧</option>
-<option value="4">16 倍 · 384 点/线 · 50176 B/帧</option>
-</select></label>
-<p id="down-preview" class="muted"></p>
-<p id="down-configured" class="muted">PS 已下发配置：未知，请先查询 Zynq 状态。</p>
-<p id="down-received" class="muted">最近收到完整帧：等待数据。</p>
-<button id="zynq-down-set" disabled>停扫并应用下采样</button>
-<p id="down-result" class="muted" role="status">应用时将排空已接受的数据、停止扫描并关闭高压。成功后保持扫描、高压、上传停止，由现有按钮手动恢复。</p>
-<small>仅改变输出抽取，原始 6144 点及 64 线不变。设置不保存到 NVS，重启恢复 C 数组默认值。PS 已下发配置不是 PL 接受证明；图像页以新完整帧的线头和长度核验实际档位。减少数据量不保证帧率等比提高。</small>
 <details><summary>高级命令（每行一条）</summary><textarea id="zynq-lines" rows="6" style="width:100%;font-family:monospace" placeholder="STATUS"></textarea>
 <small>支持 CFG、AFE、BRAM、TX7332、BEAM、HV、GAIN、STATUS。长 JSON 配置使用 Python 工具；当前采样点数必须保持 6144。配置不是回滚事务，ABORT 不恢复已写寄存器。</small>
 <button id="zynq-send">下发命令</button></details>
 <p id="control-feedback" role="status" aria-live="polite" class="muted">尚未下发命令</p>
 <details class="diagnostics"><summary>命令执行记录</summary><pre id="control-result" style="white-space:pre-wrap;overflow-wrap:anywhere">尚未下发命令</pre></details>
 </section>
-<section class="card"><h2>AFE / TX 电源管理</h2>
-<p class="muted">两颗芯片独立控制。进入待机前关闭高压、停止扫描并排空传输；恢复后仍保持停机，网页和温度采集继续运行。</p>
-<div class="chip-grid">
-<div class="chip-panel"><h3>TX7332 · 发射链</h3>
-<span id="tx-power-status" class="status-pill" role="status">状态未知</span>
-<small id="tx-age">等待状态</small><small id="tx-proof">数字检查待查询</small><p id="tx-error" class="chip-error"></p>
-<div class="button-row">
-<button id="tx-sleep" disabled>TX 待机</button>
-<button id="tx-wake" class="secondary" disabled>唤醒 TX</button>
-<button id="tx-query" class="secondary" disabled>查询 TX 状态</button>
-</div><small>STDBY 引脚待机，不改变 AFE 状态。</small></div>
-<div class="chip-panel"><h3>AFE5832 · 接收链</h3>
-<span id="afe-power-status" class="status-pill" role="status">状态未知</span>
-<small id="afe-age">等待状态</small><small id="afe-proof">数字检查待查询</small><p id="afe-error" class="chip-error"></p>
-<div class="button-row">
-<button id="afe-sleep" disabled>AFE 待机</button>
-<button id="afe-wake" class="secondary" disabled>唤醒 AFE</button>
-<button id="afe-query" class="secondary" disabled>查询 AFE 状态</button>
-</div><small>PDN_GBL 全局掉电，不切断电源轨。</small></div></div>
-<small>查询不会唤醒。状态为缓存快照；数字检查正常不代表模拟输出或图像一致性已验证。</small>
-</section>
-<section class="card"><h2>温度监测 · 实时曲线</h2><dl>
-<dt class="temp-zynq-color">Zynq 芯片 ━</dt><dd id="temp-zynq">等待温度数据</dd>
-<dt class="temp-power-color">电源 ┄</dt><dd id="temp-power">等待温度数据</dd>
-<dt class="temp-afe-color">AFE 区域 ┈</dt><dd id="temp-afe">等待温度数据</dd>
-</dl>
-<svg id="temp-chart" class="temp-chart" viewBox="0 0 720 300" role="img" aria-label="Zynq、电源、AFE 三路温度历史折线图，纵轴摄氏度，横轴本地时分秒，时间从左向右增加" aria-describedby="temp-chart-status">
-<g class="temp-grid"><path d="M64 20H680 M64 72.5H680 M64 125H680 M64 177.5H680 M64 230H680 M64 20V230 M269 20V230 M475 20V230 M680 20V230"/></g>
-<path class="temp-axis" d="M64 20V230H680"/>
-<text transform="translate(16 125) rotate(-90)" text-anchor="middle">温度 (°C)</text>
-<g text-anchor="end"><text id="temp-y-0" x="54" y="24">—</text><text id="temp-y-1" x="54" y="76.5">—</text><text id="temp-y-2" x="54" y="129">—</text><text id="temp-y-3" x="54" y="181.5">—</text><text id="temp-y-4" x="54" y="234">—</text></g>
-<g text-anchor="middle"><text id="temp-x-0" x="64" y="253">—</text><text id="temp-x-1" x="269" y="253">—</text><text id="temp-x-2" x="475" y="253">—</text><text id="temp-x-3" x="680" y="253">—</text><text x="372" y="282">本地时间 (HH:MM:SS) →</text></g>
-<path id="temp-path-zynq" class="temp-line" stroke="#56d5db"/>
-<path id="temp-path-power" class="temp-line" stroke="#ffba75" stroke-dasharray="7 4"/>
-<path id="temp-path-afe" class="temp-line" stroke="#df96ff" stroke-dasharray="2 4"/>
-<circle id="temp-dot-zynq" fill="#56d5db" r="0"/><circle id="temp-dot-power" fill="#ffba75" r="0"/><circle id="temp-dot-afe" fill="#df96ff" r="0"/>
-</svg>
-<p id="temp-chart-status" class="muted" role="status">等待新温度采样，首个有效值显示为圆点。</p>
-<p id="temp-age" class="muted">每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。</p>
-<small>旧数据在左，新数据向右追加；仅显示最近 6 分钟，超过后向左滚动，纵轴自动缩放。仅保存本页面打开后的历史，刷新页面会清空；真实漏采样、读取失败或报告失效处保留断点。短暂网页请求失败后按采样序号判断连续性，不补造数据。不依赖外部网络绘图库。</small></section>
 <section class="card" aria-labelledby="cpu-title"><h2 id="cpu-title">Zynq CPU 状态</h2>
 <p id="cpu-age" class="muted" role="status">等待 Zynq CPU 状态报告；需配套 PS 与 ESP32 固件。</p>
 <div class="chip-grid">
@@ -142,7 +68,90 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 </div>
 <small>模式是采样快照，不是 CPU0 瞬时睡眠指示。WFI 次数和等待时间用于观察实际待机活动；温度定时器与命令会短暂唤醒 CPU0。复用约 10 秒温度周期上报，网页只读 ESP32 缓存，不会周期查询唤醒 PS。</small>
 </section>
-<section class="card"><h2>设备与传输状态</h2><dl>
+<section class="card"><h2>AFE / TX 电源管理</h2>
+<p class="muted">两颗芯片独立控制。进入待机前关闭高压、停止扫描并排空传输；恢复后仍保持停机，网页和温度采集继续运行。</p>
+<div class="chip-grid">
+<div class="chip-panel"><h3>TX7332 · 发射链</h3>
+<span id="tx-power-status" class="status-pill" role="status">状态未知</span>
+<small id="tx-age">等待状态</small><small id="tx-proof">数字检查待查询</small><p id="tx-error" class="chip-error"></p>
+<div class="button-row">
+<button id="tx-sleep" disabled>TX 待机</button>
+<button id="tx-wake" class="secondary" disabled>唤醒 TX</button>
+<button id="tx-query" class="secondary" disabled>查询 TX 状态</button>
+</div><small>STDBY 引脚待机，不改变 AFE 状态。</small></div>
+<div class="chip-panel"><h3>AFE5832 · 接收链</h3>
+<span id="afe-power-status" class="status-pill" role="status">状态未知</span>
+<small id="afe-age">等待状态</small><small id="afe-proof">数字检查待查询</small><p id="afe-error" class="chip-error"></p>
+<div class="button-row">
+<button id="afe-sleep" disabled>AFE 待机</button>
+<button id="afe-wake" class="secondary" disabled>唤醒 AFE</button>
+<button id="afe-query" class="secondary" disabled>查询 AFE 状态</button>
+</div><small>PDN_GBL 全局掉电，不切断电源轨。</small></div></div>
+<small>查询不会唤醒。状态为缓存快照；数字检查正常不代表模拟输出或图像一致性已验证。</small>
+</section>
+<section class="card" id="parameters-panel"><h2>超声参数控制</h2>
+<p class="muted">数字增益与图像下采样共用 Zynq 控制服务。下采样配置先停扫、关闭高压并排空传输，完成后需手动恢复。</p>
+<h3>数字增益</h3>
+<label>数字增益（0～8）<input id="zynq-gain" type="number" min="0" max="8" value="0"></label><button id="zynq-gain-set">设置数字增益</button>
+<h3>图像下采样</h3>
+<label>待设置抽取倍率<select id="zynq-down" disabled>
+<option value="0">1 倍（不抽取） · 6144 点/线 · 787456 B/帧</option>
+<option value="1">2 倍 · 3072 点/线 · 394240 B/帧</option>
+<option value="2">4 倍 · 1536 点/线 · 197632 B/帧</option>
+<option value="3">8 倍 · 768 点/线 · 99328 B/帧</option>
+<option value="4">16 倍 · 384 点/线 · 50176 B/帧</option>
+</select></label>
+<p id="down-preview" class="muted"></p>
+<p id="down-configured" class="muted">PS 已下发配置：未知，请先查询 Zynq 状态。</p>
+<p id="down-received" class="muted">最近收到完整帧：等待数据。</p>
+<button id="zynq-down-set" disabled>停扫并应用下采样</button>
+<p id="down-result" class="muted" role="status">应用时将排空已接受的数据、停止扫描并关闭高压。成功后保持扫描、高压、上传停止，由现有按钮手动恢复。</p>
+<small>仅改变输出抽取，原始 6144 点及 64 线不变。设置不保存到 NVS，重启恢复 C 数组默认值。PS 已下发配置不是 PL 接受证明；图像页以新完整帧的线头和长度核验实际档位。减少数据量不保证帧率等比提高。</small>
+
+<p id="parameter-feedback" class="muted" role="status" aria-live="polite">尚未下发命令</p>
+</section>
+<section class="card" aria-labelledby="viewer-title"><h2 id="viewer-title">实时超声图像</h2>
+<p class="muted">先在接收电脑启动图像服务，再从同一台电脑打开本页并点击下方入口。图像在新标签页显示，当前配置页保留。</p>
+<code style="display:block;overflow-wrap:anywhere">python .\pc_tools\bmode_web_viewer.py --device-ip 192.168.3.27</code>
+<a id="image-viewer-link" class="viewer-link" href="http://127.0.0.1:8080/" target="_blank" rel="noopener noreferrer">打开实时图像显示 ↗</a>
+<small>在 esp32c61 目录运行上述命令。打开图像页后点击“开始接收”；无需再点击本页的 SDIO 单帧或连续测试。此入口不会开启高压或启动扫描。</small>
+<small>127.0.0.1 指浏览器所在电脑；手机或其他电脑不能通过此入口访问接收电脑。使用自定义 HTTP 端口时，请直接打开 Python 提示的地址。无法打开通常表示本机图像服务尚未启动。</small>
+</section>
+<section class="card"><h2>温度监测 · 实时曲线</h2><dl>
+<dt class="temp-zynq-color">Zynq 芯片 ━</dt><dd id="temp-zynq">等待温度数据</dd>
+<dt class="temp-power-color">电源 ┄</dt><dd id="temp-power">等待温度数据</dd>
+<dt class="temp-afe-color">AFE 区域 ┈</dt><dd id="temp-afe">等待温度数据</dd>
+</dl>
+<svg id="temp-chart" class="temp-chart" viewBox="0 0 720 300" role="img" aria-label="Zynq、电源、AFE 三路温度历史折线图，纵轴摄氏度，横轴本地时分秒，时间从左向右增加" aria-describedby="temp-chart-status">
+<g class="temp-grid"><path d="M64 20H680 M64 72.5H680 M64 125H680 M64 177.5H680 M64 230H680 M64 20V230 M269 20V230 M475 20V230 M680 20V230"/></g>
+<path class="temp-axis" d="M64 20V230H680"/>
+<text transform="translate(16 125) rotate(-90)" text-anchor="middle">温度 (°C)</text>
+<g text-anchor="end"><text id="temp-y-0" x="54" y="24">—</text><text id="temp-y-1" x="54" y="76.5">—</text><text id="temp-y-2" x="54" y="129">—</text><text id="temp-y-3" x="54" y="181.5">—</text><text id="temp-y-4" x="54" y="234">—</text></g>
+<g text-anchor="middle"><text id="temp-x-0" x="64" y="253">—</text><text id="temp-x-1" x="269" y="253">—</text><text id="temp-x-2" x="475" y="253">—</text><text id="temp-x-3" x="680" y="253">—</text><text x="372" y="282">本地时间 (HH:MM:SS) →</text></g>
+<path id="temp-path-zynq" class="temp-line" stroke="#56d5db"/>
+<path id="temp-path-power" class="temp-line" stroke="#ffba75" stroke-dasharray="7 4"/>
+<path id="temp-path-afe" class="temp-line" stroke="#df96ff" stroke-dasharray="2 4"/>
+<circle id="temp-dot-zynq" fill="#56d5db" r="0"/><circle id="temp-dot-power" fill="#ffba75" r="0"/><circle id="temp-dot-afe" fill="#df96ff" r="0"/>
+</svg>
+<p id="temp-chart-status" class="muted" role="status">等待新温度采样，首个有效值显示为圆点。</p>
+<p id="temp-age" class="muted">每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。</p>
+<small>旧数据在左，新数据向右追加；仅显示最近 6 分钟，超过后向左滚动，纵轴自动缩放。仅保存本页面打开后的历史，刷新页面会清空；真实漏采样、读取失败或报告失效处保留断点。短暂网页请求失败后按采样序号判断连续性，不补造数据。不依赖外部网络绘图库。</small></section>
+<section class="card"><h2>设备与传输状态</h2>
+<div class="status-grid" role="group" aria-label="通信与源端就绪状态">
+<div class="status-tile"><small>Wi-Fi</small><span id="runtime-wifi" class="status-pill">未知</span></div>
+<div class="status-tile"><small>SDIO 主机链路</small><span id="runtime-sdio" class="status-pill">未知</span></div>
+<div class="status-tile"><small>DDR 图像源</small><span id="runtime-source" class="status-pill">未知</span></div>
+<div class="status-tile"><small>上传任务</small><span id="runtime-upload" class="status-pill">未知</span></div>
+<div class="status-tile"><small>TCP 连接</small><span id="runtime-tcp" class="status-pill">未知</span></div>
+<div class="status-tile"><small>配置目标</small><span id="runtime-target" class="status-pill">未知</span></div>
+</div>
+<dl><dt>ESP32 运行时长</dt><dd id="runtime-uptime">—</dd>
+<dt>内部 SRAM</dt><dd id="runtime-heap">—</dd>
+<dt>SDIO 链路复位</dt><dd id="runtime-resets">—</dd>
+<dt>TCP 错误记录</dt><dd id="runtime-tcp-error">—</dd>
+<dt>Wi-Fi 断开记录</dt><dd id="runtime-wifi-reason">—</dd></dl>
+<small id="runtime-note">当前状态来自 ESP32；复位、错误和内存低水位是历史记录，不等同于当前故障。DDR 是 Zynq 经 SDIO 同步的状态快照，不是整机健康证明。</small>
+<hr style="border:0;border-top:1px solid #dce5eb;margin:20px 0"><dl>
 <dt>网络状态</dt><dd id="network">—</dd><dt>局域网页面</dt><dd><a id="sta-link">—</a></dd>
 <dt>配置热点</dt><dd id="ap">—</dd><dt>PSRAM</dt><dd id="memory">—</dd>
 <dt>测试缓冲区</dt><dd id="test-size">—</dd><dt>本次目标</dt><dd id="destination">—</dd>
@@ -150,7 +159,8 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 </dl><progress id="progress" max="1" value="0"></progress><p id="bytes" class="muted">尚未上传</p>
 <button id="upload" disabled>上传一次 PSRAM 自测数据</button><button id="stop" class="secondary" disabled>停止上传</button>
 <p class="muted">先启动上位机接收程序，再点击上传。数据包不包含帧头或序号；“本地发送完成”不代表上位机已完整收到，请查看接收端校验结果。</p>
-</section><section class="card"><h2>Zynq SDIO → Wi-Fi TCP/UDP 测试</h2>
+</section>
+<section class="card"><h2>Zynq SDIO → Wi-Fi TCP/UDP 测试</h2>
 <p class="muted">Zynq 需使用 DATA_OUTPUT_MODE=DATA_OUTPUT_SDIO 编译并启动，再运行与固件 TCP/UDP 宏相符的 PC 帧接收工具。TCP 等待 PC 校验回执；原始 PSRAM 自测仍为 UDP。</p>
 <p id="sdio-status">正在读取 SDIO 状态…</p>
 <p id="frame-source" class="muted"></p>
@@ -158,6 +168,18 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <p id="tcp-timing" class="muted"></p>
 <button id="sdio-once" disabled>SDIO 单帧</button><button id="sdio-stream" disabled>SDIO 连续测试</button>
 <button id="sdio-stop" class="secondary">停止全部传输</button>
+</section>
+<section class="card"><h2>连接与目标地址</h2><form id="config-form">
+<div class="grid"><label>路由器 SSID<input id="ssid" maxlength="32" autocomplete="off"><small>为空时保留配置热点；长度按 UTF-8 字节计算。</small></label>
+<label>Wi-Fi 密码<input id="password" type="password" maxlength="64" autocomplete="new-password"><small>留空保留已有密码；开放网络请勾选下方选项。</small></label>
+<label>上位机 IPv4<input id="target-ip" placeholder="192.168.1.100" inputmode="decimal"><small>填写运行相应 TCP/UDP 接收程序的电脑地址。</small></label>
+<label>TCP/UDP 端口<input id="target-port" type="number" min="1" max="65535" value="50001" required><small>共用目标端口；PSRAM 自测仍使用 UDP。</small></label></div>
+<label><input id="open-network" type="checkbox"> 使用开放 Wi-Fi（清空已保存密码）</label>
+<button id="save" type="submit">保存并应用</button><small>目标地址下一次上传生效。修改 Wi-Fi 后会重新连接；连接成功 30 秒后关闭配置热点。</small>
+</form>
+<div class="notice" role="status" aria-live="polite"><strong id="provisioning-message">正在读取配网状态…</strong>
+<div id="provisioning-address"></div><button id="copy-sta-address" type="button" class="secondary" disabled>复制局域网地址</button>
+<small id="provisioning-help">换网络时，等待设备热点出现，扫描机身 Wi-Fi 二维码连接，再手动打开 http://192.168.4.1/。不需要 USB 控制台。</small></div>
 </section></main><script>
 'use strict';
 const el=id=>document.getElementById(id);
@@ -237,6 +259,7 @@ function renderTemperatures(t,disconnected=false){
   t?.seq!=null&&Number.isFinite(t?.age_ms)?`每 10 秒采样；采样序号 ${t.seq}，${(t.age_ms/1000).toFixed(1)} 秒前收到。`:
   '每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。';
 }
+function controlFeedback(text,error=false){for(const id of ['control-feedback','parameter-feedback']){el(id).textContent=text;el(id).classList.toggle('chip-error',error)}}
 function badge(id,text,tone='unknown'){el(id).textContent=text;el(id).setAttribute('data-tone',tone)}
 function renderCpus(c,disconnected=false){
  const good=!disconnected&&c&&c.status==='ok'&&c.cpu0&&c.cpu1;
@@ -286,7 +309,32 @@ el('copy-sta-address').addEventListener('click',async()=>{
  try{await navigator.clipboard.writeText(address);notify('局域网地址已复制，请切换到路由器网络。')}
  catch(e){notify('浏览器未允许自动复制，请手动复制：'+address)}
 });
+function renderRuntime(s,disconnected=false){
+ const d=s.sdio||{},known=typeof d.ready==='boolean',number=n=>Number.isFinite(n)&&n>=0;
+ const kib=n=>number(n)?`${(n/1024).toFixed(1)} KiB`:'未知';
+ if(disconnected){
+  for(const id of ['wifi','sdio','source','upload','tcp','target'])badge('runtime-'+id,'连接已断开','stale');
+  for(const id of ['uptime','heap','resets','tcp-error','wifi-reason'])el('runtime-'+id).textContent='无法更新';
+  return;
+ }
+ badge('runtime-wifi',s.reconfiguring?'重新配网中':s.connected===true?'已连接':s.connected===false?'未连接':'未知',s.reconfiguring?'warn':s.connected===true?'ok':'unknown');
+ badge('runtime-sdio',!known?'未知':!d.ready?'不可用':!d.host_sdio?'等待握手':'已握手',!known?'unknown':!d.ready?'error':d.host_sdio?'ok':'warn');
+ const sourceKnown=known&&d.ready&&d.host_sdio&&Number.isInteger(d.source_flags),f=d.source_flags;
+ badge('runtime-source',!sourceKnown?'等待源端快照':f&8?'ABI / 租约异常':f&4?'等待完整帧超时':f&2?'等待新完整帧':f&1?'已初始化':'尚未初始化',!sourceKnown?'unknown':f&12?'error':f&2?'warn':f&1?'ok':'warn');
+ const active=!!(s.busy||d.running||d.raw_busy);
+ badge('runtime-upload',d.stopping?'停止清理中':active?'传输中':typeof s.busy==='boolean'?'空闲':'未知',d.stopping?'warn':active?'active':typeof s.busy==='boolean'?'ok':'unknown');
+ badge('runtime-tcp',s.sdio_transport==='udp'?'UDP 模式':s.tcp_failed?'传输失败':s.tcp_connected===true?'已连接':s.tcp_connected===false?'未建立（空闲时正常）':'未知',s.tcp_failed?'error':s.tcp_connected?'ok':'unknown');
+ badge('runtime-target',configLoaded?(targetConfigured?'已配置':'未配置'):'未读取',configLoaded&&targetConfigured?'ok':'warn');
+ const sec=number(s.uptime_ms)?Math.floor(s.uptime_ms/1000):null;
+ el('runtime-uptime').textContent=sec===null?'未知（旧固件未上报）':`${Math.floor(sec/86400)} 天 ${String(Math.floor(sec/3600)%24).padStart(2,'0')}:${String(Math.floor(sec/60)%60).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`;
+ el('runtime-heap').textContent=`当前空闲 ${kib(s.internal_free)} / 历史最低 ${kib(s.internal_min_free)}${number(s.tcp_heap_headroom)?` / TCP 保护预留 ${kib(s.tcp_heap_headroom)}`:''}`;
+ const reasons={none:'无',host_abort:'启动 / 主机重握手',stop_host_timeout:'停止等待主机超时',stop_callback_timeout:'停止等待发送回调超时',sender_failure:'发送失败',frame_crc:'帧 CRC 错误',wifi_disconnect:'Wi-Fi 断开',tcp_failure:'TCP 失败',host_lost:'主机握手丢失',source_unavailable:'图像源不可用',receive_timeout:'SDIO 收帧超时'};
+ el('runtime-resets').textContent=number(d.reset_count)?`${d.reset_count} 次 · 最近原因：${reasons[d.reset_reason]||d.reset_reason||'未提供'}`:'未知（旧固件未上报）';
+ el('runtime-tcp-error').textContent=number(s.tcp_connect_errors)&&number(s.tcp_ack_errors)?`连接 ${s.tcp_connect_errors} / 回执 ${s.tcp_ack_errors}；${s.tcp_error?`最近错误：${s.tcp_error_reason||s.tcp_error}`:'无最近错误'}`:'暂无完整记录';
+ el('runtime-wifi-reason').textContent=number(s.wifi_disconnect_reason)?(s.wifi_disconnect_reason?`最近原因码 ${s.wifi_disconnect_reason}（历史，不代表当前断线）`:'无断开原因记录'):'未知';
+}
 function render(s){
+ renderRuntime(s);
  renderProvisioning(s);
  renderTemperatures(s.temperatures);
  renderCpus(s.cpus);
@@ -325,7 +373,7 @@ function render(s){
  if(d.stopping||d.running||d.raw_busy||d.free_slots<2)el('upload').disabled=true;
  renderZynqControl(s);
 }
-async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;renderProvisioning({},true);renderTemperatures(null,true);renderCpus(null,true);renderZynqControl({});el('upload').disabled=true;el('stop').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false}}
+async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;renderRuntime({},true);renderProvisioning({},true);renderTemperatures(null,true);renderCpus(null,true);renderZynqControl({});el('upload').disabled=true;el('stop').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false}}
 el('config-form').addEventListener('submit',async event=>{event.preventDefault();saving=true;el('save').disabled=true;el('upload').disabled=true;const c={ssid:el('ssid').value,target_ip:el('target-ip').value.trim(),target_port:Number(el('target-port').value)};
  if(el('open-network').checked)c.password='';else if(el('password').value)c.password=el('password').value;
  try{const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});targetConfigured=!!c.target_ip;configLoaded=true;el('password').value='';el('open-network').checked=false;notify(r.message)}catch(e){notify(e.message,true)}finally{saving=false;el('save').disabled=false;await refresh()}});
@@ -428,7 +476,7 @@ async function sendZynq(lines,options={}){
  if(hv&&!confirm('即将开启高压。请确认硬件连接及操作条件安全。是否继续？'))return;
  if(!controlClient){controlClient=controlId();controlRequest=Number.parseInt(controlId(),16)&0x7fffffff}
  controlBusy++;for(const id of controlButtons)el(id).disabled=true;
- el('control-feedback').textContent='命令处理中，请勿重复提交…';el('control-feedback').classList.toggle('chip-error',false);
+ controlFeedback('命令处理中，请勿重复提交…');
  el('cpu1-disable').disabled=true;el('cpu1-query').disabled=true;
  el('cpu0-sleep').disabled=true;el('cpu0-wake').disabled=true;
  for(const id of ['afe-sleep','afe-wake','afe-query','tx-sleep','tx-wake','tx-query'])el(id).disabled=true;
@@ -453,10 +501,10 @@ async function sendZynq(lines,options={}){
    }
   }
   if(options.verify)options.verify(results);
-  el('control-feedback').textContent='命令已完成；状态按最近一次快照显示。';
+  controlFeedback('命令已完成；状态按最近一次快照显示。');
   el('control-result').textContent=output.join('\n')+'\n完成（配置结束不会自动启动）';
   return true;
- }catch(e){el('control-feedback').textContent=e.message+'；未自动重发，请查询确认状态。';el('control-feedback').classList.toggle('chip-error',true);el('control-result').textContent=output.join('\n')+'\n'+e.message+'。通信中断时结果可能未知；配置失联由 PS 看门狗停机清理。';return false;}
+ }catch(e){controlFeedback(e.message+'；未自动重发，请查询确认状态。',true);el('control-result').textContent=output.join('\n')+'\n'+e.message+'。通信中断时结果可能未知；配置失联由 PS 看门狗停机清理。';return false;}
  finally{controlBusy--;await refresh()}
 }
 for(const [id,lines] of [['zynq-query',['STATUS']],['zynq-hv-on',['HV ENABLE']],['zynq-hv-off',['HV DISABLE']],['zynq-start',['BEAM START']],['zynq-safe-stop',['HV DISABLE']]])

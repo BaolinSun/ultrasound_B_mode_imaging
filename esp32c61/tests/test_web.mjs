@@ -312,7 +312,7 @@ test('temperature card is independent of upload and shows errors, zero, negative
   assert.match(e.elements['temp-afe'].textContent,/断开/);
   e.backend.offline=false;e.backend.status.temperatures=undefined;await e.context.refresh();
   assert.match(e.elements['temp-zynq'].textContent,/等待/);
-  assert.ok(html.indexOf('温度监测')>html.indexOf('连接与目标地址'));
+  assert.ok(html.indexOf('温度监测')<html.indexOf('连接与目标地址'));
   assert.ok(html.indexOf('温度监测')<html.indexOf('设备与传输状态'));
 });
 
@@ -715,4 +715,44 @@ test('TX standby controls are independent and the two power gates are combined',
  const count=e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length;
  await e.context.refresh();assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,count);
  delete e.backend.status.zynq_control.tx_state;await e.context.refresh();assert.equal(e.elements['zynq-start'].disabled,true);
+});
+
+
+test('panels follow requested order, parameters are independent and IDs remain unique',()=>{
+ const cards=[...html.matchAll(/<section\b[\s\S]*?<\/section>/g)].map(m=>m[0]);
+ assert.deepEqual(cards.map(c=>c.match(/<h2[^>]*>(.*?)<\/h2>/)[1]),[
+  'Zynq 控制与配置','Zynq CPU 状态','AFE / TX 电源管理','超声参数控制','实时超声图像',
+  '温度监测 · 实时曲线','设备与传输状态','Zynq SDIO → Wi-Fi TCP/UDP 测试','连接与目标地址']);
+ for(const id of ['zynq-gain','zynq-gain-set','zynq-down','zynq-down-set','down-result']){
+  assert.ok(cards[3].includes(`id="${id}"`));assert.ok(!cards[0].includes(`id="${id}"`));
+ }
+ const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);assert.equal(new Set(ids).size,ids.length);
+});
+test('runtime shows actionable current state separately from historical errors and clears on disconnect',async()=>{
+ const e=setup();await e.settle();assert.match(e.elements['runtime-source'].textContent,/等待/);
+ Object.assign(e.backend.status,{uptime_ms:90061000,internal_free:65536,internal_min_free:24576,tcp_heap_headroom:12000,
+  tcp_connected:false,tcp_failed:false,tcp_connect_errors:2,tcp_ack_errors:1,wifi_disconnect_reason:201,
+  sdio_transport:'tcp',sdio:{ready:true,host_sdio:true,source_flags:1,reset_count:3,reset_reason:'host_abort',free_slots:2}});
+ await e.context.refresh();assert.equal(e.elements['runtime-source'].textContent,'已初始化');
+ assert.equal(e.elements['runtime-uptime'].textContent,'1 天 01:01:01');
+ assert.match(e.elements['runtime-heap'].textContent,/64.0 KiB.*24.0 KiB/);
+ assert.match(e.elements['runtime-resets'].textContent,/3 次.*主机重握手/);
+ assert.match(e.elements['runtime-wifi-reason'].textContent,/201.*历史/);
+ assert.match(e.elements['runtime-tcp'].textContent,/空闲时正常/);
+ for(const [flags,label] of [[0,'尚未初始化'],[2,'等待新完整帧'],[4,'等待完整帧超时'],[8,'ABI / 租约异常']]){
+  e.backend.status.sdio.source_flags=flags;await e.context.refresh();assert.equal(e.elements['runtime-source'].textContent,label);
+ }
+ e.backend.status.sdio.stopping=true;await e.context.refresh();assert.equal(e.elements['runtime-upload'].textContent,'停止清理中');
+ e.backend.status.tcp_failed=true;await e.context.refresh();assert.equal(e.elements['runtime-tcp']['data-tone'],'error');
+ e.backend.offline=true;await e.context.refresh();assert.equal(e.elements['runtime-source']['data-tone'],'stale');
+ assert.equal(e.elements['runtime-heap'].textContent,'无法更新');assert.equal(e.backend.calls.some(c=>c.options.method==='POST'),false);
+});
+test('new parameter card mirrors shared command progress and errors without duplicate submission',async()=>{
+ const e=setup();await e.settle();e.elements['zynq-gain'].value='3';
+ await e.elements['zynq-gain-set'].listeners.click();await e.settle();
+ assert.deepEqual(e.backend.commandBody.commands,['GAIN SET 3']);
+ assert.equal(e.elements['parameter-feedback'].textContent,e.elements['control-feedback'].textContent);
+ assert.equal(e.backend.calls.filter(c=>c.options.method==='POST').length,1);
+ e.backend.commandConflict=true;await e.elements['zynq-gain-set'].listeners.click();await e.settle();
+ assert.equal(e.elements['parameter-feedback'].classList.contains('chip-error'),true);
 });
