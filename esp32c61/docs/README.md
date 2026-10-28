@@ -9,6 +9,8 @@
 
 ## 文档位置与索引
 
+- [可视化状态面板、AFE/TX 合并布局及停扫关闭高压](VISUAL_STATUS.md)
+
 - [无 USB 控制台的二维码配网、设备准备及旧配置迁移](WIFI_PROVISIONING.md)
 
 - [AFE5832 独立掉电、恢复与控制命令](AFE_POWER.md)

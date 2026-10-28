@@ -35,6 +35,7 @@ static XUartPs_Config config={0xe0000000U,59U};
 static uint64_t clock_ticks;
 static unsigned hv,run,enables,writes,afe_fail,tx_full,resume_failure,downsample,pause_failure;
 static unsigned usb_drain_failure, usb_config_blocked;
+static unsigned hv_stuck,halt_with_hv;
 int usb_image_config_begin(void) { usb_config_blocked=!usb_drain_failure;return usb_drain_failure?-1:0; }
 void usb_image_config_end(void) { usb_config_blocked=0; }
 int frame_store_pause(void) { assert(!hv&&!run);return pause_failure?-1:0; }
@@ -67,11 +68,11 @@ void XScuGic_Enable(XScuGic *g,u32 id) { (void)g;(void)id; }
 void XScuGic_InterruptMaptoCpu(XScuGic *g,u8 mask,u32 id) { (void)g;(void)id;assert(mask==0); }
 u32 XBram_ReadReg(u32 base,u32 off) { (void)base;(void)off;assert(0);return 0; } /* No valid run readback in PL. */
 void hv_enable(void) { hv=1;enables++; }
-void hv_disable(void) { hv=0; }
+void hv_disable(void) { if(!hv_stuck)hv=0; }
 u32 hv_is_enabled(void) { return hv; }
 void Beamform_Stop(void) { hv=run=0; }
 int Beamform_Start(void) { if(resume_failure){hv=run=0;return -1;}hv_enable();run=1;return 0; }
-void Beamform_Halt(void) { run=0; }
+void Beamform_Halt(void) { if(hv)halt_with_hv++;run=0; }
 void Beamform_Pause(void) { run=0; }
 int Beamform_Resume(void) { if(resume_failure){hv=run=0;return -1;}run=1;return 0; }
 u32 Beamform_GetRunRequest(void) { return run; }
@@ -239,6 +240,14 @@ int main(void) {
     uart_handle_wifi_line("CFG ABORT",12,capture);
     old_reports=report_requests;
     uart_handle_wifi_line("STATUS",12,capture);assert(strstr(answer,"cpu1_disabled=0")&&report_requests==old_reports+1);
-    puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE+TX power interlocks/bounded TX/CPU1 warning only");
+    unsigned old_halt=halt_with_hv;
+    hv=run=1;uart_handle_wifi_line("BEAM STOP",12,capture);
+    assert(strstr(answer,"@ACK")&&strstr(answer,"BEAM_STOP")&&!hv&&!run&&halt_with_hv==old_halt);
+    hv=run=1;uart_handle_usb_line("BEAM STOP",capture);
+    assert(strstr(answer,"BEAM_STOP")&&!hv&&!run&&halt_with_hv==old_halt);
+    hv_stuck=hv=run=1;uart_handle_wifi_line("BEAM STOP",12,capture);
+    assert(strstr(answer,"@NACK")&&strstr(answer,"HV_DISABLE_FAILED")&&!run);
+    hv_stuck=0;hv_disable();
+    puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE+TX power interlocks/bounded TX/CPU1 warning only/STOP closes HV first");
     return 0;
 }

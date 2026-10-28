@@ -16,6 +16,9 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 .temp-chart{display:block;width:100%;height:auto;margin:16px 0 0;background:#202129;border:1px solid #383c49;border-radius:10px}
 .temp-chart text{font:12px system-ui,sans-serif;fill:#e3e7ee}.temp-grid{stroke:#343844;stroke-width:1}.temp-axis{fill:none;stroke:#b5bdcc;stroke-width:1}.temp-line{fill:none;stroke-width:1.25;stroke-linejoin:round;stroke-linecap:round}
 .temp-zynq-color{color:#126f78}.temp-power-color{color:#b65c12}.temp-afe-color{color:#7653b5}
+.status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}.status-tile,.chip-panel{border:1px solid #dce5eb;background:#f8fafc;border-radius:12px;padding:14px}.status-tile small{margin-bottom:6px}.status-pill{display:inline-flex;align-items:center;gap:8px;border-radius:20px;padding:5px 11px;background:#e8edf2;color:#53657a;font-weight:650;font-size:14px}.status-pill:before{content:'';width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}.status-pill[data-tone=ok]{background:#dff3e9;color:#176343}.status-pill[data-tone=active]{background:#dff0f6;color:#155f80}.status-pill[data-tone=warn]{background:#fff0d4;color:#8b5b0b}.status-pill[data-tone=error]{background:#ffe4e3;color:#a42f2f}.status-pill[data-tone=stale]{background:#eeedf3;color:#686578}
+.control-actions{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.action-group{padding:14px;border:1px solid #dce5eb;border-radius:12px}.action-group h3,.chip-panel h3{margin:0 0 10px;font-size:16px}.button-row{display:flex;flex-wrap:wrap;gap:8px}.button-row button{margin:0;flex:1;min-width:110px}.control-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0}.control-footer button{margin:0}.danger{background:#a53737}.chip-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.chip-panel .status-pill{font-size:15px;margin-bottom:10px}.chip-panel dl{grid-template-columns:75px 1fr;font-size:14px}.chip-panel .button-row{margin-top:14px}.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.metric{border-radius:9px;background:white;border:1px solid #e2e8ee;padding:10px}.metric strong{display:block;font-size:20px}.chip-error{color:#a42f2f;overflow-wrap:anywhere;font-size:14px}.diagnostics{margin-top:12px;color:#53657a;font-size:14px}.diagnostics pre{white-space:pre-wrap;overflow-wrap:anywhere}
+@media(max-width:600px){.status-grid{grid-template-columns:1fr 1fr}.chip-grid,.control-actions{grid-template-columns:1fr}.control-footer{align-items:flex-start;flex-direction:column}.button-row button{padding:10px 12px}}
 </style></head><body><main>
 <p class="muted">ESP32-C61 / B-mode imaging</p><h1>PSRAM 数据上传</h1>
 <p class="muted">配置 Wi-Fi 与上位机地址。PSRAM 自测使用原始 UDP；SDIO 帧使用编译选择的 TCP/UDP。</p>
@@ -41,11 +44,20 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 </section>
 <section class="card"><h2>Zynq 控制与配置</h2>
 <p class="muted">无需 USB 或控制口令，电池供电时可直接控制。接口不鉴权且 HTTP 未加密，仅限可信局域网，禁止开放到公网。</p>
-<p id="control-status" class="muted">等待控制服务状态</p>
-<button id="zynq-query" class="secondary">查询 Zynq 状态</button>
-<button id="zynq-hv-on">开启高压</button><button id="zynq-hv-off" class="secondary">关闭高压并停机</button>
-<button id="zynq-start">开始扫描</button><button id="zynq-pause" class="secondary">暂停扫描（保留高压）</button>
-<button id="zynq-safe-stop" class="secondary">安全停止（关闭高压）</button>
+<div class="status-grid" role="group" aria-label="Zynq 控制状态">
+<div class="status-tile"><small>控制服务</small><span id="control-service" class="status-pill">等待状态</span></div>
+<div class="status-tile"><small>命令任务</small><span id="control-task" class="status-pill">未知</span></div>
+<div class="status-tile"><small>配置事务</small><span id="control-config" class="status-pill">未知</span></div>
+<div class="status-tile"><small>PS 通信</small><span id="control-link" class="status-pill">未握手</span></div>
+<div class="status-tile"><small>扫描请求</small><span id="control-scan" class="status-pill">未知</span></div>
+<div class="status-tile"><small>高压使能</small><span id="control-hv" class="status-pill">未知</span></div>
+</div>
+<div class="control-footer"><small id="control-status" role="status">等待控制服务状态</small><button id="zynq-query" class="secondary">↻ 查询 Zynq 状态</button></div>
+<div class="control-actions">
+<div class="action-group"><h3>高压控制</h3><div class="button-row"><button id="zynq-hv-on">开启高压</button><button id="zynq-hv-off" class="secondary">关闭高压</button></div><small>关闭高压同时停止扫描。</small></div>
+<div class="action-group"><h3>扫描控制</h3><div class="button-row"><button id="zynq-start">开始扫描</button><button id="zynq-safe-stop" class="danger">安全停止</button></div><small>安全停止会关闭高压并停止扫描。</small></div>
+</div>
+<details class="diagnostics"><summary>通信诊断</summary><pre id="control-raw">暂无 PS 回执</pre></details>
 <p class="muted">开始扫描不自动开启高压；Wi-Fi 配置结束后保持停机。上传按钮只传输 DDR，不启动成像。软件状态不是实际高压或物理收发完成的证明。</p>
 <label>数字增益（0～8）<input id="zynq-gain" type="number" min="0" max="8" value="0"></label><button id="zynq-gain-set">设置数字增益</button>
 <h3>图像下采样</h3>
@@ -65,22 +77,29 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <details><summary>高级命令（每行一条）</summary><textarea id="zynq-lines" rows="6" style="width:100%;font-family:monospace" placeholder="STATUS"></textarea>
 <small>支持 CFG、AFE、BRAM、TX7332、BEAM、HV、GAIN、STATUS。长 JSON 配置使用 Python 工具；当前采样点数必须保持 6144。配置不是回滚事务，ABORT 不恢复已写寄存器。</small>
 <button id="zynq-send">下发命令</button></details>
-<pre id="control-result" style="white-space:pre-wrap;overflow-wrap:anywhere" aria-live="polite">尚未下发命令</pre>
+<p id="control-feedback" role="status" aria-live="polite" class="muted">尚未下发命令</p>
+<details class="diagnostics"><summary>命令执行记录</summary><pre id="control-result" style="white-space:pre-wrap;overflow-wrap:anywhere">尚未下发命令</pre></details>
 </section>
-<section class="card"><h2>TX7332 电源控制</h2>
-<p>仅 TX 使用 STDBY 引脚待机，不改变 AFE 状态；网页及温度采集继续运行。恢复后扫描、高压及上传仍停止。数字状态正常不等于模拟输出已验证。</p>
-<p id="tx-power-status" class="muted" role="status">TX 状态未知，请查询。</p>
+<section class="card"><h2>AFE / TX 电源管理</h2>
+<p class="muted">两颗芯片独立控制。进入待机前关闭高压、停止扫描并排空传输；恢复后仍保持停机，网页和温度采集继续运行。</p>
+<div class="chip-grid">
+<div class="chip-panel"><h3>TX7332 · 发射链</h3>
+<span id="tx-power-status" class="status-pill" role="status">状态未知</span>
+<small id="tx-age">等待状态</small><small id="tx-proof">数字检查待查询</small><p id="tx-error" class="chip-error"></p>
+<div class="button-row">
 <button id="tx-sleep" disabled>TX 待机</button>
 <button id="tx-wake" class="secondary" disabled>唤醒 TX</button>
 <button id="tx-query" class="secondary" disabled>查询 TX 状态</button>
-</section>
-<section class="card"><h2>AFE5832 电源控制</h2>
-<p>仅 AFE 待机，网页、温度采集及其他芯片继续运行。进入前自动关闭高压、停止扫描并排空数据；唤醒后不会自动恢复扫描、高压或上传。</p>
-<p id="afe-power-status" class="muted" role="status">AFE 状态未知，请查询。</p>
+</div><small>STDBY 引脚待机，不改变 AFE 状态。</small></div>
+<div class="chip-panel"><h3>AFE5832 · 接收链</h3>
+<span id="afe-power-status" class="status-pill" role="status">状态未知</span>
+<small id="afe-age">等待状态</small><small id="afe-proof">数字检查待查询</small><p id="afe-error" class="chip-error"></p>
+<div class="button-row">
 <button id="afe-sleep" disabled>AFE 全局掉电待机</button>
 <button id="afe-wake" class="secondary" disabled>唤醒 AFE</button>
 <button id="afe-query" class="secondary" disabled>查询 AFE 状态</button>
-<small>只控制 PDN_GBL，不切断电源轨、不改变外部时钟。恢复必须通过新时钟活动和 LVDS 对齐检查；失败时保持高压关闭。查询不会唤醒。</small>
+</div><small>PDN_GBL 全局掉电，不切断电源轨。</small></div></div>
+<small>查询不会唤醒。状态为缓存快照；数字检查正常不代表模拟输出或图像一致性已验证。</small>
 </section>
 <section class="card"><h2>温度监测 · 实时曲线</h2><dl>
 <dt class="temp-zynq-color">Zynq 芯片 ━</dt><dd id="temp-zynq">等待温度数据</dd>
@@ -103,21 +122,18 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <small>旧数据在左，新数据向右追加；横轴为浏览器本地时分秒，先展开、满 30 分钟后滚动，最多 180 组，纵轴自动缩放。仅保存本页面打开后的历史，刷新页面会清空；读取失败、过期、漏采样或断连处不连线。不依赖外部网络绘图库。</small></section>
 <section class="card" aria-labelledby="cpu-title"><h2 id="cpu-title">Zynq CPU 状态</h2>
 <p id="cpu-age" class="muted" role="status">等待 Zynq CPU 状态报告；需配套 PS 与 ESP32 固件。</p>
-<div class="grid">
-<div><h3>CPU0 · 主应用</h3><dl>
-<dt>运行模式</dt><dd id="cpu0-mode">未知</dd>
-<dt>WFI 功能</dt><dd id="cpu0-wfi">—</dd>
-<dt>WFI 累计次数</dt><dd id="cpu0-entries">—</dd>
-<dt>累计等待</dt><dd id="cpu0-wait">—</dd>
-<dt>定时器中断</dt><dd id="cpu0-irqs">—</dd>
-<dt>说明</dt><dd id="cpu0-reason">等待状态</dd>
-</dl></div>
-<div><h3>CPU1 · 未使用核</h3><dl>
-<dt>控制状态</dt><dd id="cpu1-state">未知</dd>
-<dt>复位</dt><dd id="cpu1-reset">—</dd>
-<dt>时钟</dt><dd id="cpu1-clock">—</dd>
-<dt>控制寄存器</dt><dd id="cpu1-control">—</dd>
-</dl><small>仅网页命令关闭 CPU1，不在启动时主动复位或停钟。关闭后不提供重新启动入口；保持复位并停钟不等于独立断电。</small>
+<div class="chip-grid">
+<div class="chip-panel"><h3>CPU0 · 主应用</h3>
+<span id="cpu0-mode" class="status-pill">未知</span><small id="cpu0-reason">等待有效状态</small>
+<span id="cpu0-wfi" class="status-pill">—</span>
+<div class="metric-grid"><div class="metric"><small>WFI 累计次数</small><strong id="cpu0-entries">—</strong></div><div class="metric"><small>累计等待</small><strong id="cpu0-wait">—</strong></div></div>
+<small>定时器中断：<span id="cpu0-irqs">—</span></small></div>
+<div class="chip-panel"><h3>CPU1 · 未使用核</h3>
+<span id="cpu1-state" class="status-pill">未知</span><dl>
+<dt>复位</dt><dd><span id="cpu1-reset" class="status-pill">—</span></dd>
+<dt>时钟</dt><dd><span id="cpu1-clock" class="status-pill">—</span></dd></dl>
+<details class="diagnostics"><summary>控制寄存器</summary><code id="cpu1-control">—</code></details>
+<small>仅网页命令关闭 CPU1，不在启动时主动复位或停钟。关闭后不提供重新启动入口；保持复位并停钟不等于独立断电。</small>
 <button id="cpu1-disable" type="button" disabled>关闭 CPU1</button><button id="cpu1-query" type="button" class="secondary" disabled>查询 CPU 状态</button>
 <p id="cpu1-action-result" class="muted" role="status">启动仅观察原状态；关闭需显式操作。</p></div>
 </div>
@@ -210,15 +226,19 @@ function renderTemperatures(t,disconnected=false){
   t?.seq!=null&&Number.isFinite(t?.age_ms)?`每 10 秒采样；采样序号 ${t.seq}，${(t.age_ms/1000).toFixed(1)} 秒前收到。`:
   '每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。';
 }
+function badge(id,text,tone='unknown'){el(id).textContent=text;el(id).setAttribute('data-tone',tone)}
 function renderCpus(c,disconnected=false){
  const good=!disconnected&&c&&c.status==='ok'&&c.cpu0&&c.cpu1;
  for(const id of ['cpu0-wfi','cpu0-entries','cpu0-wait','cpu0-irqs','cpu1-reset','cpu1-clock','cpu1-control'])el(id).textContent='—';
  el('cpu0-mode').textContent='未知';el('cpu1-state').textContent='未知';el('cpu0-reason').textContent='等待有效状态';
+ for(const id of ['cpu0-mode','cpu0-wfi','cpu1-state','cpu1-reset','cpu1-clock'])el(id).setAttribute('data-tone','unknown');
  if(!good){
   el('cpu-age').textContent=disconnected?'网页连接已断开，CPU 状态未知。':c&&c.status==='stale'?'CPU 状态已过期，暂停显示旧值，请检查 PS/UART。':'等待 Zynq CPU 状态报告；请确认已更新配套 PS 与 ESP32 固件。';
   return;
  }
  const a=c.cpu0,b=c.cpu1;
+ el('cpu0-mode').setAttribute('data-tone',({active:'active',idle:'ok',blocked:'warn',disabled:'warn'})[a.mode]||'unknown');
+ el('cpu0-wfi').setAttribute('data-tone',a.wfi_enabled===true?'ok':a.wfi_enabled===false?'warn':'unknown');
  const modes={active:'正常前台运行',idle:'安全空闲模式（WFI 自动进出）',blocked:'前台运行（待机条件未满足）',disabled:'前台运行（WFI 不可用）'};
  const reasons={none:'双待机及硬件排空条件已确认；仍执行严格中断与队列检查',power_active:'AFE/TX 尚未同时稳定待机',config:'配置事务进行中',transfer:'数据传输尚未排空',pause_unconfirmed:'DDR 排空证明未确认',hardware_unconfirmed:'硬件状态未确认',power_state:'AFE/TX 正在过渡、故障或状态未知',disabled:'编译宏关闭 WFI',timer_unavailable:'WFI 初始化或运行检查失败，已退回轮询'};
  el('cpu-age').textContent=`CPU 状态快照 · 序号 ${c.seq} · ${(Math.max(0,Number(c.age_ms)||0)/1000).toFixed(1)} 秒前更新；约每 10 秒上报。`;
@@ -229,6 +249,8 @@ function renderCpus(c,disconnected=false){
  el('cpu0-irqs').textContent=Number.isFinite(a.timer_irqs)&&a.timer_irqs>=0?String(a.timer_irqs):'—';
  const reset=typeof b.reset==='boolean',clock=typeof b.clock_stopped==='boolean';
  if(reset&&clock){
+  el('cpu1-state').setAttribute('data-tone',b.reset&&b.clock_stopped?'ok':b.reset||b.clock_stopped?'warn':'unknown');
+  el('cpu1-reset').setAttribute('data-tone',b.reset?'ok':'unknown');el('cpu1-clock').setAttribute('data-tone',b.clock_stopped?'ok':'unknown');
   el('cpu1-reset').textContent=b.reset?'保持复位':'未置位';el('cpu1-clock').textContent=b.clock_stopped?'已停止':'未停止';
   el('cpu1-state').textContent=b.reset&&b.clock_stopped?'已固定禁用（复位＋停钟）':b.reset?'仅保持复位':b.clock_stopped?'仅停止时钟':'未固定禁用（执行状态未确认）';
  }
@@ -303,7 +325,7 @@ for(const [id,frames] of [['sdio-once',1],['sdio-stream',0]])el(id).addEventList
  try{notify((await api('/api/sdio/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({frames})})).message)}catch(e){notify(e.message,true)}await refresh()});
 el('sdio-stop').addEventListener('click',async()=>{try{notify((await api('/api/sdio/stop',{method:'POST'})).message)}catch(e){notify(e.message,true)}await refresh()});
 let controlBusy=0,controlClient='',controlRequest=0;
-const controlButtons=['zynq-query','zynq-hv-on','zynq-hv-off','zynq-start','zynq-pause','zynq-safe-stop','zynq-gain-set','zynq-send','zynq-down-set'];
+const controlButtons=['zynq-query','zynq-hv-on','zynq-hv-off','zynq-start','zynq-safe-stop','zynq-gain-set','zynq-send','zynq-down-set'];
 const downsampleLengths=[787456,394240,197632,99328,50176];
 let downsampleControl={};
 function downsampleDescription(d){return `${1<<d} 倍 · ${6144>>d} 点/线 · ${downsampleLengths[d]} B/帧`}
@@ -323,10 +345,33 @@ function previewDownsample(){
  el('down-preview').textContent=/^[0-4]$/.test(v)?'待设置：'+downsampleDescription(Number(v)):'请选择合法抽取倍率';
 }
 function controlId(){return (crypto.getRandomValues(new Uint32Array(1))[0]||1).toString(16).padStart(8,'0')}
+function renderPower(c,chip){
+ const value=c.synced?c[chip+'_state']:'unknown',age=c[chip+'_age_ms'];
+ const labels={ready:'就绪',sleep:'已待机',quiescing:'正在排空',waking:'正在唤醒',fault:'故障',unknown:'状态未知'};
+ const old=Number.isFinite(age)&&age>=30000;
+ const tone=value==='fault'?'error':old?'stale':({ready:'ok',sleep:'active',quiescing:'warn',waking:'warn'})[value]||'unknown';
+ badge(chip+'-power-status',(labels[value]||'状态未知')+(old?' · 缓存':''),tone);
+ el(chip+'-age').textContent=Number.isFinite(age)&&age>=0?`${(age/1000).toFixed(1)} 秒前更新${old?' · 请查询刷新':''}`:'尚无有效快照';
+ const error=c[chip+'_error'];
+ el(chip+'-error').textContent=typeof error==='string'&&error!=='NONE'?error:'';
+ const flags=c[chip+'_flags'];
+ el(chip+'-proof').textContent=value==='ready'&&(chip==='afe'?flags===31:flags===9)?'数字恢复检查已确认（缓存快照）':'详细数字检查待查询；不代表模拟成像验收';
+}
 function renderZynqControl(s){
  const c=s.zynq_control||{};
  downsampleControl=c;
- el('control-status').textContent=`控制服务 ${c.ready?'就绪':'不可用'}；${c.busy?'命令处理中':'空闲'}；${c.config_owned?'配置事务占用 / 上传禁止':'无 Wi-Fi 配置事务'}；PS ${c.synced?'已握手':'未知（需查询）'}；${c.ps_status||'尚无有效状态'}${c.status_age_ms>=0?'（'+(c.status_age_ms/1000).toFixed(1)+' 秒前）':''}`;
+ const snapshot=c.synced?psStatusFields(c.ps_status):null;
+ const old=Number.isFinite(c.status_age_ms)&&c.status_age_ms>=30000;
+ badge('control-service',c.ready?'就绪':'不可用',c.ready?'ok':'unknown');
+ badge('control-task',c.ready?(c.busy||controlBusy?'处理中':'空闲'):'未知',c.ready?(c.busy||controlBusy?'warn':'ok'):'unknown');
+ badge('control-config',c.ready?(c.config_owned||snapshot?.cfg==='1'?'已占用':'无事务'):'未知',c.ready?(c.config_owned||snapshot?.cfg==='1'?'warn':'ok'):'unknown');
+ badge('control-link',c.synced?(old?'已握手 · 旧快照':'已握手'):'未握手',c.synced?(old?'stale':'ok'):'unknown');
+ for(const [id,key,on,off] of [['control-scan','run','扫描中','已停止'],['control-hv','hv','已使能','已关闭']]){
+  const value=snapshot?.[key],valid=value==='0'||value==='1';
+  badge(id,valid?(value==='1'?on:off)+(old?' · 缓存':''):'未知',!valid?'unknown':old?'stale':value==='1'?(key==='hv'?'warn':'active'):'ok');
+ }
+ el('control-status').textContent=Number.isFinite(c.status_age_ms)&&c.status_age_ms>=0?`PS 状态快照 · ${(c.status_age_ms/1000).toFixed(1)} 秒前更新${old?' · 点击查询刷新':''}`:'等待有效 PS 状态快照';
+ el('control-raw').textContent=c.ps_status||'暂无 PS 回执';
  for(const id of controlButtons)el(id).disabled=controlBusy||!!c.busy||!c.ready;
  for(const id of ['zynq-hv-off','zynq-safe-stop'])el(id).disabled=!c.ready;
  const cpu1=s.cpus?.status==='ok'?s.cpus.cpu1:null;
@@ -342,11 +387,11 @@ function renderZynqControl(s){
  previewDownsample();
  const afe=c.afe_state||'unknown',afeReady=c.synced&&afe==='ready';
  const tx=c.tx_state||'unknown',txReady=c.synced&&tx==='ready';
- el('tx-power-status').textContent=`TX：${tx}；标志 0x${Number(c.tx_flags||0).toString(16)}；${c.tx_error||'请更新配套 bit、PS 和 ESP32 固件并查询'}。${c.tx_age_ms>=0?'缓存为 '+(c.tx_age_ms/1000).toFixed(1)+' 秒前；':''}查询不唤醒。STDBY 控制状态，不是模拟输出测量。`;
+ renderPower(c,'tx');
  for(const id of ['tx-sleep','tx-wake','tx-query'])el(id).disabled=!!controlBusy||!!c.busy||!c.ready;
  el('tx-sleep').disabled=el('tx-sleep').disabled||!txReady||!!c.config_owned;
  el('tx-wake').disabled=el('tx-wake').disabled||txReady||!!c.config_owned;
- el('afe-power-status').textContent=`AFE：${afe}；恢复标志 0x${Number(c.afe_flags||0).toString(16)}；${c.afe_error||'请更新配套固件并查询'}。${c.afe_age_ms>=0?'状态为 '+(c.afe_age_ms/1000).toFixed(1)+' 秒前的缓存；查询不唤醒。':''}`;
+ renderPower(c,'afe');
  for(const id of ['afe-sleep','afe-wake','afe-query'])el(id).disabled=!!controlBusy||!!c.busy||!c.ready;
  el('afe-sleep').disabled=el('afe-sleep').disabled||!afeReady||!!c.config_owned;
  el('afe-wake').disabled=el('afe-wake').disabled||afeReady||!!c.config_owned;
@@ -366,6 +411,7 @@ async function sendZynq(lines,options={}){
  if(hv&&!confirm('即将开启高压。请确认硬件连接及操作条件安全。是否继续？'))return;
  if(!controlClient){controlClient=controlId();controlRequest=Number.parseInt(controlId(),16)&0x7fffffff}
  controlBusy++;for(const id of controlButtons)el(id).disabled=true;
+ el('control-feedback').textContent='命令处理中，请勿重复提交…';el('control-feedback').classList.toggle('chip-error',false);
  el('cpu1-disable').disabled=true;el('cpu1-query').disabled=true;
  for(const id of ['afe-sleep','afe-wake','afe-query','tx-sleep','tx-wake','tx-query'])el(id).disabled=true;
  for(const id of ['zynq-hv-off','zynq-safe-stop'])el(id).disabled=false;
@@ -389,12 +435,13 @@ async function sendZynq(lines,options={}){
    }
   }
   if(options.verify)options.verify(results);
+  el('control-feedback').textContent='命令已完成；状态按最近一次快照显示。';
   el('control-result').textContent=output.join('\n')+'\n完成（配置结束不会自动启动）';
   return true;
- }catch(e){el('control-result').textContent=output.join('\n')+'\n'+e.message+'。通信中断时结果可能未知；配置失联由 PS 看门狗停机清理。';return false;}
+ }catch(e){el('control-feedback').textContent=e.message+'；未自动重发，请查询确认状态。';el('control-feedback').classList.toggle('chip-error',true);el('control-result').textContent=output.join('\n')+'\n'+e.message+'。通信中断时结果可能未知；配置失联由 PS 看门狗停机清理。';return false;}
  finally{controlBusy--;await refresh()}
 }
-for(const [id,lines] of [['zynq-query',['STATUS']],['zynq-hv-on',['HV ENABLE']],['zynq-hv-off',['HV DISABLE']],['zynq-start',['BEAM START']],['zynq-pause',['BEAM STOP']],['zynq-safe-stop',['HV DISABLE']]])
+for(const [id,lines] of [['zynq-query',['STATUS']],['zynq-hv-on',['HV ENABLE']],['zynq-hv-off',['HV DISABLE']],['zynq-start',['BEAM START']],['zynq-safe-stop',['HV DISABLE']]])
  el(id).addEventListener('click',()=>sendZynq(lines).catch(e=>notify(e.message,true)));
 el('cpu1-query').addEventListener('click',()=>sendZynq(['STATUS']).catch(e=>notify(e.message,true)));
 el('cpu1-disable').addEventListener('click',async()=>{

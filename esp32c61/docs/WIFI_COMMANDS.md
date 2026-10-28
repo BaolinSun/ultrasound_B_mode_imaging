@@ -31,7 +31,7 @@ UART0 使用 115200、8N1、无流控，双方共地。不是将 monitor 键盘�
 # 查询 PS 软件状态，不启动成像
 python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 --status
 
-# 暂停扫描，保留高压原状态
+# 停止扫描，同时关闭高压
 python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 -c "BEAM STOP"
 
 # 停机并关闭高压
@@ -126,7 +126,7 @@ STATUS
 | `TX7332 WR tx7332_config_data <offset> <count> <words...>` | offset 为字索引；count 1～8；每个 word 为 32 位无符号数 | 当前客户端持有 |
 | `TX7332 RD <addr>` | addr 0～1023；运行中可能返回忙，应先停止扫描 | 无 |
 | `BEAM START` | 恢复扫描请求并重新触发 TX 配置；不自动开启高压 | 不允许在配置中启动 |
-| `BEAM STOP` | 暂停扫描请求，保留高压状态 | 停止操作可跨入口执行 |
+| `BEAM STOP` | 先关闭高压，再清除扫描与 TX 配置启动请求；不再保留高压 | 停止操作可跨入口执行 |
 | `HV ENABLE` | 开启高压使能 GPIO；网页要求确认，Python 要求 `--allow-hv` | 不允许在配置中开启 |
 | `HV DISABLE` | 先关闭高压使能，再完全停止扫描请求 | 关闭操作可跨入口执行 |
 | `GAIN SET <shift>` | shift 0～8；每步约 +6.02 dB，放大噪声并可能饱和；不自动改变模拟增益 | 无事务时可在线修改；有事务时仅所属客户端 |

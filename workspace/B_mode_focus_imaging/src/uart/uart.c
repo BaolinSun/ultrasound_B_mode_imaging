@@ -539,7 +539,10 @@ static void uart_handle_beam(char **ctx)
 		return;
 	}
 	if (strcmp(op, "STOP") == 0) {
-		Beamform_Pause();
+		/* All command entrances stop HV first, then clear scan/SPI requests. */
+		hv_disable();
+		Beamform_Halt();
+		if(hv_is_enabled()) { uart_nack(uart_cfg_seq,"HV_DISABLE_FAILED"); return; }
 		uart_ack(uart_cfg_seq, "BEAM_STOP");
 		return;
 	}

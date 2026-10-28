@@ -83,6 +83,48 @@ test('CPU card clears stale/lost/offline readings and never renders old zeros as
 
 const html = readFileSync(new URL('../main/index.html', import.meta.url), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+test('visual control tiles decode PS fields, mark old snapshots and clear disconnected values',async()=>{
+ const e=setup();await e.settle();
+ Object.assign(e.backend.status.zynq_control,{ps_status:'@STATUS v=1 cfg=0 run=1 hv=1 down=0',status_age_ms:500});
+ await e.context.refresh();
+ assert.equal(e.elements['control-service']['data-tone'],'ok');
+ assert.equal(e.elements['control-scan'].textContent,'扫描中');assert.equal(e.elements['control-hv']['data-tone'],'warn');
+ assert.doesNotMatch(e.elements['control-status'].textContent,/@STATUS/);
+ e.backend.status.zynq_control.status_age_ms=134400;await e.context.refresh();
+ assert.match(e.elements['control-hv'].textContent,/缓存/);assert.equal(e.elements['control-hv']['data-tone'],'stale');
+ e.backend.status.zynq_control.ps_status='@STATUS v=1 cfg=0 run=9 hv=bad down=0';await e.context.refresh();
+ assert.equal(e.elements['control-scan'].textContent,'未知');assert.equal(e.elements['control-hv'].textContent,'未知');
+ e.backend.offline=true;await e.context.refresh();assert.equal(e.elements['control-hv'].textContent,'未知');assert.equal(e.elements['zynq-safe-stop'].disabled,true);
+});
+test('power panels share a responsive card and show ready/sleep/transition/fault with text and color',async()=>{
+ const e=setup();await e.settle();
+ for(const [value,label,tone] of [['ready','就绪','ok'],['sleep','已待机','active'],['quiescing','正在排空','warn'],['waking','正在唤醒','warn'],['fault','故障','error'],['unknown','状态未知','unknown']]){
+  Object.assign(e.backend.status.zynq_control,{afe_state:value,tx_state:value,afe_age_ms:100,tx_age_ms:100,afe_error:value==='fault'?'AFE_FCLK_TIMEOUT':'NONE'});
+  await e.context.refresh();assert.equal(e.elements['afe-power-status'].textContent,label);assert.equal(e.elements['tx-power-status']['data-tone'],tone);
+ }
+ assert.match(html,/AFE \/ TX 电源管理/);assert.match(html,/@media\(max-width:600px\).*\.chip-grid/);
+ e.backend.status.zynq_control.tx_state='ready';e.backend.status.zynq_control.tx_age_ms=40000;await e.context.refresh();assert.equal(e.elements['tx-power-status']['data-tone'],'stale');
+});
+test('CPU visualization keeps WFI policy distinct from actual instantaneous sleep',async()=>{
+ const e=setup();await e.settle();
+ for(const [mode,tone] of [['active','active'],['idle','ok'],['blocked','warn'],['disabled','warn']]){
+  e.backend.status.cpus=cpuSnapshot(mode);await e.context.refresh();assert.equal(e.elements['cpu0-mode']['data-tone'],tone);
+ }
+ assert.equal(e.elements['cpu1-state']['data-tone'],'ok');
+ e.backend.status.cpus=cpuSnapshot('active',0);await e.context.refresh();assert.equal(e.elements['cpu1-state']['data-tone'],'unknown');
+ e.backend.status.cpus.status='stale';await e.context.refresh();assert.equal(e.elements['cpu0-mode']['data-tone'],'unknown');
+});
+test('scan controls have no keep-HV pause and both stop actions send priority HV DISABLE',async()=>{
+ const e=setup();await e.settle();assert.equal(e.elements['zynq-pause'],undefined);
+ for(const id of ['zynq-safe-stop','zynq-hv-off']){
+  await e.elements[id].listeners.click();assert.deepEqual(e.backend.commandBody.commands,['HV DISABLE']);
+ }
+ assert.equal(e.backend.calls.filter(x=>x.options.method==='POST').length,2);
+ assert.match(e.elements['control-feedback'].textContent,/命令已完成/);
+ e.backend.job={busy:false,state:'failed',error:'HV_DISABLE_FAILED',count:1,completed:1,results:[{command:'HV DISABLE',response:'@NACK 0 HV_DISABLE_FAILED'}]};
+ await e.elements['zynq-safe-stop'].listeners.click();
+ assert.match(e.elements['control-feedback'].textContent,/HV_DISABLE_FAILED/);assert.equal(e.elements['control-feedback'].classList.contains('chip-error'),true);
+});
 test('data-path status distinguishes direct copy, allocation, core lock and fused CRC from legacy firmware',async()=>{
  const e=setup();await e.settle();
  e.backend.status.tcp_direct_psram=true;e.backend.status.tcp_staging_alloc_bytes=1472;
