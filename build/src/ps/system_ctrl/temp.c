@@ -5,6 +5,7 @@
 static uint32_t next_sample,sequence;
 static int initialized,busy;
 static int zynq_valid;
+static uint32_t latest_mask;
 static int32_t zynq_mc;
 static uint32_t zynq_sample_ms;
 int temp_read_checked(uint32_t address,int32_t *value) {
@@ -18,7 +19,7 @@ float read_temp(uint32_t address) {
 }
 uint32_t temp_init(void) { return temp_hw_init_xadc()==0?0U:1U; }
 void temperature_service_init(void) {
-    initialized=1; busy=0; sequence=0; zynq_valid=0;
+    initialized=1; busy=0; sequence=0; zynq_valid=0;latest_mask=0;
     (void)temp_init();
     next_sample=temp_hw_now_ms(); /* First group on first foreground service. */
     temperature_service_poll();
@@ -35,6 +36,7 @@ void temperature_service_poll(void) {
     zynq_valid=(m.mask&1U)!=0;zynq_mc=m.mc[0];zynq_sample_ms=now;
     if(temp_read_checked(POWER_TEMP_ADDR,&m.mc[1])==0) m.mask|=2;
     if(temp_read_checked(AFE_TEMP_ADDR,&m.mc[2])==0) m.mask|=4;
+    latest_mask=m.mask;
     char line[TEMP_LINE_BYTES]; size_t length=temperature_format(line,sizeof(line),&m);
     if(length) (void)temp_hw_send(line,length); /* Bounded; no retry/replay. */
     busy=0;
@@ -49,3 +51,5 @@ int temperature_service_zynq_mc(int32_t *mc) {
     *mc=zynq_mc;return 0;
 }
 uint32_t temperature_service_sequence(void) { return sequence; }
+
+int temperature_service_healthy(void) {return initialized && latest_mask==7U && (uint32_t)(temp_hw_now_ms()-zynq_sample_ms)<=30000U;}

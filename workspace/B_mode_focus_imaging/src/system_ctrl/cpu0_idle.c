@@ -4,6 +4,7 @@
 #include "cpu0_idle_test_services.h"
 #else
 #include "temp.h"
+#include "system_health.h"
 #include "startup_recovery.h"
 #include "temp_hw.h"
 #include "../GPIO/gpio.h"
@@ -234,6 +235,7 @@ void cpu0_foreground_poll(void) {
     if(last_quiet!=q)cpu_report_pending=1;
     last_quiet=q;
     publish_cpu_status(); /* Existing temperature wake/transition, no new timer. */
+    system_health_poll(); /* Read-only health, before any WFI; no extra wake timer. */
     bool enabled=idle_core.enabled;
     cpu0_idle_core_try(&idle_core);
     if(enabled && !idle_core.enabled){summary();cpu_report_pending=1;}

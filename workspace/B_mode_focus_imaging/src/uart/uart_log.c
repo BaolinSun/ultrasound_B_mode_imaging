@@ -125,3 +125,5 @@ void zynq_uart_command_poll(void)
     uart_handle_wifi_line(m.text,m.session,capture_response);
     strcpy(saved_response,response); send_response(peer,m.request,response);
 }
+
+int zynq_uart_command_healthy(void) {return command_ready && !lost && (XUartPs_ReadReg(ZYNQ_LOG_UART_BASEADDR,XUARTPS_IMR_OFFSET)&(XUARTPS_IXR_RXOVR|XUARTPS_IXR_TOUT))==(XUARTPS_IXR_RXOVR|XUARTPS_IXR_TOUT);}

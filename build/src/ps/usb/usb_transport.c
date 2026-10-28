@@ -283,3 +283,5 @@ int usb_transport_idle_pending(void) {
         usb_frame_busy(&image) || image.frame.token || !dma_idle();
     /* Posted OUT descriptors remain armed for wake-up; DDR stays powered. */
 }
+
+int usb_transport_healthy(void) {return initialized && configured && UsbInstance.Config.BaseAddress && !faulted && !io_error && image.state!=USB_IMAGE_FAULT && (XUsbPs_ReadReg(UsbInstance.Config.BaseAddress,XUSBPS_PORTSCR1_OFFSET)&XUSBPS_PORTSCR_CCS_MASK);}

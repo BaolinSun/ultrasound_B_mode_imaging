@@ -20,6 +20,9 @@ static u64 waiting_since;
 static int store_ready;
 static sdio_host_t host;
 static int online, phase;
+static u8 peer_health;
+static u64 peer_health_at,peer_progress_at;
+static u8 peer_heartbeat;
 static int reset_on_connect=1;
 static u8 command_seq;
 static u32 session_id, frame_id, frame_crc, offset, failures, frames;
@@ -30,6 +33,7 @@ static u32 last_crc_us;
 static u64 frame_log_at;
 enum { IDLE, BEGIN_WAIT, WINDOW, DONE_WAIT };
 static u64 milliseconds(void) { XTime n; XTime_GetTime(&n); return (u64)n*1000U/(u64)(COUNTS_PER_SECOND); }
+int sdio_bridge_healthy(void) {return online && store_ready && peer_health==BR_HEALTH_OK && milliseconds()-peer_health_at<=1500U && milliseconds()-peer_progress_at<=1500U && (phase==IDLE || milliseconds()-last_progress<2000U);}
 static int read8(unsigned p,u8 *v) { return sdio_read_reg(&host,p,v); }
 static int write8(unsigned p,u8 v) { return sdio_write_reg(&host,p,v); }
 static int read32(unsigned p,u32 *v) {
@@ -89,7 +93,7 @@ void sdio_bridge_init(void) {
     if(frame.lease && release_frame()!=0) { store_ready=0; return; }
     /* Boot/reinitialization starts a fresh handshake; never replay payload. */
     online=0; phase=IDLE; offset=0; reset_on_connect=1; retry_at=milliseconds();
-    frame_crc=0; store_ready=1;
+    frame_crc=0; store_ready=1;peer_health=0;peer_heartbeat=0;peer_health_at=peer_progress_at=0;
     xil_printf("@SDIO DDR_FRAME_STORE slots=3 base=20000000 dynamic_length=1 compiled=SDIO\r\n");
 }
 static void poll_once(void) {
@@ -181,7 +185,7 @@ static void poll_once(void) {
         if(write32(BR_FRAME_ID,frame_id) || write32(BR_LENGTH,frame.bytes) ||
            write32(BR_CRC,frame_crc) || write32(BR_SESSION_ECHO,session_id) ||
            write8(BR_CMD,BR_BEGIN) || write8(BR_CMD_SEQ,command_seq)) { fail_link(); return; }
-        deadline=now+30000; offset=0; phase=BEGIN_WAIT;
+        deadline=now+30000; offset=0; phase=BEGIN_WAIT;last_progress=now;
         return;
     }
     if(phase==BEGIN_WAIT) {
@@ -226,6 +230,11 @@ void sdio_bridge_poll(void) {
     u64 now=milliseconds();
     if(online && now>=source_report_at) {
         source_report_at=now+500;
+        if(read8(BR_HEALTH,&peer_health)) {fail_link();return;}
+        peer_health_at=now;
+        u8 heartbeat;
+        if(read8(BR_HEARTBEAT,&heartbeat)) {fail_link();return;}
+        if(heartbeat!=peer_heartbeat) {peer_heartbeat=heartbeat;peer_progress_at=now;}
         if(write32(BR_SOURCE_DROPS,Xil_In32(FS_BASE+FS_DROPS)) ||
            write32(BR_SOURCE_ERRORS,Xil_In32(FS_BASE+FS_ERRORS)) ||
            write32(BR_SOURCE_LATEST,Xil_In32(FS_BASE+FS_LATEST)) ||
@@ -255,6 +264,7 @@ void sdio_bridge_poll(void) {
 /* USB build: no SDIO DDR frame allocation or SD1 register/DMA access. */
 void sdio_bridge_init(void) { xil_printf("@OUTPUT compiled=USB\r\n"); }
 void sdio_bridge_poll(void) { }
+int sdio_bridge_healthy(void) {return 0;}
 int sdio_bridge_source_recovery_begin(void) { return 0; }
 int sdio_bridge_power_idle(void) { return 1; }
 int sdio_bridge_idle_pending(void) { return 0; }

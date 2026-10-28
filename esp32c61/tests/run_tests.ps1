@@ -17,6 +17,7 @@ if (-not (Test-Path -LiteralPath $Compiler)) { throw 'Supply -Compiler with a ho
 $env:PATH = "$(Split-Path $Compiler -Parent);$env:PATH"
 $env:PYTHONUTF8 = '1'
 & (Join-Path $projectRoot '../build/scripts/test_provisioning.ps1') -Compiler $Compiler
+& (Join-Path $projectRoot '../build/scripts/test_system_health.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_cpu1.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_cpu0.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_startup_recovery.ps1') -Compiler $Compiler

@@ -11,9 +11,6 @@ u32 hv_init(void) {
 	XGpioPs_SetOutputEnablePin(&gpiops, HV_EN_PIN, 1);
 	XGpioPs_WritePin(&gpiops, HV_EN_PIN, 0);
 
-	XGpioPs_SetDirectionPin(&gpiops, LED_1_EMIO_PIN, 1);
-	XGpioPs_SetOutputEnablePin(&gpiops, LED_1_EMIO_PIN, 1);
-	XGpioPs_WritePin(&gpiops, LED_1_EMIO_PIN, 0);
 
 	return XST_SUCCESS;
 }
@@ -21,12 +18,10 @@ u32 hv_init(void) {
 void hv_enable(void) {
 	if(!imaging_power_allowed()) return;
 	XGpioPs_WritePin(&gpiops, HV_EN_PIN, 1);
-	XGpioPs_WritePin(&gpiops, LED_1_EMIO_PIN, 1);
 }
 
 void hv_disable(void) {
 	XGpioPs_WritePin(&gpiops, HV_EN_PIN, 0);
-	XGpioPs_WritePin(&gpiops, LED_1_EMIO_PIN, 0);
 }
 
 u32 hv_is_enabled(void) {

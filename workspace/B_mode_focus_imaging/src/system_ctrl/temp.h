@@ -14,5 +14,6 @@ void temperature_service_init(void);
 void temperature_service_poll(void); /* Foreground only; never call in ISR. */
 uint32_t temperature_service_remaining_ms(void); /* zero if due/unavailable */
 int temperature_service_zynq_mc(int32_t *mc); /* latest valid XADC sample, age <= 10 s */
+int temperature_service_healthy(void); /* all three channels, age <= 30 s */
 uint32_t temperature_service_sequence(void); /* Read-only wake/report generation. */
 #endif

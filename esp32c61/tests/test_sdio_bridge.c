@@ -252,6 +252,9 @@ int main(int argc,char **argv) {
         assert(status().last_received_frame==100+d && status().last_received_bytes==bytes);
         assert(!memcmp(job_data,reference,bytes));finish(RAW_OK);
     }
+    step();assert(regs[BR_HEALTH]==BR_HEALTH_OK);
+    target_configured=false;step();assert(!(regs[BR_HEALTH]&4U));target_configured=true;
+    connected=false;step();assert(!(regs[BR_HEALTH]&1U));connected=true;step();
     printf("PASS: real bridge task / 1538 blocks / ownership / control drain / callbacks / CRC / stop / timeout / reset / disconnect\n");
     return 0;
 }

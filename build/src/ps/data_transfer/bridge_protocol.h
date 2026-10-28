@@ -12,6 +12,7 @@
 #define BR_MAGIC UINT32_C(0x55425344)
 #define BR_VERSION 1U
 #define BR_SDIO_VERSION 4U
+#define BR_HEALTH_OK 0x87U /* valid | Wi-Fi | sender | target */
 #define BR_STOP_TIMEOUT_US 5000000LL
 static inline bool br_image_bytes_valid(uint32_t bytes) {
     for(unsigned d=0;d<=4;d++) if(bytes==((6144U>>d)+8U)*128U) return true;
@@ -25,7 +26,7 @@ enum { BR_CMD=0, BR_CMD_SEQ=1, BR_DEVICE=2, BR_STATUS=3, BR_CREDIT=4,
        BR_SOURCE_FLAGS=12, BR_SOURCE_DOWN=13, BR_SOURCE_SLOT=14, BR_SOURCE_OCCUPANCY=15,
        BR_SOURCE_DROPS=16, BR_SOURCE_ERRORS=20, BR_SOURCE_LATEST=24, BR_SOURCE_PUBLISHED=52, BR_SESSION=32, BR_FRAME_ID=36,
        BR_LENGTH=40, BR_CRC=44, BR_SESSION_ECHO=48,
-       BR_STOP_REQ=56, BR_STOP_ACK=57 };
+       BR_STOP_REQ=56, BR_STOP_ACK=57, BR_HEALTH=58, BR_HEARTBEAT=59 };
 /* STOP_REQ is slave-owned, nonzero token committed before STOPPING status.
  * Host echoes STOP_ACK only after CMD53/DMA is idle and its DDR lease retired.
  * Session plus token identifies this stop; ordinary stop never resets SDIO. */

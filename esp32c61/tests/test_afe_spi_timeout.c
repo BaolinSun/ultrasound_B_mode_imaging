@@ -22,9 +22,12 @@ static void write_register(unsigned base,unsigned off,unsigned value) { (void)ba
 #define AFE5832_CTRL_PS_mWriteReg(b,o,v) write_register(b,o,v)
 #include "../../build/src/ps/AFE5832/afe5832_spi.c"
 int main(void) {
+    assert(!afe5832_spi_healthy());
     ready=1;assert(afe5832_spi_write_byte(1,2)==XST_SUCCESS);
     unsigned data=0;assert(afe5832_spi_read_byte(1,&data)==XST_SUCCESS&&data==0xbeef);
+    assert(afe5832_spi_healthy());
     ready=0;ticks=0;assert(afe5832_spi_write_byte(1,2)==XST_FAILURE&&ticks<=23000);
+    assert(!afe5832_spi_healthy());
     ticks=0;data=0x1234;assert(afe5832_spi_read_byte(1,&data)==XST_FAILURE&&data==0x1234&&ticks<=23000);
     assert(afe5832_spi_read_byte(1,NULL)==XST_INVALID_PARAM);
     frozen=1;assert(afe5832_spi_write_byte(1,2)==XST_FAILURE);

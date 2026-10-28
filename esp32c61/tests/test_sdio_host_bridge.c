@@ -121,6 +121,7 @@ int main(void) {
     sdio_bridge_init();assert(!sdio_bridge_output_is_sdio());
     for(unsigned i=0;i<100;i++) { tick+=501;sdio_bridge_poll(); }
     assert(inits==0 && blocks==0 && commits==0 && aborts==0 && flushes==0);
+    assert(!sdio_bridge_healthy());
     puts("PASS: compile-time USB / no SD1 access / no SDIO transfer");
 #else
     /* Map fake RAM at the REAL board address. The production bridge is not
@@ -265,6 +266,13 @@ int main(void) {
 #else
     assert(!munmap(image_ddr,DDR_RING_BYTES));
 #endif
+    io_failure=0;fail_operation=0;source_ready=1;recovery_blocked=0;
+    quiesce_failure=release_failure=stop_ack_failure=0;hold_ack=0;
+    connect();assert(!sdio_bridge_healthy());
+    regs[BR_HEALTH]=BR_HEALTH_OK;regs[BR_HEARTBEAT]=1;tick+=501;sdio_bridge_poll();assert(sdio_bridge_healthy());
+    tick+=1600;sdio_bridge_poll();assert(!sdio_bridge_healthy());
+    regs[BR_HEARTBEAT]=2;tick+=501;sdio_bridge_poll();assert(sdio_bridge_healthy());
+    regs[BR_HEALTH]=0x86;regs[BR_HEARTBEAT]=3;tick+=501;sdio_bridge_poll();assert(!sdio_bridge_healthy());
 #endif
     return 0;
 }

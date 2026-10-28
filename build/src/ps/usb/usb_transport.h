@@ -14,6 +14,7 @@ int usb_image_config_begin(void);
 void usb_image_config_end(void);
 void usb_transport_power_gate(int blocked);
 void usb_transport_power_vote(unsigned owner,int blocked);
+int usb_transport_healthy(void);
 int usb_transport_power_idle(void);
 int usb_transport_idle_pending(void); /* DMA/lease/queues/events, read-only */
 #endif

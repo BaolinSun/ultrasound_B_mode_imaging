@@ -81,6 +81,7 @@ set(USER_COMPILE_SOURCES
 "usb/xusbps_Ringbuffer.c"
 "usb/xusbps_ch9.c"
 "usb/xusbps_ch9_winusb.c"
+"system_ctrl/system_health.c"
 )
 
 # -----------------------------------------

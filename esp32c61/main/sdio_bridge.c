@@ -26,6 +26,8 @@ static bool driver_live, stop_requested, reset_requested;
 static bool resetting, stop_needs_host, stop_host_done;
 static uint8_t stop_sequence;
 static int64_t stop_deadline;
+static int64_t health_due;
+static uint8_t health_heartbeat;
 static const char *reset_reason="none";
 static bool control_blocked;
 static unsigned frames_left, window_size, window_received;
@@ -103,6 +105,7 @@ static esp_err_t open_driver(void) {
     last_progress=esp_timer_get_time();
     write8(BR_CMD,BR_NOP); write8(BR_CMD_SEQ,0); write8(BR_CMD_ACK,0);
     write8(BR_HOST_MODE,0); write8(BR_GRANT,0); write8(BR_WINDOW_ACK,0); write8(BR_CREDIT,0);
+    write8(BR_HEALTH,0);write8(BR_HEARTBEAT,0);health_due=0;
     write8(BR_STOP_REQ,0); write8(BR_STOP_ACK,0);
     write8(BR_RESULT,BR_ACCEPTED); write32(BR_SESSION,stats.session);
     write8(BR_DEVICE,0xc6); write8(BR_PROTOCOL,BR_SDIO_VERSION);
@@ -273,6 +276,13 @@ static void bridge_task(void *ctx) {
         for(unsigned i=0;i<2;i++) pending|=slots[i].state==READY;
         if(resetting || reset_requested) reset_link();
         else if(stats.ready) {
+            if(esp_timer_get_time()>=health_due) {
+                health_due=esp_timer_get_time()+500000;
+                health_heartbeat++;write8(BR_HEARTBEAT,health_heartbeat);
+            }
+            app_config_t health_config;config_store_get(&health_config);
+            uint8_t health=0x80U | (u.connected?1U:0U) | (!u.tcp_failed?2U:0U) | (health_config.target_ip[0]?4U:0U);
+            if(read8(BR_HEALTH)!=health)write8(BR_HEALTH,health);
             stats.source_flags=read8(BR_SOURCE_FLAGS);
             stats.source_down=read8(BR_SOURCE_DOWN);stats.source_slot=read8(BR_SOURCE_SLOT);
             stats.source_occupancy=read8(BR_SOURCE_OCCUPANCY);

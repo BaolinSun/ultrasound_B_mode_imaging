@@ -29,6 +29,7 @@
 #include "xiltimer.h"
 #include "system_ctrl/temp.h"
 #include "system_ctrl/startup_recovery.h"
+#include "system_ctrl/system_health.h"
 #include "system_ctrl/cpu1_power.h"
 #include "system_ctrl/cpu0_idle.h"
 #include "bram/bram.h"
@@ -54,6 +55,7 @@ int main() {
 	/* Application runs on CPU0; inherited CPU1 state is left unchanged. */
 	system_ctrl_init();
 	gpio_init(); //ok
+	system_health_init();
 	uart_init(); //
 	IIC_Init(); 	//OK
 	hv_init();  //OK
@@ -105,6 +107,7 @@ int main() {
 	XGpioPs_WritePin(&gpiops, LED_2_EMIO_PIN, 1);
 	led_blink(5,250000);
 	cpu0_idle_init();
+	system_health_boot_complete();
 
 	while (1) {
 		cpu0_foreground_poll();

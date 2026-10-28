@@ -113,6 +113,7 @@ static void cache_tests(void) {
 }
 static void service_tests(void) {
     int32_t local_mc;
+    assert(!temperature_service_healthy());
     assert(temperature_service_zynq_mc(&local_mc)!=0);
     assert(temperature_service_zynq_mc(NULL)!=0);
     assert(temperature_service_remaining_ms()==0);
@@ -121,6 +122,8 @@ static void service_tests(void) {
     assert(temperature_service_remaining_ms()==10000);
     assert(reports==before+1 && reads[0]==1 && reads[1]==1 && reads[2]==1);
     temperature_message_t m;assert(temperature_parse(sent,strlen(sent)-2,&m));
+    assert(temperature_service_healthy());
+    now=30101;assert(!temperature_service_healthy());now=100;
     assert(m.mask==7 && m.seq==0 && m.mc[1]==0 && m.mc[2]==-10125);
     assert(!temperature_service_zynq_mc(&local_mc) && local_mc==m.mc[0]);
     now=10101;assert(temperature_service_zynq_mc(&local_mc)!=0);
@@ -128,6 +131,7 @@ static void service_tests(void) {
     assert(temperature_service_remaining_ms()==1);
     failures=2;now=10100;temperature_service_poll();
     assert(temperature_parse(sent,strlen(sent)-2,&m) && m.mask==5 && m.seq==1);
+    assert(!temperature_service_healthy());
     assert(isnan(read_temp(0x48)));
     assert(read_temp(0x49)<0);
     assert(temp_read_checked(0x48,NULL)!=0);

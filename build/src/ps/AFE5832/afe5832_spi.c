@@ -1,13 +1,16 @@
 #include "afe5832_spi.h"
 #include "xiltimer.h"
+static int spi_ok;
+int afe5832_spi_healthy(void) {return spi_ok;}
 static int afe_wait(u32 offset,u32 mask) {
+    spi_ok=0;
     XTime start,now; XTime_GetTime(&start);
     unsigned polls=0;
     while(!(AFE5832_CTRL_PS_mReadReg(BASE_ADDRESS,offset)&mask)) {
         XTime_GetTime(&now);
         if(now-start>COUNTS_PER_SECOND/50U || ++polls>=1000000U) return XST_FAILURE;
     }
-    return XST_SUCCESS;
+    spi_ok=1;return XST_SUCCESS;
 }
 
 u32 afe5832_spi_write_byte(u32 addr, u32 data) {
@@ -26,7 +29,7 @@ u32 afe5832_spi_write_byte(u32 addr, u32 data) {
 }
 
 u32 afe5832_spi_read_byte(u32 addr, u32* data) {
-	if(!data) return XST_INVALID_PARAM;
+	if(!data) {spi_ok=0;return XST_INVALID_PARAM;}
 
 	u32 data_temp = 0;
 	u32 read_data = 0;

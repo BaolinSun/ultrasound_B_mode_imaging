@@ -14,6 +14,7 @@
 //reg3:bit9-0:单次读地址
 //reg3:bit21:单次启动信号
 //reg5:bit0:读完成信号
+int afe5832_spi_healthy(void);
 u32 afe5832_spi_write_byte(u32 addr, u32 data);
 u32 afe5832_spi_read_byte(u32 addr,u32 *data);
 #endif
