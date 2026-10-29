@@ -209,6 +209,31 @@ class ServiceTests(unittest.TestCase):
         for route, body in [('/api/config', {}), ('/api/zynq/commands', {}), ('/api/sdio/start', {'frames': 1})]:
             with self.assertRaises(ValueError): api(route, body)
 
+    def test_five_dynamic_lengths_through_real_local_tcp_and_udp_receivers(self):
+        for protocol in ('tcp', 'udp'):
+            with self.subTest(protocol=protocol):
+                service, device = self.make_service(protocol)
+                service.start();wait_for(lambda: service.snapshot()['state'] == 'running')
+                kind = socket.SOCK_STREAM if protocol == 'tcp' else socket.SOCK_DGRAM
+                with socket.socket(socket.AF_INET, kind) as conn:
+                    conn.settimeout(3)
+                    address = ('127.0.0.1', device.config['target_port'])
+                    if protocol == 'tcp':conn.connect(address)
+                    for down in range(5):
+                        data = payload(down=down)
+                        if protocol == 'tcp':
+                            conn.sendall(header(data, frame=down+1)+data)
+                            self.assertEqual(tcp.ACK.unpack(exact(conn, 20))[3], 0)
+                        else:
+                            for offset in range(0, len(data), 1440):
+                                conn.sendto(udp.encode_packet(data, 7, down+1, offset), address)
+                                time.sleep(.0002)
+                        wait_for(lambda: service.snapshot()['image_frame'] == down+1)
+                        self.assertEqual(service.snapshot()['samples_per_line'], 6144 >> down)
+                self.assertEqual(service.snapshot()['received_frames'], 5)
+                self.assertEqual(service.snapshot()['bad_frames'], 0)
+                service.stop();wait_for(lambda: service.snapshot()['state'] == 'idle')
+
 
 class HTTPTests(unittest.TestCase):
     def test_http_boundaries_no_side_effect_on_get_and_latest_png(self):

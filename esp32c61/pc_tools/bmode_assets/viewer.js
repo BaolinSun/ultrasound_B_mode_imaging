@@ -22,7 +22,9 @@ function render(s){
  el('coverage').textContent=`${s.lines||0} / 64`;
  const source=s.source_status||{};
  el('pipeline').textContent=`缓存状态采样：PL 完整帧发布 ${Number(s.source_fps||0).toFixed(2)} FPS；SDIO 接收 ${Number(s.sdio_fps||0).toFixed(2)} FPS；源端丢弃 ${source.source_drops||0} / 错误 ${source.source_errors||0}；最近 SDIO ${((source.last_receive_us||0)/1000).toFixed(1)} ms`;
- el('frame-format').textContent=`当前：${s.sample_rate_mhz??25} MHz · ${s.samples_per_line??6144} 点 × 64 线 · 抽取 2^${s.decimation||0} · Q2.14 · 双线性扫描转换 · TGC 开启 · DR 45 dB · 亮度 +3 dB · 参考灰度 LUT`;
+ const display=s.image_display_settings||s.display_settings||{};
+ el('frame-format').textContent=`当前：${s.sample_rate_mhz??25} MHz · ${s.samples_per_line??6144} 点 × 64 线 · 抽取 2^${s.decimation||0} · Q2.14 · 双线性扫描转换 · TGC ${display.tgc_enabled===false?'关闭':'开启'} · DR ${display.dynamic_range_db??45} dB · 亮度 ${display.brightness_db??3} dB · 对比度 ${display.contrast??1}`;
+ if(typeof renderDisplayStatus==='function')renderDisplayStatus(s);
  el('counters').textContent=`有效载荷 ${s.received_frames||0} · 网络坏帧 ${s.bad_frames||0} · 协议错误 ${s.protocol_errors||0} · 图像整帧格式错误 ${s.format_errors||0} · 处理丢弃 ${s.queue_drops||0} · 本地 UDP 队列丢包 ${s.local_queue_drops||0} · 非法数据报 ${s.invalid_datagrams||0}`;
  const age=s.image_age_s;
  const stale=s.state!=='running'||s.lines!==64||age===null||age>5;

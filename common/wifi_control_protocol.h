@@ -109,7 +109,7 @@ static inline const char *wc_validate(const char *line) {
     for(unsigned i=0;i<b;i++) {
         uint32_t value;
         if(!wc_uint(t[5+i],&value)) return "WRITE_DATA";
-        if(!strcmp(t[0],"BRAM")&&!strcmp(t[2],"t_timing")&&a+i==0&&value!=6144) return "FRAME_LAYOUT_6144_REQUIRED";
+        if(!strcmp(t[0],"BRAM")&&!strcmp(t[2],"t_timing")&&(a+i==0||a+i==8)&&value!=6144) return "FRAME_LAYOUT_6144_REQUIRED";
         if(!strcmp(t[0],"BRAM")&&!strcmp(t[2],"t_timing")&&a+i==9&&value>4) return "FRAME_LAYOUT_DOWN_0_4_REQUIRED";
     }
     return NULL;

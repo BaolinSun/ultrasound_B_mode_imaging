@@ -14,15 +14,29 @@ button.secondary{color:#263e56;background:#e4eaf1}button:disabled{opacity:.45;cu
 .legend{display:flex;justify-content:space-between;padding:4px 60px 0 10px;font-size:12px;color:#53657a}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
 .value{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}.error{color:#a92727;white-space:pre-wrap;overflow-wrap:anywhere}#image.stale{opacity:.55}
 @media(max-width:720px){main{padding:0 12px}.top{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:repeat(2,1fr)}.card{padding:14px}.axis{width:38px}}
-</style><script src="/viewer.js" defer></script></head>
+</style><script src="/viewer.js" defer></script><script src="/viewer_settings.js" defer></script></head>
 <body><main>
 <header class="top"><div><p class="muted" style="margin:0">Wi-Fi / SDIO · B-mode</p><h1>超声图像实时显示</h1></div><span id="state" class="badge">等待服务</span></header>
 <p class="notice">完整帧显示：PL 发布后持有 DDR 槽位，CRC 通过且 64 条线格式完整才显示。需要匹配的三缓冲固件。</p>
 <section class="card"><div class="controls"><button id="start">开始接收</button><button id="stop" class="secondary" disabled>停止接收</button><button id="freeze" class="secondary">冻结画面</button></div>
 <p id="connection" class="muted">读取连接信息…</p><p class="muted">开始接收只启动连续 SDIO 上传，不会启动扫描或开启高压。成像需通过现有入口启动；停止接收也不负责关闭扫描或高压。</p><p id="error" class="error" role="alert"></p></section>
-<section class="card"><h2>B-mode · ±45° / 120 mm</h2><div class="image-row"><div class="viewport"><img id="image" alt="实时超声扇形图像" hidden><div id="empty">等待完整的 64 条合法图像线</div></div><div class="axis"><span style="top:0">0 mm</span><span style="top:25%">30</span><span style="top:50%">60</span><span style="top:75%">90</span><span style="top:100%">120</span></div></div>
-<div class="legend"><span>−84.9 mm</span><span>0</span><span>+84.9 mm</span></div><p id="image-note" class="muted" role="status">尚无有效图像</p>
+<section class="card"><h2 id="geometry-title">B-mode · ±45° / 120 mm</h2><div class="image-row"><div class="viewport" id="viewport"><img id="image" alt="实时超声扇形图像" hidden><div id="empty">等待完整的 64 条合法图像线</div></div><div class="axis"><span style="top:0">0 mm</span><span id="depth25" style="top:25%">30</span><span id="depth50" style="top:50%">60</span><span id="depth75" style="top:75%">90</span><span id="depth100" style="top:100%">120</span></div></div>
+<div class="legend"><span id="width-left">−84.9 mm</span><span>0</span><span id="width-right">+84.9 mm</span></div><p id="image-note" class="muted" role="status">尚无有效图像</p>
 <small id="frame-format" class="muted">原始：25 MHz · 6144 点 × 64 线；抽取 1/2/4/8/16 自动适配 · Q2.14 · 双线性扫描转换 · TGC 开启 · DR 45 dB · 亮度 +3 dB · 参考灰度 LUT</small></section>
+<section class="card"><h2>图像显示设置 <small class="muted">仅 PC 处理，不下发硬件</small></h2>
+<p class="muted">实际点数和采样率由每份完整帧决定。角度映射需停止接收后导入同一配置并确认；文件不是硬件回读。</p>
+<div class="stats" id="display-form">
+<label>动态范围 / dB <input id="display-dr" type="range" min="20" max="70" step="1"><output id="value-dr"></output></label>
+<label>亮度 / dB <input id="display-brightness" type="range" min="-10" max="20" step=".5"><output id="value-brightness"></output></label>
+<label>对比度 <input id="display-contrast" type="range" min=".5" max="2" step=".05"><output id="value-contrast"></output></label>
+<label>噪声底 / dB <input id="display-noise" type="range" min="-60" max="-20" step="1"><output id="value-noise"></output></label></div>
+<p><label><input id="display-tgc" type="checkbox">启用软件 TGC</label>　<label>显示深度 / mm <input id="display-depth" type="number" min="10" max="188" step="1" style="width:90px"></label> <small class="muted">深度或角度变更前停止接收</small></p>
+<details><summary>软件 TGC 控制点与灰度 LUT</summary>
+<p class="muted">TGC 格式为 [原始采样点 0～6143, 增益 dB]，2～128 个点，增益 −24～24 dB；不会修改 AFE DTGC。</p>
+<textarea id="display-points" rows="5" style="width:100%" aria-label="TGC 控制点 JSON"></textarea><svg id="tgc-plot" viewBox="0 0 600 120" style="width:100%;height:120px;background:#101e2e" aria-label="软件 TGC 预览"></svg>
+<p>灰度 LUT：256 项，0～255</p><textarea id="display-lut" rows="5" style="width:100%" aria-label="灰度 LUT"></textarea><label>导入 LUT <input id="lut-file" type="file" accept=".txt,.json"></label>
+</details><div class="controls"><button id="display-apply">应用显示设置</button><button id="display-reload" class="secondary">重新读取设置</button><button id="display-export" class="secondary">导出显示 JSON</button><label>导入同一配置 <input id="display-import" type="file" accept=".json,application/json"></label></div>
+<p id="display-message" class="muted" role="status">正在读取显示设置…</p><p id="display-revision" class="muted"></p></section>
 <section class="card"><h2>接收与显示状态</h2><div class="stats">
 <div><span class="muted">接收帧率</span><div id="receive-fps" class="value">0.00 FPS</div></div><div><span class="muted">图像发布帧率</span><div id="display-fps" class="value">0.00 FPS</div></div>
 <div><span class="muted">有效吞吐</span><div id="throughput" class="value">0.00 Mbit/s</div></div><div><span class="muted">有效行覆盖</span><div id="coverage" class="value">0 / 64</div></div>

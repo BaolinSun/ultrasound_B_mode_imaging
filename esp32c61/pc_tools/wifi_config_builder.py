@@ -286,6 +286,8 @@ def build_bram_commands(config: dict[str, Any], chunk_words: int) -> list[str]:
         if len(values) != expected_len:
             raise ValueError(f"bram.{section} must contain {expected_len} words, got {len(values)}")
         words = [parse_bram_word(value, f"bram.{section}[{idx}]") for idx, value in enumerate(values)]
+        if section == "t_timing" and (words[0] != 6144 or words[8] != 6144 or words[9] > 4):
+            raise ValueError("t_timing[0] and [8] must be 6144; [9] must be 0..4")
         for offset in range(0, len(words), chunk_words):
             chunk = words[offset : offset + chunk_words]
             payload = " ".join(f"0x{word:08X}" for word in chunk)

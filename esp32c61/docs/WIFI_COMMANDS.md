@@ -335,3 +335,9 @@ python .\pc_tools\bmode_web_viewer.py --device-ip 192.168.3.27
 
 缺少依赖时执行 `python -m pip install -r .\pc_tools\requirements-viewer.txt`。更完整的操作和数据格式见 [Wi-Fi 图像显示说明](WIFI_IMAGE_VIEWER.md)。
 原独立“实时超声图像”卡片已移除，命令及操作说明集中在本文；温度面板以三路数值卡片和深色趋势图显示，每 10 秒采样、仅保留最近 6 分钟，错误或漏采样仍保留断点。
+
+## 网页高级参数编辑入口
+
+控制台“超声参数控制 → 高级参数配置”支持 AFE/TX 寄存器和全部系数表、JSON 导入导出及批次下发。
+原始采样固定 6144 点，`t_timing[0]` 与 `[8]` 必须为 6144，仅 `[9]` 改变抽取。
+配置后保持扫描、高压、上传停止；详细流程及 PC 显示参数见 [网页参数配置](WEB_PARAMETERS.md)。

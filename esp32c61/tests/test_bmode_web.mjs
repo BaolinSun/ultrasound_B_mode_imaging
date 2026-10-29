@@ -74,9 +74,10 @@ test('single in-flight image request and a freeze discards its late result',asyn
  assert.notEqual(t.e.image.hidden,false);
 });
 
-test('backend status is text, not markup; no parameter widgets',async()=>{
+test('backend status is text, not markup; display widgets do not add hardware controls',async()=>{
  const t=setup();await t.settle();t.b.state.error='<img src=x onerror=alert(1)>';
  await t.context.pollStatus();assert.equal(t.e.error.textContent,t.b.state.error);
- assert.doesNotMatch(html,/<(?:input|select|textarea)\b/i);
+ assert.match(html,/display-dr/);assert.match(html,/仅 PC 处理，不下发硬件/);
+ assert.doesNotMatch(html,/HV ENABLE|BEAM START|api\/zynq/);
  assert.match(html,/完整帧显示/);
 });

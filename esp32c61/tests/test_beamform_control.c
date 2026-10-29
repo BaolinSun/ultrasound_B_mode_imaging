@@ -71,6 +71,10 @@ int main(void) {
     assert(Bram_WriteSectionWords("t_timing",9,&invalid,1)==BRAM_CFG_STATUS_RANGE);
     assert(Bram_WriteSectionWords("t_timing",8,pair,2)==BRAM_CFG_STATUS_RANGE);
     assert(!count&&Beamform_GetDownsample()==4&&T_timing_hex[8]==108);
+    invalid=2048;count=0;
+    assert(Bram_WriteSectionWords("t_timing",8,&invalid,1)==BRAM_CFG_STATUS_RANGE&&!count);
+    invalid=6144;
+    assert(Bram_WriteSectionWords("t_timing",8,&invalid,1)==BRAM_CFG_STATUS_OK&&count==1&&T_timing_hex[8]==6144);
     invalid=0;assert(Bram_WriteSectionWords("t_timing",10,&invalid,1)==BRAM_CFG_STATUS_RANGE);
     hv=1;count=0;
     assert(Beamform_Start()==-1 && !hv && !Beamform_GetRunRequest() && !Beamform_GetSpiStartRequest());

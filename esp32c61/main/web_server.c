@@ -21,6 +21,12 @@
 
 extern const unsigned char html_start[] asm("_binary_index_html_start");
 extern const unsigned char html_end[] asm("_binary_index_html_end");
+extern const unsigned char parameters_start[] asm("_binary_parameters_html_start");
+extern const unsigned char parameters_end[] asm("_binary_parameters_html_end");
+extern const unsigned char parameter_core_start[] asm("_binary_parameters_core_js_start");
+extern const unsigned char parameter_core_end[] asm("_binary_parameters_core_js_end");
+extern const unsigned char parameter_ui_start[] asm("_binary_parameters_js_start");
+extern const unsigned char parameter_ui_end[] asm("_binary_parameters_js_end");
 
 static esp_err_t reply(httpd_req_t *req, const char *status, cJSON *json)
 {
@@ -46,6 +52,24 @@ static esp_err_t page(httpd_req_t *req)
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
     return httpd_resp_send(req, (const char *)html_start, html_end - html_start);
+}
+
+/* Flash-backed static assets: no parameter-table or response copy in SRAM. */
+static esp_err_t parameter_asset(httpd_req_t *req)
+{
+    const unsigned char *start = parameters_start, *end = parameters_end;
+    const char *type = "text/html; charset=utf-8";
+    if (!strcmp(req->uri, "/parameters_core.js")) {
+        start = parameter_core_start; end = parameter_core_end;
+        type = "text/javascript; charset=utf-8";
+    } else if (!strcmp(req->uri, "/parameters.js")) {
+        start = parameter_ui_start; end = parameter_ui_end;
+        type = "text/javascript; charset=utf-8";
+    }
+    httpd_resp_set_type(req, type);
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_set_hdr(req, "X-Content-Type-Options", "nosniff");
+    return httpd_resp_send(req, (const char *)start, end - start);
 }
 
 static esp_err_t get_config(httpd_req_t *req)
@@ -326,7 +350,7 @@ esp_err_t web_server_start(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 6144;
-    config.max_uri_handlers = 12;
+    config.max_uri_handlers = 14;
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.lru_purge_enable = true;
     config.recv_wait_timeout = 5;
@@ -336,6 +360,9 @@ esp_err_t web_server_start(void)
     if (err != ESP_OK) return err;
     const httpd_uri_t routes[] = {
         {.uri = "/", .method = HTTP_GET, .handler = page},
+        {.uri = "/parameters", .method = HTTP_GET, .handler = parameter_asset},
+        {.uri = "/parameters_core.js", .method = HTTP_GET, .handler = parameter_asset},
+        {.uri = "/parameters.js", .method = HTTP_GET, .handler = parameter_asset},
         {.uri = "/api/config", .method = HTTP_GET, .handler = get_config},
         {.uri = "/api/config", .method = HTTP_PUT, .handler = put_config},
         {.uri = "/api/status", .method = HTTP_GET, .handler = get_status},

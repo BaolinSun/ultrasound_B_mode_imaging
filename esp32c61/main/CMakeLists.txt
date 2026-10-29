@@ -5,7 +5,7 @@ idf_component_register(SRCS "device_identity.c" "cpu_status_cache.c" "cpu_status
                        REQUIRES esp_wifi esp_netif esp_event nvs_flash esp_http_server
                                 lwip esp_timer esp_hw_support esp_psram heap esp_driver_sdio esp_driver_gpio
                                 esp_driver_uart esp_driver_usb_serial_jtag esp_rom
-                       EMBED_FILES "index.html")
+                       EMBED_FILES "index.html" "parameters.html" "parameters_core.js" "parameters.js")
 # A larger upload PCB needs the corresponding pbuf queue limit. This is only
 # a ceiling, not a preallocation. Apply the same definition to all lwIP sources
 # and our adapter; ordinary sockets still initialize with the small snd_buf.

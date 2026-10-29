@@ -8,9 +8,11 @@ from io import BytesIO
 from pathlib import Path
 import threading
 import time
+from copy import deepcopy
 
 import numpy as np
 from PIL import Image
+import bmode_settings as settings_model
 
 LINES, SAMPLES, HEADER_WORDS = 64, 6144, 8
 LINE_WORDS = SAMPLES + HEADER_WORDS
@@ -52,10 +54,8 @@ def parse_lines(payload):
         return {}
 
 
-def tgc_gain():
-    points = np.array([[0, 0], [512, 0], [1024, 0], [2048, 0], [3072, 0],
-                       [3247, 0], [4096, 8], [4608, 13], [5120, 17],
-                       [5632, 21], [SAMPLES-1, 24]], dtype=np.float32)
+def tgc_gain(points=None):
+    points = np.array(settings_model.TGC_POINTS if points is None else points, dtype=np.float32)
     curve = np.interp(np.arange(SAMPLES, dtype=np.float32), points[:, 0], points[:, 1]).astype(np.float32)
     return np.power(10., curve/20.).astype(np.float32)
 
@@ -73,20 +73,27 @@ def load_lut(path=LUT_PATH):
     return lut.astype(np.uint8)
 
 
-def precompute_scan_converter(down=0):
+def precompute_scan_converter(down=0, settings=None):
     # Same float32 geometry and bilinear weights as the reference pipeline.
     c, fc, fs = 1540., 4e6, 25e6/(1 << down)
     sample_count = SAMPLES >> down
     step = (c/fc)/2.
     range_step = c/(2.*fs)
-    angles = np.deg2rad(np.linspace(-45., 45., LINES)).astype(np.float32)
-    radius = DISPLAY_DEPTH_MM/1000.
-    xmax = radius*np.sin(np.deg2rad(45.))
-    x = np.arange(-xmax, xmax+step*.5, step, dtype=np.float32)
+    angle_degrees = np.linspace(-45., 45., LINES) if settings is None else np.asarray(settings['angles_deg'], dtype=np.float64)
+    angles = np.deg2rad(angle_degrees).astype(np.float32)
+    radius = (DISPLAY_DEPTH_MM if settings is None else settings['depth_mm'])/1000.
+    xmin = radius*min(0., np.sin(np.deg2rad(angle_degrees[0])))
+    xmax = radius*max(0., np.sin(np.deg2rad(angle_degrees[-1])))
+    x = np.arange(xmin, xmax+step*.5, step, dtype=np.float32)
     z = np.arange(0., radius+step*.5, step, dtype=np.float32)
     xx, zz = np.meshgrid(x, z)
     theta, r = np.arctan2(xx, zz), np.hypot(xx, zz)
-    tp, rp = (theta-angles[0])/(angles[1]-angles[0]), r/range_step
+    # Preserve the exact old uniform-angle arithmetic for default images.
+    if np.allclose(np.diff(angles), angles[1]-angles[0], atol=2e-7, rtol=0):
+        tp = (theta-angles[0])/(angles[1]-angles[0])
+    else:
+        tp = np.interp(theta, angles, np.arange(LINES), left=-1, right=LINES).astype(np.float32)
+    rp = r/range_step
     t0, r0 = np.floor(tp).astype(np.int32), np.floor(rp).astype(np.int32)
     t1, r1 = t0+1, r0+1
     valid = ((t0 >= 0) & (t1 < LINES) & (r0 >= 0) & (r1 < sample_count) &
@@ -109,6 +116,7 @@ def scan_convert(polar, scan):
 
 class Renderer:
     def __init__(self):
+        self.settings = settings_model.defaults(load_lut())
         self.scan, self.lut, self.gain = precompute_scan_converter(), load_lut(), tgc_gain()
         self.reference = None
         self.down = 0
@@ -116,25 +124,38 @@ class Renderer:
     def configure(self, down):
         if down != self.down:
             self.down = down
-            self.scan = precompute_scan_converter(down)
-            self.gain = tgc_gain()[::1 << down]
+            self.scan = precompute_scan_converter(down, self.settings)
+            self.gain = tgc_gain(self.settings['tgc_points'])[::1 << down]
             self.reset()
+
+    def apply_settings(self, settings):
+        settings = settings_model.validate(settings)
+        geometry = any(settings[k] != self.settings[k] for k in settings_model.GEOMETRY)
+        self.settings = deepcopy(settings)
+        if geometry:
+            self.scan = precompute_scan_converter(self.down, settings)
+        self.lut = np.array(settings['lut'], dtype=np.uint8)
+        self.gain = tgc_gain(settings['tgc_points'])[::1 << self.down]
+        self.reset()
 
     def reset(self):
         self.reference = None
 
     def gray(self, samples):
         polar = samples.astype(np.float32)/float(2**14)
-        polar += np.log10(np.clip(self.gain, 10**(-24/20), 10**(24/20)))[np.newaxis, :]
+        if self.settings['tgc_enabled']:
+            polar += np.log10(np.clip(self.gain, 10**(-24/20), 10**(24/20)))[np.newaxis, :]
         cart = scan_convert(polar, self.scan)
         finite = np.isfinite(cart)
         current = float(np.percentile(cart[finite], 99.9)) if finite.any() else 0.
         self.reference = current if self.reference is None else .85*self.reference + .15*current
         db = 20.*(cart-self.reference)
-        db = (db+3.)*1.
-        db = np.clip(np.where(db < -45., -45., db), -45., 0.)
-        db[~finite] = -45.
-        gray = np.clip(np.round((db+45.)/45.*255.), 0, 255).astype(np.uint8)
+        s = self.settings
+        db = (db+s['brightness_db'])*s['contrast']
+        dr = s['dynamic_range_db']
+        db = np.clip(np.where(db < s['noise_floor_db'], s['noise_floor_db'], db), -dr, 0.)
+        db[~finite] = -dr
+        gray = np.clip(np.round((db+dr)/dr*255.), 0, 255).astype(np.uint8)
         return self.lut[gray]
 
     def png(self, samples):
@@ -160,6 +181,10 @@ class ImagingWorker:
         self.lines = self.format_errors = self.queue_drops = self.images = 0
         self.decimation = 0
         self.error = ''
+        self.settings = settings_model.defaults(load_lut())
+        self.settings_revision = self.applied_revision = 1
+        self.image_settings_revision = 0
+        self.image_display_settings = None
         self.thread = threading.Thread(target=self._run, name='bmode-render', daemon=True)
         self.thread.start()
 
@@ -181,6 +206,27 @@ class ImagingWorker:
             self.pending.clear()
             self.lines = 0
             self.cv.notify_all()
+
+    def get_settings(self):
+        with self.cv:
+            return {'settings': deepcopy(self.settings), 'revision': self.settings_revision,
+                    'applied_revision': self.applied_revision,
+                    'image_revision': self.image_settings_revision}
+
+    def set_settings(self, settings, expected_revision):
+        settings = settings_model.validate(settings)
+        with self.cv:
+            if type(expected_revision) is not int or expected_revision != self.settings_revision:
+                raise RuntimeError('显示配置已被其他页面修改，请重新读取')
+            if self.accepting and any(settings[k] != self.settings[k] for k in settings_model.GEOMETRY):
+                raise RuntimeError('修改角度或显示深度前请停止接收')
+            self.settings = deepcopy(settings)
+            self.settings_revision += 1
+            # Invalidate an in-flight old rendering, but retain immutable input.
+            self.image = self.image_at = self.image_frame = None
+            self.image_settings_revision = 0
+            self.cv.notify_all()
+        return self.get_settings()
 
     def submit(self, session, frame, payload):
         with self.cv:
@@ -209,7 +255,15 @@ class ImagingWorker:
                     if self.closing:
                         return
                     generation = self.generation
+                    settings_revision = self.settings_revision
+                    settings = deepcopy(self.settings) if settings_revision != self.applied_revision else None
                     item = self.pending.popleft() if self.pending else None
+                if settings is not None:
+                    if hasattr(self.renderer, 'apply_settings'):
+                        self.renderer.apply_settings(settings)
+                    with self.cv:
+                        self.applied_revision = settings_revision
+                    dirty = data is not None
                 if generation != local_generation:
                     self.renderer.reset()
                     local_generation, dirty, rendered = generation, False, 0.
@@ -242,11 +296,15 @@ class ImagingWorker:
                     continue
                 png = self.renderer.png(data)
                 with self.cv:
-                    if generation == self.generation and self.accepting and time.monotonic()-arrived <= LINE_TTL:
+                    if (generation == self.generation and settings_revision == self.settings_revision and
+                            self.accepting and time.monotonic()-arrived <= LINE_TTL):
                         self.image, self.image_at = png, time.monotonic()
                         self.image_frame = last_valid_frame
                         self.sequence += 1
                         self.images += 1
+                        self.image_settings_revision = settings_revision
+                        self.image_display_settings = {k: deepcopy(self.settings[k]) for k in
+                            ('depth_mm', 'angles_deg', 'dynamic_range_db', 'brightness_db', 'contrast', 'noise_floor_db', 'tgc_enabled')}
                 # Limit start-to-start: PNG/render time is part of the budget,
                 # not an extra 50 ms sleep after every completed picture.
                 dirty, rendered = False, now
@@ -256,7 +314,11 @@ class ImagingWorker:
 
     def snapshot(self):
         with self.cv:
-            return {'decimation': self.decimation, 'sample_rate_mhz': 25/(1 << self.decimation),
+            return {'settings_revision': self.settings_revision, 'applied_settings_revision': self.applied_revision,
+                    'image_settings_revision': self.image_settings_revision,
+                    'image_display_settings': deepcopy(self.image_display_settings),
+                    'display_settings': {k: deepcopy(self.settings[k]) for k in ('depth_mm', 'angles_deg', 'dynamic_range_db', 'brightness_db', 'contrast', 'noise_floor_db', 'tgc_enabled')},
+                    'decimation': self.decimation, 'sample_rate_mhz': 25/(1 << self.decimation),
                     'samples_per_line': SAMPLES >> self.decimation, 'frame_coherent': True, 'lines': self.lines, 'total_lines': LINES, 'format_errors': self.format_errors,
                     'queue_drops': self.queue_drops, 'queue_size': len(self.pending), 'images': self.images,
                     'image_available': self.image is not None, 'image_sequence': self.sequence,

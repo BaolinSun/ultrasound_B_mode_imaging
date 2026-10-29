@@ -88,11 +88,9 @@ class ControlTests(unittest.TestCase):
             path = Path(folder) / "timing.json"
             path.write_text(json.dumps({"bram": {"t_timing": [2048] + [0] * 9}}))
             args.config = path
-            generated = tool.make_config(args)
             with self.assertRaisesRegex(ValueError, "6144"):
-                for command in generated:
-                    tool.validate_command(command)
-            path.write_text(json.dumps({"bram": {"t_timing": [6144] + [0] * 9}}))
+                tool.make_config(args)
+            path.write_text(json.dumps({"bram": {"t_timing": [6144] + [0] * 7 + [6144, 0]}}))
             for command in tool.make_config(args):
                 tool.validate_command(command)
 
@@ -144,6 +142,10 @@ class ReferenceTests(unittest.TestCase):
             cases += [(name + "_default.json", "build_bram_commands") for name in builder.BRAM_TARGET_ORDER]
             for filename, function in cases:
                 data = json.loads((reference / "configs" / filename).read_text())
+                if filename == "t_timing_default.json":
+                    # Current hardware only accepts 6144 raw samples. Compare
+                    # valid packing, never reintroduce the old 2048-point file.
+                    data['bram']['t_timing'][0] = data['bram']['t_timing'][8] = 6144
                 params = (data,) if function == "build_afe_commands" else (data, 8)
                 with self.subTest(filename=filename):
                     self.assertEqual(getattr(builder, function)(*params), getattr(module, function)(*params))

@@ -74,7 +74,7 @@ def validate_command(line):
                 raise ValueError("write range/count mismatch")
             for i, word in enumerate(t[5:]):
                 value = number(word)
-                if root == "BRAM" and t[2] == "t_timing" and ((offset + i == 0 and value != 6144) or (offset + i == 9 and value > 4)):
+                if root == "BRAM" and t[2] == "t_timing" and ((offset + i in (0, 8) and value != 6144) or (offset + i == 9 and value > 4)):
                     raise ValueError("FRAME_LAYOUT: raw samples must be 6144 and decimation must be 0..4")
             return line
     raise ValueError("unsupported command or argument count")

@@ -58,9 +58,11 @@ def make_server(service, address=('127.0.0.1', 8080)):
                 self.js(403, {'error': 'Host 不允许'})
                 return
             url = urlsplit(self.path)
-            if url.path in ('/', '/viewer.js') and not url.query:
-                filename, mime = ('viewer.html', 'text/html; charset=utf-8') if url.path == '/' else ('viewer.js', 'text/javascript; charset=utf-8')
+            if url.path in ('/', '/viewer.js', '/viewer_settings.js') and not url.query:
+                filename, mime = ('viewer.html', 'text/html; charset=utf-8') if url.path == '/' else (url.path[1:], 'text/javascript; charset=utf-8')
                 self.reply(200, (ASSETS/filename).read_bytes(), mime)
+            elif url.path == '/api/viewer/settings' and not url.query:
+                self.js(200, service.imaging.get_settings())
             elif url.path == '/api/status' and not url.query:
                 self.js(200, service.snapshot())
             elif url.path == '/api/image':
@@ -104,6 +106,39 @@ def make_server(service, address=('127.0.0.1', 8080)):
             try:
                 service.start() if self.path.endswith('/start') else service.stop()
                 self.js(202, {'accepted': True})
+            except RuntimeError as exc:
+                self.js(409, {'error': str(exc)})
+
+        def do_PUT(self):
+            origin = self.headers.get('Origin')
+            if not self.same_host() or (origin and origin != 'http://'+self.headers.get('Host')):
+                self.close_connection = True
+                self.js(403, {'error': '仅允许同源网页操作'})
+                return
+            if self.path != '/api/viewer/settings':
+                self.close_connection = True
+                self.js(404, {'error': '接口不存在'})
+                return
+            try:
+                length = int(self.headers.get('Content-Length', '-1'))
+                if not 0 < length <= 32768 or self.headers.get_content_type() != 'application/json' or self.headers.get('Transfer-Encoding'):
+                    raise ValueError('仅接受不超过 32 KiB 的 JSON 显示设置')
+                raw = self.rfile.read(length)
+                if len(raw) != length:
+                    raise ValueError('请求不完整')
+                body = json.loads(raw)
+                if not isinstance(body, dict):
+                    raise ValueError('需要 JSON 对象')
+                if set(body) == {'revision', 'settings'}:
+                    result = service.set_display_settings(body['settings'], body['revision'])
+                elif set(body) == {'revision', 'profile', 'confirm_geometry'} and body['confirm_geometry'] is True:
+                    result = service.set_display_settings(body['profile'], body['revision'], profile=True)
+                else:
+                    raise ValueError('仅接受版本匹配的显示设置或已确认的显示配置导入')
+                self.js(202, result)
+            except (ValueError, UnicodeDecodeError, TypeError, OverflowError) as exc:
+                self.close_connection = True
+                self.js(400, {'error': str(exc)})
             except RuntimeError as exc:
                 self.js(409, {'error': str(exc)})
 

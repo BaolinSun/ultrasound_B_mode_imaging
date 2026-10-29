@@ -181,7 +181,7 @@ u32 Bram_WriteSectionWords(const char *section, u32 offset, const u32 *words, u3
 		}
         if(strcmp(section,"t_timing")==0) {
             for(u32 j=0;j<count;j++) {
-                if((offset+j==0 && words[j]!=6144U) ||
+                if(((offset+j==0 || offset+j==8) && words[j]!=6144U) ||
                    (offset+j==9 && words[j]>4U)) return BRAM_CFG_STATUS_RANGE;
             }
         }

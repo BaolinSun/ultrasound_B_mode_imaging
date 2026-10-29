@@ -11,6 +11,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from bmode_imaging import FRAME_BYTES, ImagingWorker
+import bmode_settings as settings_model
 from sdio_tcp_receiver import TCPReceiver
 from sdio_udp_receiver import DatagramPump, FrameReceiver
 
@@ -74,7 +75,7 @@ class Transport:
                 self.receiver = TCPReceiver(args, self, on_frame=imaging.submit, stop_on_error=True)
             else:
                 self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4*1024*1024)
-                self.receiver = FrameReceiver(length=FRAME_BYTES, timeout=2.)
+                self.receiver = FrameReceiver(length=None, timeout=2.)
                 self.source_ip = source_ip
             self.thread = threading.Thread(target=self._run, name='bmode-receive', daemon=True)
         except Exception:
@@ -156,6 +157,14 @@ class Transport:
 
 
 class ViewerService:
+    def set_display_settings(self, value, expected_revision, profile=False):
+        with self.lock:
+            current = self.imaging.get_settings()['settings']
+            settings = settings_model.from_profile(value, current) if profile else settings_model.validate(value)
+            if self.state in ('starting', 'running', 'stopping') and any(settings[k] != current[k] for k in settings_model.GEOMETRY):
+                raise RuntimeError('修改几何配置前请停止接收；不会替用户停止其他上传')
+            return self.imaging.set_settings(settings, expected_revision)
+
     def __init__(self, device_ip, port=50001, data_bind='0.0.0.0', api=None, route_ip=None, imaging=None):
         self.device_ip, self.port, self.data_bind = device_ip, port, data_bind
         self.api, self.route_ip = api or DeviceAPI(device_ip), route_ip or local_route_ip
