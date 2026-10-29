@@ -14,6 +14,92 @@ button.secondary{color:#263e56;background:#e4eaf1}button:disabled{opacity:.45;cu
 .legend{display:flex;justify-content:space-between;padding:4px 60px 0 10px;font-size:12px;color:#53657a}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
 .value{font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}.error{color:#a92727;white-space:pre-wrap;overflow-wrap:anywhere}#image.stale{opacity:.55}
 @media(max-width:720px){main{padding:0 12px}.top{align-items:flex-start;flex-direction:column}.stats{grid-template-columns:repeat(2,1fr)}.card{padding:14px}.axis{width:38px}}
+
+/* Console-style display controls; all adjustments remain PC-only. */
+.display-settings{padding:24px}
+.settings-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px}
+.settings-heading h2{font-size:20px;margin:0 0 3px}
+.settings-heading p{font-size:13px;margin:0;color:#738398}
+.live-label{font-size:12px;color:#21766e;background:#eaf6f1;border:1px solid #d0e9df;padding:5px 10px;border-radius:20px;white-space:nowrap}
+.display-console{display:grid;grid-template-columns:260px minmax(0,1fr);gap:18px}
+.depth-console{background:linear-gradient(150deg,#19334c,#102236);border:1px solid #27455e;color:#e4edf5;border-radius:14px;padding:18px 20px}
+.depth-heading{display:flex;align-items:center;justify-content:space-between;font-size:14px;font-weight:650}
+.depth-heading small{font:10px/1.4 system-ui;letter-spacing:1.8px;color:#8fa9bf}
+.depth-readout{margin:10px 0 4px;display:flex;align-items:baseline;gap:7px}
+.depth-readout output{font-size:38px;line-height:1.1;font-weight:650;letter-spacing:-1px;font-variant-numeric:tabular-nums}
+.depth-readout span{font-size:13px;color:#9fb8ce}
+.depth-caption{font-size:11px;color:#90acc4}
+.depth-adjust{display:grid;grid-template-columns:40px 1fr 40px;align-items:center;gap:14px;margin:14px 0}
+.depth-step{border:1px solid #45627a;background:#24425b;width:40px;height:40px;padding:0;font-size:24px;font-weight:400;border-radius:50%;color:#e9f5ff}
+.depth-step:hover{background:#31566f}
+.depth-track{height:160px;display:flex;justify-content:center;gap:12px}
+.depth-track input[type=range]{writing-mode:vertical-lr;direction:ltr;width:24px;height:160px;margin:0;accent-color:#69d5d0;cursor:ns-resize;color-scheme:dark}
+.depth-scale{position:relative;width:36px;font-size:10px;color:#9db6ca;font-variant-numeric:tabular-nums}
+.depth-scale span{position:absolute;left:0;transform:translateY(-50%)}
+.depth-scale span:first-child{transform:none}
+.depth-scale span:last-child{transform:translateY(-100%)}
+.depth-scale span:before{content:'';display:inline-block;width:7px;border-top:1px solid #63839e;margin-right:5px;vertical-align:middle}
+.depth-presets{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-top:12px}
+.depth-presets button{padding:6px 0;font-size:11px;border:1px solid #35516a;background:#1e3b53;border-radius:6px;color:#b9cdde;font-variant-numeric:tabular-nums}
+.depth-presets button[aria-pressed=true]{background:#c4efeb;color:#123d44;border-color:#8fd7d1;font-weight:700}
+.depth-footer{display:flex;justify-content:space-between;font-size:10px;color:#90acc4;margin-top:10px}
+.display-tuning{display:flex;flex-direction:column;gap:12px}
+.tuning-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.tuning-card{background:#f6f8fb;border:1px solid #e1e7ee;border-radius:12px;padding:15px 16px}
+.tuning-title{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;font-weight:600;color:#40556a}
+.tuning-value{display:flex;align-items:baseline;gap:4px;color:#173b52;white-space:nowrap}
+.tuning-value output{font-size:23px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.3}
+.tuning-value small{font-size:11px;color:#778b9b;font-weight:400}
+.tuning-card input[type=range]{display:block;width:100%;margin:18px 0 9px;accent-color:#25858a;cursor:pointer;height:18px}
+.tuning-limits{display:flex;justify-content:space-between;color:#8b9aa8;font-size:10px}
+.tgc-switch-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 16px;border:1px solid #dce9e7;background:#f2f9f7;border-radius:12px}
+.tgc-switch-row strong{font-size:13px;color:#2d5e5b;font-weight:600}
+.tgc-switch-row small{display:block;color:#7a928f;font-size:11px;margin-top:2px}
+.toggle{display:inline-flex;position:relative;align-items:center;gap:8px;font-size:12px;color:#52726e;cursor:pointer}
+.toggle input{position:absolute;opacity:0;width:1px;height:1px}
+.toggle-track{display:block;width:38px;height:22px;background:#bdcbd0;border-radius:14px;transition:background .15s}
+.toggle-track:after{content:'';display:block;width:16px;height:16px;margin:3px;border-radius:50%;background:white;box-shadow:0 1px 3px #0002;transition:transform .15s}
+.toggle input:checked+.toggle-track{background:#278c85}
+.toggle input:checked+.toggle-track:after{transform:translateX(16px)}
+.toggle input:focus-visible+.toggle-track{outline:3px solid #8bc9cb;outline-offset:3px}
+.toggle input:disabled+.toggle-track{opacity:.45}
+.display-advanced{border:1px solid #e0e6ed;border-radius:10px;margin-top:18px;padding:12px 15px;font-size:13px}
+.display-advanced summary{cursor:pointer;color:#425d75;font-weight:600}
+.display-advanced p{font-size:12px;color:#78899b}
+.advanced-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}
+.advanced-label{display:block;font-size:12px;color:#526a80;margin:6px 0}
+.code-editor{display:block;width:100%;border:1px solid #d8e1eb;border-radius:8px;background:#f8fafc;color:#3b5269;padding:10px;font:11px/1.7 Consolas,monospace;resize:vertical}
+.tgc-preview{width:100%;height:100px;background:#142b3e;border-radius:8px;margin-top:10px;display:block}
+.settings-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.settings-actions button,.file-action{display:inline-flex;align-items:center;justify-content:center;font:12px/1.5 system-ui,sans-serif;font-weight:550;border:1px solid #d8e1eb;border-radius:7px;padding:7px 12px;background:#f5f8fb;color:#4a657d;cursor:pointer}
+.file-action:focus-within{outline:3px solid #8bc9cb}
+.file-action input{position:absolute;width:1px;height:1px;opacity:0}
+.settings-feedback{display:flex;align-items:flex-start;gap:8px;border-top:1px solid #edf1f5;margin-top:18px;padding-top:14px}
+.sync-dot{width:6px;height:6px;flex:none;background:#3a9f8a;border-radius:50%;margin-top:6px}
+.settings-feedback p{font-size:12px;color:#6a8091;margin:0}
+.settings-feedback p.error{color:#a92727}
+.settings-feedback:has(.error) .sync-dot{background:#a92727}
+.settings-diagnostics{font-size:11px;color:#8897a7;margin-top:8px}
+.settings-diagnostics summary{cursor:pointer}
+.settings-diagnostics p{margin:5px 0}
+
+@media(max-width:780px){.display-console{grid-template-columns:210px minmax(0,1fr)}
+.depth-console{padding:16px}
+.tuning-card{padding:12px}
+.tuning-value output{font-size:20px}
+.settings-heading{flex-wrap:wrap}
+}
+@media(max-width:560px){.depth-heading small{display:none}.display-settings{padding:16px}
+.display-console{grid-template-columns:1fr}
+.depth-console{display:grid;grid-template-columns:1fr 1fr;column-gap:20px}
+.depth-heading,.depth-readout,.depth-caption{grid-column:1}
+.depth-adjust{grid-column:2;grid-row:1/4;margin:0;gap:8px}
+.depth-track,.depth-track input[type=range]{height:125px}
+.depth-presets,.depth-footer{grid-column:1/3}
+.advanced-grid{grid-template-columns:1fr}
+.settings-heading h2{font-size:18px}
+}
+
 </style><script src="/viewer.js" defer></script><script src="/viewer_settings.js" defer></script></head>
 <body><main>
 <header class="top"><div><p class="muted" style="margin:0">Wi-Fi / SDIO · B-mode</p><h1>超声图像实时显示</h1></div><span id="state" class="badge">等待服务</span></header>
@@ -23,20 +109,21 @@ button.secondary{color:#263e56;background:#e4eaf1}button:disabled{opacity:.45;cu
 <section class="card"><h2 id="geometry-title">B-mode · ±45° / 120 mm</h2><div class="image-row"><div class="viewport" id="viewport"><img id="image" alt="实时超声扇形图像" hidden><div id="empty">等待完整的 64 条合法图像线</div></div><div class="axis"><span style="top:0">0 mm</span><span id="depth25" style="top:25%">30</span><span id="depth50" style="top:50%">60</span><span id="depth75" style="top:75%">90</span><span id="depth100" style="top:100%">120</span></div></div>
 <div class="legend"><span id="width-left">−84.9 mm</span><span>0</span><span id="width-right">+84.9 mm</span></div><p id="image-note" class="muted" role="status">尚无有效图像</p>
 <small id="frame-format" class="muted">原始：25 MHz · 6144 点 × 64 线；抽取 1/2/4/8/16 自动适配 · Q2.14 · 双线性扫描转换 · TGC 开启 · DR 45 dB · 亮度 +3 dB · 参考灰度 LUT</small></section>
-<section class="card"><h2>图像显示设置 · 自动更新 <small class="muted">仅 PC 处理，不下发硬件</small></h2>
-<p class="muted">实际点数和采样率由每份完整帧决定。角度映射需停止接收后导入同一配置并确认；文件不是硬件回读。</p>
-<div class="stats" id="display-form">
-<label>动态范围 / dB <input id="display-dr" type="range" min="20" max="70" step="1"><output id="value-dr"></output></label>
-<label>亮度 / dB <input id="display-brightness" type="range" min="-10" max="20" step=".5"><output id="value-brightness"></output></label>
-<label>对比度 <input id="display-contrast" type="range" min=".5" max="2" step=".05"><output id="value-contrast"></output></label>
-<label>噪声底 / dB <input id="display-noise" type="range" min="-60" max="-20" step="1"><output id="value-noise"></output></label></div>
-<p><label><input id="display-tgc" type="checkbox">启用软件 TGC</label>　<label>显示深度 / mm <input id="display-depth" type="number" min="10" max="188" step="1" style="width:90px"></label> <small class="muted">显示参数自动更新，无需停止接收</small></p>
-<details><summary>软件 TGC 控制点与灰度 LUT</summary>
-<p class="muted">TGC 格式为 [原始采样点 0～6143, 增益 dB]，2～128 个点，增益 −24～24 dB；不会修改 AFE DTGC。</p>
-<textarea id="display-points" rows="5" style="width:100%" aria-label="TGC 控制点 JSON"></textarea><svg id="tgc-plot" viewBox="0 0 600 120" style="width:100%;height:120px;background:#101e2e" aria-label="软件 TGC 预览"></svg>
-<p>灰度 LUT：256 项，0～255</p><textarea id="display-lut" rows="5" style="width:100%" aria-label="灰度 LUT"></textarea><label>导入 LUT <input id="lut-file" type="file" accept=".txt,.json"></label>
-</details><div class="controls"><button id="display-reload" class="secondary">重新读取设置</button><button id="display-export" class="secondary">导出显示 JSON</button><label>导入同一配置 <input id="display-import" type="file" accept=".json,application/json"></label></div>
-<p id="display-message" class="muted" role="status">正在读取显示设置，完成后调整即生效…</p><p id="display-revision" class="muted"></p></section>
+<section class="card display-settings" aria-labelledby="display-title">
+<div class="settings-heading"><div><h2 id="display-title">图像显示设置</h2><p>调整即生效 · 仅 PC 处理，不下发硬件</p></div><span class="live-label">PC 实时处理 · 自动更新</span></div>
+<div class="display-console">
+<div class="depth-console"><div class="depth-heading"><label for="display-depth">显示深度</label><small>DEPTH</small></div><div class="depth-readout"><output id="value-depth" for="display-depth">120</output><span>mm</span></div><div id="depth-cm" class="depth-caption">12.0 cm · 显示范围</div>
+<div class="depth-adjust"><button id="depth-less" class="depth-step" aria-label="减小显示深度 5 毫米" title="减小深度 5 mm" disabled>−</button><div class="depth-track"><input id="display-depth" type="range" min="10" max="188" step="1" value="120" aria-label="显示深度（毫米），向下增加" aria-orientation="vertical"><div class="depth-scale" aria-hidden="true"><span style="top:0">10</span><span style="top:22.47%">50</span><span style="top:50.56%">100</span><span style="top:78.65%">150</span><span style="top:100%">188</span></div></div><button id="depth-more" class="depth-step" aria-label="增加显示深度 5 毫米" title="增加深度 5 mm" disabled>+</button></div>
+<div class="depth-presets" role="group" aria-label="常用显示深度"><button id="depth-preset-40" type="button" aria-label="显示深度 40 毫米" aria-pressed="false" disabled>40</button><button id="depth-preset-80" type="button" aria-label="显示深度 80 毫米" aria-pressed="false" disabled>80</button><button id="depth-preset-120" type="button" aria-label="显示深度 120 毫米" aria-pressed="false" disabled>120</button><button id="depth-preset-160" type="button" aria-label="显示深度 160 毫米" aria-pressed="false" disabled>160</button><button id="depth-preset-180" type="button" aria-label="显示深度 180 毫米" aria-pressed="false" disabled>180</button></div><div class="depth-footer"><span>向下拖动 · 查看更深</span><span>± 5 mm 微调</span></div></div>
+<div class="display-tuning"><div class="tuning-grid" id="display-form"><div class="tuning-card"><label class="tuning-title" for="display-dr"><span>动态范围</span><span class="tuning-value"><output id="value-dr">—</output><small>dB</small></span></label><input id="display-dr" type="range" min="20" max="70" step="1" aria-label="动态范围"><div class="tuning-limits"><span>20</span><span>70</span></div></div>
+<div class="tuning-card"><label class="tuning-title" for="display-brightness"><span>亮度</span><span class="tuning-value"><output id="value-brightness">—</output><small>dB</small></span></label><input id="display-brightness" type="range" min="-10" max="20" step="0.5" aria-label="亮度"><div class="tuning-limits"><span>暗</span><span>亮</span></div></div>
+<div class="tuning-card"><label class="tuning-title" for="display-contrast"><span>对比度</span><span class="tuning-value"><output id="value-contrast">—</output><small>×</small></span></label><input id="display-contrast" type="range" min="0.5" max="2" step="0.05" aria-label="对比度"><div class="tuning-limits"><span>柔和</span><span>鲜明</span></div></div>
+<div class="tuning-card"><label class="tuning-title" for="display-noise"><span>噪声底</span><span class="tuning-value"><output id="value-noise">—</output><small>dB</small></span></label><input id="display-noise" type="range" min="-60" max="-20" step="1" aria-label="噪声底"><div class="tuning-limits"><span>−60</span><span>−20</span></div></div>
+</div><div class="tgc-switch-row"><div><strong>软件 TGC</strong><small>按深度补偿显示增益，不修改 AFE 配置</small></div><label class="toggle"><input id="display-tgc" type="checkbox" aria-label="启用软件 TGC"><span class="toggle-track" aria-hidden="true"></span><span>启用</span></label></div></div></div>
+<details class="display-advanced"><summary>精细调整 · TGC 曲线与灰度映射</summary><div class="advanced-grid"><div><label class="advanced-label" for="display-points">软件 TGC 控制点</label><textarea id="display-points" class="code-editor" rows="4" aria-label="TGC 控制点 JSON"></textarea><svg id="tgc-plot" class="tgc-preview" viewBox="0 0 600 120" aria-label="软件 TGC 预览"></svg><p>格式：[原始采样位置, 增益 dB]。覆盖 0～6143，增益 −24～24 dB。</p></div><div><label class="advanced-label" for="display-lut">灰度映射 LUT</label><textarea id="display-lut" class="code-editor" rows="7" aria-label="灰度 LUT"></textarea><p>256 项灰度值（0～255）；完整有效的修改自动更新。</p><label class="file-action">导入 LUT 文件<input id="lut-file" type="file" accept=".txt,.json"></label></div></div><p>实际点数和采样率以完整帧为准。角度映射导入需先停止接收并确认文件与硬件配置对应；以上显示调节无需停收。</p></details>
+<div class="settings-actions"><button id="display-reload">重新读取设置</button><button id="display-export">导出显示配置</button><label class="file-action">导入显示配置<input id="display-import" type="file" accept=".json,application/json"></label></div>
+<div class="settings-feedback"><span class="sync-dot" aria-hidden="true"></span><p id="display-message" role="status">正在读取显示设置…</p></div><details class="settings-diagnostics"><summary>显示同步详情</summary><p id="display-revision"></p></details>
+</section>
 <section class="card"><h2>接收与显示状态</h2><div class="stats">
 <div><span class="muted">接收帧率</span><div id="receive-fps" class="value">0.00 FPS</div></div><div><span class="muted">图像发布帧率</span><div id="display-fps" class="value">0.00 FPS</div></div>
 <div><span class="muted">有效吞吐</span><div id="throughput" class="value">0.00 Mbit/s</div></div><div><span class="muted">有效行覆盖</span><div id="coverage" class="value">0 / 64</div></div>

@@ -6,7 +6,7 @@ const html=readFileSync(new URL('../pc_tools/bmode_assets/viewer.html',import.me
 const js=readFileSync(new URL('../pc_tools/bmode_assets/viewer_settings.js',import.meta.url),'utf8');
 const defaults=()=>({version:1,dynamic_range_db:45,brightness_db:3,contrast:1,noise_floor_db:-45,tgc_enabled:true,depth_mm:120,tgc_points:[[0,0],[6143,24]],lut:Array.from({length:256},(_,i)=>i),angles_deg:Array.from({length:64},(_,i)=>-45+90*i/63)});
 function setup(){
- const nodes={};for(const m of html.matchAll(/id="([^"]+)"/g))nodes[m[1]]={value:'',checked:false,disabled:false,textContent:'',listeners:{},style:{},classList:{toggle(){}},addEventListener(n,f){this.listeners[n]=f},replaceChildren(){},append(){}};
+ const nodes={};for(const m of html.matchAll(/id="([^"]+)"/g))nodes[m[1]]={value:'',checked:false,disabled:false,textContent:'',listeners:{},style:{},attributes:{},setAttribute(n,v){this.attributes[n]=v},classList:{toggle(){}},addEventListener(n,f){this.listeners[n]=f},replaceChildren(){},append(){}};
  const timers=new Map();let timer=0;
  const b={settings:defaults(),revision:1,puts:[],hold:null,fail:false,clearCount:0};
  const c=vm.createContext({el:id=>{assert.ok(nodes[id],id);return nodes[id]},frozen:false,confirm:()=>true,
@@ -33,6 +33,32 @@ test('all requested display parameters auto-apply without upload/stop or hardwar
  t.e['display-points'].value='[[0,-2],[6143,16]]';t.e['display-points'].listeners.input();await t.tick();assert.deepEqual(t.b.settings.tgc_points,[[0,-2],[6143,16]]);
  t.e['display-lut'].value=JSON.stringify(Array(256).fill(32));t.e['display-lut'].listeners.input();await t.tick();assert.equal(t.b.settings.lut[255],32);
  assert.equal(t.b.clearCount,0);assert.equal(t.b.puts.length,8);
+});
+
+test('depth uses a vertical range with readout, presets and bounded 5 mm steps',async()=>{
+ const t=setup();await t.settle();
+ assert.match(html, /id="display-depth" type="range"/);assert.match(html,/aria-orientation="vertical"/);
+ assert.equal(t.e['value-depth'].textContent,'120');assert.match(t.e['depth-cm'].textContent,/12.0 cm/);
+ assert.equal(t.e['depth-preset-120'].attributes['aria-pressed'],'true');
+ t.e['depth-more'].listeners.click();await t.tick();assert.equal(t.b.settings.depth_mm,125);
+ t.e['depth-less'].listeners.click();await t.tick();assert.equal(t.b.settings.depth_mm,120);
+ t.e['depth-preset-40'].listeners.click();await t.tick();assert.equal(t.b.settings.depth_mm,40);
+ assert.equal(t.e['depth-preset-40'].attributes['aria-pressed'],'true');assert.equal(t.e['depth-preset-120'].attributes['aria-pressed'],'false');
+ for(const [depth,button]of [[11,'depth-less'],[187,'depth-more']]){
+  t.e['display-depth'].value=String(depth);t.e['display-depth'].listeners.input();await t.tick();
+  t.e[button].listeners.click();await t.tick();assert.equal(t.b.settings.depth_mm,depth===11?10:188);assert.equal(t.e[button].disabled,true);
+  const count=t.b.puts.length;t.e[button].listeners.click();await t.tick();assert.equal(t.b.puts.length,count);
+ }
+ assert.equal(t.b.clearCount,0);
+});
+
+test('depth remains editable during auto updates and locks during explicit reload',async()=>{
+ const t=setup();await t.settle();let release;t.b.hold=new Promise(r=>release=r);
+ t.e['depth-preset-80'].listeners.click();await t.tick();assert.equal(t.e['depth-more'].disabled,false);
+ t.e['depth-preset-180'].listeners.click();await t.tick();assert.equal(t.b.puts.length,1);assert.equal(t.e['value-depth'].textContent,'180');
+ t.b.hold=null;release();await t.settle();await t.tick();assert.equal(t.b.puts.length,2);assert.equal(t.b.settings.depth_mm,180);
+ const loading=t.e['display-reload'].listeners.click();assert.equal(t.e['depth-less'].disabled,true);assert.equal(t.e['depth-preset-40'].disabled,true);
+ t.e['depth-preset-40'].listeners.click();assert.equal(t.e['value-depth'].textContent,'180');await loading;assert.equal(t.e['depth-less'].disabled,false);
 });
 test('rapid dragging coalesces, serializes and preserves edits made while a request is in flight',async()=>{
  const t=setup();await t.settle();for(let i=0;i<10;i++){t.e['display-brightness'].value=String(i);t.e['display-brightness'].listeners.input()}

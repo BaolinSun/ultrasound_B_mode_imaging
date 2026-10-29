@@ -1,12 +1,21 @@
 'use strict';
 let displayConfig=null,displayVersion=0,displayBusy=false;
 let displayDirty=0,displaySent=0,displayTimer=null,displayBlocked=false;
+let displayInputsLocked=false;
+const depthPresets=[40,80,120,160,180];
 const displayFields={dr:'dynamic_range_db',brightness:'brightness_db',contrast:'contrast',noise:'noise_floor_db'};
 function displayMessage(text,error=false){el('display-message').textContent=text;el('display-message').classList.toggle('error',error)}
-function displayLock(value,inputs=false){displayBusy=value;for(const id of ['display-import','display-reload','display-export'])el(id).disabled=value;if(inputs||!value)for(const id of ['dr','brightness','contrast','noise','tgc','depth','points','lut'])el('display-'+id).disabled=value}
+function paintDepth(){const depth=Number(el('display-depth').value),valid=Number.isFinite(depth)&&depth>=10&&depth<=188,locked=displayInputsLocked||!displayConfig;
+ el('value-depth').textContent=valid?String(depth):'—';el('depth-cm').textContent=valid?(depth/10).toFixed(1)+' cm · 显示范围':'请选择显示深度';
+ el('display-depth').setAttribute('aria-valuetext',valid?depth+' 毫米':'未设置');
+ el('depth-less').disabled=locked||!valid||depth<=10;el('depth-more').disabled=locked||!valid||depth>=188;
+ for(const value of depthPresets){const button=el('depth-preset-'+value);button.disabled=locked;button.setAttribute('aria-pressed',String(valid&&depth===value))}
+}
+function chooseDepth(value){if(displayInputsLocked||!displayConfig)return;const depth=Math.max(10,Math.min(188,value));if(depth===Number(el('display-depth').value))return;el('display-depth').value=String(depth);paintDepth();editDisplay()}
+function displayLock(value,inputs=false){displayBusy=value;for(const id of ['display-import','display-reload','display-export'])el(id).disabled=value;if(inputs||!value){displayInputsLocked=value;for(const id of ['dr','brightness','contrast','noise','tgc','depth','points','lut'])el('display-'+id).disabled=value}paintDepth()}
 async function settingsApi(body){const r=await fetch('/api/viewer/settings',{cache:'no-store',...(body?{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok)throw Error(d.error||'显示设置请求失败');return d}
 function showDisplaySettings(result){displayConfig=result.settings;displayVersion=result.revision;for(const[id,key]of Object.entries(displayFields)){el('display-'+id).value=displayConfig[key];el('value-'+id).textContent=displayConfig[key]}
- el('display-tgc').checked=displayConfig.tgc_enabled;el('display-depth').value=displayConfig.depth_mm;el('display-points').value=JSON.stringify(displayConfig.tgc_points);el('display-lut').value=JSON.stringify(displayConfig.lut);plotTgc();
+ el('display-tgc').checked=displayConfig.tgc_enabled;el('display-depth').value=displayConfig.depth_mm;paintDepth();el('display-points').value=JSON.stringify(displayConfig.tgc_points);el('display-lut').value=JSON.stringify(displayConfig.lut);plotTgc();
 }
 function editedDisplay(){if(!displayConfig)throw Error('请先读取显示设置');const s=JSON.parse(JSON.stringify(displayConfig));for(const[id,key]of Object.entries(displayFields))s[key]=Number(el('display-'+id).value);s.tgc_enabled=el('display-tgc').checked;s.depth_mm=Number(el('display-depth').value);s.tgc_points=JSON.parse(el('display-points').value);s.lut=JSON.parse(el('display-lut').value);return s}
 function plotTgc(){try{const pts=JSON.parse(el('display-points').value);if(!Array.isArray(pts))return;const svg=el('tgc-plot');svg.replaceChildren();const line=document.createElementNS('http://www.w3.org/2000/svg','polyline');line.setAttribute('points',pts.map(p=>`${Number(p[0])/6143*600},${60-Number(p[1])*2.3}`).join(' '));line.setAttribute('fill','none');line.setAttribute('stroke','#74d7de');line.setAttribute('stroke-width','2');svg.append(line)}catch{displayMessage('TGC 需要合法的 JSON 控制点数组',true)}}
@@ -45,7 +54,10 @@ function renderDisplayStatus(s){
 }
 for(const id of Object.keys(displayFields))el('display-'+id).addEventListener('input',()=>{el('value-'+id).textContent=el('display-'+id).value;editDisplay()});
 el('display-points').addEventListener('input',()=>{plotTgc();editDisplay()});
-for(const id of ['display-depth','display-lut'])el(id).addEventListener('input',editDisplay);el('display-tgc').addEventListener('change',editDisplay);el('display-reload').addEventListener('click',reloadDisplay);
+el('display-depth').addEventListener('input',()=>{paintDepth();editDisplay()});
+el('depth-less').addEventListener('click',()=>chooseDepth(Number(el('display-depth').value)-5));el('depth-more').addEventListener('click',()=>chooseDepth(Number(el('display-depth').value)+5));
+for(const value of depthPresets)el('depth-preset-'+value).addEventListener('click',()=>chooseDepth(value));
+el('display-lut').addEventListener('input',editDisplay);el('display-tgc').addEventListener('change',editDisplay);el('display-reload').addEventListener('click',reloadDisplay);
 el('display-import').addEventListener('change',async()=>{if(displayBusy)return;displayLock(true,true);try{const file=el('display-import').files[0];if(!file)return;if(file.size>2*1024*1024)throw Error('配置文件上限 2 MiB');if(!displayConfig)throw Error('请先读取显示设置');const source=JSON.parse(await file.text()),profile={};
  if(source.viewer!==undefined)profile.viewer=source.viewer;else if(source.version===1&&source.dynamic_range_db!==undefined)profile.viewer=source;
  if(source.bram?.sin_beta!==undefined)profile.bram={sin_beta:source.bram.sin_beta};if(!profile.viewer&&!profile.bram)throw Error('文件没有 viewer 设置或 sin_beta 角度表');
