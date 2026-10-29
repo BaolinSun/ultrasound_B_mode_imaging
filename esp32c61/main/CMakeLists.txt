@@ -1,11 +1,27 @@
 idf_component_register(SRCS "device_identity.c" "cpu_status_cache.c" "cpu_status_json.c" "zynq_control_http.c" "zynq_control.c" "temperature_cache.c" "zynq_uart_bridge.c" "uart_log_framer.c" "app_main.c" "config_store.c" "wifi_manager.c"
-                            "zynq_control_http.c" "psram_udp.c" "web_server.c" "selftest.c"
+                            "zynq_control_http.c" "psram_udp.c" "web_server.c" "selftest.c" "focus_assets.c"
                             "raw_transfer.c" "config_model.c" "framed_transfer.c" "sdio_bridge.c" "bridge_crc.c" "tcp_transfer.c" "tcp_socket_tuning.c"
                        INCLUDE_DIRS "." "../../common"
                        REQUIRES esp_wifi esp_netif esp_event nvs_flash esp_http_server
                                 lwip esp_timer esp_hw_support esp_psram heap esp_driver_sdio esp_driver_gpio
                                 esp_driver_uart esp_driver_usb_serial_jtag esp_rom
-                       EMBED_FILES "index.html" "parameters.html" "parameters_core.js" "parameters.js")
+                       EMBED_FILES "index.html" "parameters.html" "parameters_core.js" "parameters.js" "focus.js")
+# Pack only validated focus files. Updating a JSON triggers regeneration even
+# for an ordinary incremental idf.py build; generated files stay in the build.
+set(focus_sources)
+foreach(depth RANGE 20 170 10)
+    list(APPEND focus_sources "${CMAKE_CURRENT_LIST_DIR}/../configs/delay_profile_focus_${depth}mm.json")
+endforeach()
+set(focus_builder "${CMAKE_CURRENT_LIST_DIR}/../pc_tools/build_focus_assets.py")
+set(focus_output "${CMAKE_CURRENT_BINARY_DIR}/focus_assets")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${focus_sources} "${focus_builder}")
+execute_process(COMMAND "${PYTHON}" "${focus_builder}" --source "${CMAKE_CURRENT_LIST_DIR}/../configs" --output "${focus_output}"
+                RESULT_VARIABLE focus_result)
+if(NOT focus_result EQUAL 0)
+    message(FATAL_ERROR "Focus profile validation/packing failed")
+endif()
+target_include_directories(${COMPONENT_LIB} PRIVATE "${focus_output}")
+target_add_binary_data(${COMPONENT_LIB} "${focus_output}/focus_profiles.bin" BINARY RENAME_TO focus_profiles_pack)
 # A larger upload PCB needs the corresponding pbuf queue limit. This is only
 # a ceiling, not a preallocation. Apply the same definition to all lwIP sources
 # and our adapter; ordinary sockets still initialize with the small snd_buf.

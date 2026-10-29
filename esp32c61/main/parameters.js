@@ -1,10 +1,10 @@
 'use strict';
 const P=ParameterConfig, by=id=>document.getElementById(id), PAGE=64, LIMIT=2*1024*1024;
-let config={format_version:1}, category='afe5832', page=0, locked=false;
+let config={format_version:1}, category='afe5832', page=0, locked=false,focusUI=null;
 const selections=new Set();
 function message(text,error=false){by('message').textContent=text;by('message').classList.toggle('error',error)}
 async function request(path,body){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);try{const r=await fetch(path,{cache:'no-store',signal:controller.signal,...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok)throw Error(d.message||'HTTP '+r.status);return d}finally{clearTimeout(timer)}}
-const transaction=new P.Transaction(request,{progress(n,total,results){by('progress').max=total;by('progress').value=n;message(`已确认 ${n}/${total} 条参数命令`);by('results').textContent=results.map(x=>x.command+'\n'+x.response).join('\n')}});
+const transaction=new P.Transaction(request,{progress(n,total,results){by('progress').max=total;by('progress').value=n;message(`已确认 ${n}/${total} 条参数命令`);by('results').textContent=results.map(x=>x.command+'\n'+x.response).join('\n');focusUI?.progress(n,total)}});
 function lock(value){locked=value;by('editor').disabled=value;by('files').disabled=value;for(const id of ['apply','validate','query'])by(id).disabled=value;by('cancel').disabled=!value;for(const c of by('targets').querySelectorAll('input'))c.disabled=value;renderQuick()}
 function values(){return category==='afe5832'?config.afe5832?.raw_registers:category==='tx7332'?config.tx7332?.tx7332_config_data:config.bram?.[category]}
 function put(value){if(category==='afe5832')config.afe5832=value;else if(category==='tx7332')config.tx7332={tx7332_config_data:value};else{config.bram??={};config.bram[category]=value}}
@@ -49,8 +49,8 @@ function plot(){
 function validEditor(){for(const field of by('editor').querySelectorAll('input'))if(!field.reportValidity())throw Error('请先修正编辑框中的无效值；未发送任何参数')}
 function preview(){validEditor();const commands=P.build(config,checkedTargets()),notes=P.warnings(commands);by('preview').textContent=notes.join('\n')+'\n'+`共 ${commands.length} 条参数命令；展示前 40 条：\n`+commands.slice(0,40).join('\n');return commands}
 async function applyCommands(commands,down=null){
- if(locked)return;if(!confirm('将排空上传、关闭高压并停止扫描。完成后保持停止。确认继续？'))return;
- lock(true);by('progress').value=0;message('正在排空并进入配置事务…');try{const results=await transaction.run(commands,{down});by('results').textContent=results.slice(-16).map(x=>x.command+'\n'+x.response).join('\n');message('配置/读取已确认完成；扫描、高压及上传保持停止，请手动恢复。')}catch(e){message(e.message+'；不会自动重发或恢复成像。',true)}finally{lock(false)}
+ if(locked)return false;if(!confirm('将排空上传、关闭高压并停止扫描。完成后保持停止。确认继续？'))return false;
+ lock(true);by('progress').value=0;message('正在排空并进入配置事务…');try{const results=await transaction.run(commands,{down});by('results').textContent=results.slice(-16).map(x=>x.command+'\n'+x.response).join('\n');message('配置/读取已确认完成；扫描、高压及上传保持停止，请手动恢复。');return true}catch(e){message(e.message+'；不会自动重发或恢复成像。',true);return false}finally{lock(false)}
 }
 async function readRegister(command){try{validEditor();P.validate(config);await applyCommands([command])}catch(e){message(e.message,true)}}
 function saveBlob(value,name){const url=URL.createObjectURL(new Blob([JSON.stringify(value,null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
@@ -71,8 +71,8 @@ by('load-draft').onclick=()=>{try{const text=localStorage.getItem('ultrasound-pa
 by('clear').onclick=()=>{if(confirm('清空当前编辑内容？已保存草稿仍保留。')){config={format_version:1};selections.clear();draw()}};
 by('validate').onclick=()=>{try{preview();message('全部配置校验通过；预览不是硬件应用结果')}catch(e){message(e.message,true)}};
 by('apply').onclick=()=>{try{const commands=preview(),down=checkedTargets().includes('t_timing')?P.uint(config.bram.t_timing[9],3):null;applyCommands(commands,down)}catch(e){message(e.message,true)}};
-by('cancel').onclick=()=>{transaction.cancel();message('已请求取消：当前批次结束后中止事务，已写入的参数不会回滚')};
-by('safe-stop').onclick=async()=>{if(by('safe-stop').disabled)return;by('safe-stop').disabled=true;transaction.cancel();try{const r=await transaction.batch(['HV DISABLE']);message('安全停止已确认：'+r[0].response+'；不恢复扫描或上传')}catch(e){message('安全停止未确认：'+e.message+'；请检查设备，不会自动重发',true)}finally{by('safe-stop').disabled=false}};
+by('cancel').onclick=()=>{focusUI?.cancelPending();transaction.cancel();message('已请求取消：当前批次结束后中止事务，已写入的参数不会回滚')};
+by('safe-stop').onclick=async()=>{if(by('safe-stop').disabled)return;by('safe-stop').disabled=true;focusUI?.cancelPending();transaction.cancel();try{const r=await transaction.batch(['HV DISABLE']);message('安全停止已确认：'+r[0].response+'；不恢复扫描或上传')}catch(e){message('安全停止未确认：'+e.message+'；请检查设备，不会自动重发',true)}finally{by('safe-stop').disabled=false}};
 by('query').onclick=async()=>{lock(true);try{const r=await transaction.batch(['STATUS']);const f=P.statusFields(r[0].response);by('device').textContent=r[0].response+'（刚刚查询；PS 软件记录）';if(f.cfg==='0')transaction.uncertain=false;message('状态查询完成；不会恢复扫描或高压')}catch(e){message(e.message,true)}finally{lock(false)}};
 window.addEventListener('beforeunload',e=>{if(locked){e.preventDefault();e.returnValue='配置仍在执行；关闭页面不会回滚已写入参数'}});
 draw();
@@ -85,6 +85,7 @@ function renderQuick(){const state=P.quickState(quickSnapshot,locked||transactio
  by('quick-configured').textContent=state.down===null?'PS 已下发配置：未知，请查询 PS；旧固件缺少 down 字段时需更新。':'PS 已下发配置：'+P.downDescription(state.down)+'（软件记录）';
  by('quick-received').textContent=state.received<0?'最近完整帧：等待数据':'最近完整帧：'+P.downDescription(state.received)+' · 帧号 '+quickSnapshot.sdio.last_received_frame+'（历史快照，不代表新配置）';
  by('quick-status').textContent=locked?'参数操作处理中，请勿重复提交':state.gainAllowed?'控制服务就绪；快捷设置与表格配置共用事务保护':'等待 PS 握手、芯片就绪及空闲控制服务；可使用下方“查询 PS 状态”刷新。';
+ if(typeof focusUI!=='undefined')focusUI?.render();
 }
 async function refreshQuick(){if(quickPending)return;quickPending=true;try{quickSnapshot=await request('/api/status')}catch{quickSnapshot={}}finally{quickPending=false;renderQuick()}}
 async function applyQuick(kind){if(locked||by('quick-'+kind+'-apply').disabled)return;const value=by('quick-'+kind).value,target=by('quick-'+kind+'-result');
@@ -96,3 +97,8 @@ by('quick-down').value='0';by('quick-down').addEventListener('change',renderQuic
 for(const kind of ['gain','down'])by('quick-'+kind+'-apply').addEventListener('click',()=>applyQuick(kind));
 by('query').addEventListener('click',()=>setTimeout(refreshQuick,500));
 refreshQuick();setInterval(refreshQuick,2000);
+if(typeof FocusConfig!=='undefined'){
+ focusUI=new FocusConfig.Panel({el:by,parameters:P,fetch:(...args)=>fetch(...args),canApply:()=>P.quickState(quickSnapshot,locked||transaction.uncertain).gainAllowed,
+  apply:commands=>applyCommands(commands),setLoading:lock,onDraft:profile=>{config.bram??={};config.bram.delay_profile=profile.bram.delay_profile;selections.add('delay_profile');category='delay_profile';by('category').value=category;page=0;draw();message('焦点延时表已载入草稿，其他类别保留，尚未下发')}});
+ focusUI.start();
+}

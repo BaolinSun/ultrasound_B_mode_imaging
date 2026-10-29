@@ -21,6 +21,8 @@ __pycache__/
 *.log
 # Keep the existing reproducible IDE configuration in source control.
 !/.vscode/settings.json
+# Curated hardware focus tables are build inputs, not runtime reports.
+!/configs/delay_profile_focus_*mm.json
 
 # Python environments, caches and test/coverage output.
 *.py[cod]

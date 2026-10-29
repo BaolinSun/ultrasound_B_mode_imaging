@@ -10,6 +10,7 @@
 ## 文档位置与索引
 
 - [网页高级参数配置、JSON、动态点数与 PC 显示设置](WEB_PARAMETERS.md)
+- [网页焦点选择、内置延时文件及更新方法](FOCUS_CONFIGURATION.md)
 - [网页参数配置离线验证、固件路径与哈希](WEB_PARAMETERS_VERIFICATION.md)
 
 - [当前已知问题与暂缓修复记录](KNOWN_ISSUES.md)

@@ -27,6 +27,9 @@ extern const unsigned char parameter_core_start[] asm("_binary_parameters_core_j
 extern const unsigned char parameter_core_end[] asm("_binary_parameters_core_js_end");
 extern const unsigned char parameter_ui_start[] asm("_binary_parameters_js_start");
 extern const unsigned char parameter_ui_end[] asm("_binary_parameters_js_end");
+extern const unsigned char focus_ui_start[] asm("_binary_focus_js_start");
+extern const unsigned char focus_ui_end[] asm("_binary_focus_js_end");
+extern esp_err_t focus_asset_get(httpd_req_t *req);
 
 static esp_err_t reply(httpd_req_t *req, const char *status, cJSON *json)
 {
@@ -64,6 +67,9 @@ static esp_err_t parameter_asset(httpd_req_t *req)
         type = "text/javascript; charset=utf-8";
     } else if (!strcmp(req->uri, "/parameters.js")) {
         start = parameter_ui_start; end = parameter_ui_end;
+        type = "text/javascript; charset=utf-8";
+    } else if (!strcmp(req->uri, "/focus.js")) {
+        start = focus_ui_start; end = focus_ui_end;
         type = "text/javascript; charset=utf-8";
     }
     httpd_resp_set_type(req, type);
@@ -350,7 +356,7 @@ esp_err_t web_server_start(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 6144;
-    config.max_uri_handlers = 14;
+    config.max_uri_handlers = 16;
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.lru_purge_enable = true;
     config.recv_wait_timeout = 5;
@@ -364,6 +370,8 @@ esp_err_t web_server_start(void)
         {.uri = "/parameters", .method = HTTP_GET, .handler = parameter_asset},
         {.uri = "/parameters_core.js", .method = HTTP_GET, .handler = parameter_asset},
         {.uri = "/parameters.js", .method = HTTP_GET, .handler = parameter_asset},
+        {.uri = "/focus.js", .method = HTTP_GET, .handler = parameter_asset},
+        {.uri = "/focus/*", .method = HTTP_GET, .handler = focus_asset_get},
         {.uri = "/api/config", .method = HTTP_GET, .handler = get_config},
         {.uri = "/api/config", .method = HTTP_PUT, .handler = put_config},
         {.uri = "/api/status", .method = HTTP_GET, .handler = get_status},

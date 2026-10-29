@@ -97,3 +97,26 @@ PC 全量 Python 回归 256 项通过（1 项历史数据跳过）；增加图�
 - 显示配置 Python 测试 9 项通过，含五档抽取的深度映射、并发修订和不访问设备的接口验证；使用 `esp32c61` conda 环境。
 - 本机模拟服务浏览器预览通过：默认宽屏和 390 px 窄屏；窄屏页面可用宽度与内容宽度均为 375 px，无横向溢出。验证快捷档位、5 mm 按钮及键盘向下增加 1 mm，自动更新成功。
 - 未连接板卡，未启动上传、扫描或高压；仅修改 PC HTML/JS、测试和说明，不更新固件或构建产物。
+
+## 网页焦点配置（2026-10-29）
+
+内置用户提供的 20～170 mm 共 16 张延时表，保持全部 16384 字原样、原顺序下发。新增浏览器焦点选择与受保护配置入口，只写入 `delay_profile`。仅更新 ESP32，不修改 PS、PL 或 PC 图像处理代码。
+
+- 网页回归 75 项通过，含焦点专用 6 项：全档命令/字序、目录格式、长度/CRC、混入其他配置拒绝、选档不发送、忙碌/未知禁止、加载取消、HTTP 失败、重复点击、仅加载草稿及最终停机确认。
+- `esp32c61` conda 环境下资源测试 4 项通过：16 个 gzip 成员逐字还原、偏移/长度/CRC/SHA256、一致生成、原文件未修改、重复表提示、非法值及缺文件拒绝。
+- 本机模拟浏览器验证了 gzip 实际解压、完整 2048 条写命令的事务完成及 ACK 显示，宽屏和 390 px 窄屏布局通过；仅本机模拟器，无板卡访问。
+- ESP-IDF 6.1 默认构建（`build`）与 combined 构建均通过，镜像各 **1246992 B**，1500 KiB 应用分区剩余 **289008 B（约 282 KiB，19%）**；未改变分区表、4 MiB Flash 或设备凭据。
+- 16 张延时表压缩包 **176521 B**，位于 Flash；资源服务不做整表解压或 cJSON 分配。size 报告 DIRAM 使用 136407 B，`.bss` 31288 B、`.data` 16395 B；这不是运行时堆低水位，既有 SRAM/JSON 问题仍保留。
+- 延时表数据中 60/70 mm、100/110 mm 分别相同，未擅自修正。档位名称不能代替真实焦点/声场验收。
+
+本轮镜像绝对路径：
+
+```text
+D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build\ultrasound_psram_udp.bin
+SHA256: 3b843c4c4ac5db24a44eff2f82a9e9adf4a7ec96ab36d6886abaf54f510bfa57
+
+D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build-throughput-fast-socket-exp-combined\ultrasound_psram_udp.bin
+SHA256: db613670129c98d23c42ff103c763f2df3470e82a17e8b6827247b7a06f77701
+```
+
+本次不自动烧录、下载、启动扫描、高压或覆盖 BOOT.BIN。上板后还需验证 16 档焦点效果、参数取消/失败后的完整重配、与五档抽取并用及连续传输。更新方法见 [焦点配置说明](FOCUS_CONFIGURATION.md)。
