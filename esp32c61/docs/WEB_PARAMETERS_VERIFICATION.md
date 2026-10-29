@@ -29,17 +29,17 @@
 
 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build\ultrasound_psram_udp.bin`
 
-- 大小：1050960 B
-- SHA-256：`a4046e13cd1ef09ec8360069f3f2a1a84ad6e7cad8c673658a8784d5ebcdbbd1`
-- 应用分区剩余：485040 B（31.6%）
+- 大小：1050976 B
+- SHA-256：`40a30dada524c9b0ae33e6e59cc826c18a07cb9dedd9469d4fcbf2a6a3b4e167`
+- 应用分区剩余：485024 B（31.6%）
 
 ### ESP32 combined
 
 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build-throughput-fast-socket-exp-combined\ultrasound_psram_udp.bin`
 
-- 大小：1050960 B
-- SHA-256：`245495f97fc12c4a9248fc21a1156edf197fd07694a8a910ffeb34eb5de33510`
-- 应用分区剩余：485040 B（31.6%）
+- 大小：1050976 B
+- SHA-256：`4bca21726151fc353e307d1300f6a8285ca8cbaa00a59801164230ab65da15d1`
+- 应用分区剩余：485024 B（31.6%）
 
 ### Zynq SDIO
 
@@ -76,3 +76,7 @@
 ## 控制台导航补充（2026-10-29）
 
 高级参数入口使用新标签页及 noopener/noreferrer；新增 `/index.html` 与 `/` 共用控制台处理函数。57 项网页测试和默认/combined 离线构建通过。上面的 ESP32 哈希已更新为本轮产物；本轮未操作硬件，仅需更新 ESP32 固件。
+
+## CPU 周期日志过滤补充（2026-10-29）
+
+ESP32 屏蔽 USB 上的 `@CPUS1` 行，保留 CPU 状态解析及网页更新。UART 桥接原生回归验证了已连接/未连接 USB、CPU 缓存更新、相邻普通日志和五项初始化失败恢复；默认与 combined 构建通过。以上 ESP32 哈希更新为本轮镜像，未烧录或操作板卡。

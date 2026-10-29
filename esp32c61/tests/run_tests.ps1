@@ -229,6 +229,8 @@ foreach ($suite in @('uart_framer','uart_bridge')) {
     try {
         $sources=@((Join-Path $PSScriptRoot "test_$suite.c"),(Join-Path $projectRoot 'main/uart_log_framer.c'))
         if ($suite -eq 'uart_bridge') {
+              if (($uartOutput -join "`n") -match '@CPUS1') { throw 'CPU telemetry was incorrectly printed to USB' }
+              if (($uartOutput -join "`n") -notmatch '\[ZYNQ\] CPU report received') { throw 'Filtering CPU telemetry lost adjacent ordinary logs' }
             $sources+=(Join-Path $projectRoot 'main/zynq_uart_bridge.c')
             $sources+=(Join-Path $projectRoot 'main/temperature_cache.c')
             $sources+=(Join-Path $projectRoot 'main/cpu_status_cache.c')

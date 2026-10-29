@@ -75,7 +75,17 @@ int xQueueReceive(QueueHandle_t q,uart_event_t *e,unsigned wait) {
         connected=true;pending="visible\n";break;
     }
     case 12:pending="no newline";break;
-    case 14:console_timeouts=1;pending="monitor stalled\n";break;
+    case 13:{
+        cpu_status_message_t cpu={124,1,CPU_MODE_IDLE,CPU_REASON_NONE,5,31000000,5,0x22};
+        combined_line[0]='\n'; /* Terminate the preceding no-newline test log. */
+        assert(cpu_status_format(combined_line+1,CPU_STATUS_LINE_BYTES,&cpu)==98);
+        strcat(combined_line,"CPU report received\n");pending=combined_line;break;
+    }
+    case 14:{
+        cpu_status_snapshot_t cpu;cpu_status_cache_get(&cpu,(uint64_t)now/1000);
+        assert(cpu.has_sample && cpu.message.seq==124 && cpu.message.entries==5);
+        console_timeouts=1;pending="monitor stalled\n";break;
+    }
     case 15:pending="monitor resumed\n";break;
     case 16:console_timeouts=2;pending="stall twice\n";break;
     case 17:pending="warning not drained\n";break;

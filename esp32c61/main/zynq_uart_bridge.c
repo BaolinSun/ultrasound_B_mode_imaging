@@ -18,6 +18,7 @@
 #include "freertos/queue.h"
 #include "esp_timer.h"
 #include <stdio.h>
+#include <string.h>
 #include <inttypes.h>
 #include <unistd.h>
 
@@ -33,6 +34,9 @@ static uint64_t milliseconds(void) { return (uint64_t)esp_timer_get_time()/1000U
 static void print_line(const uint8_t *p,size_t length,void *ctx)
 {
     (void)ctx;
+    /* CPU telemetry is already consumed by cpu_status_cache_feed() before
+     * framing. Keep the web CPU card live without printing periodic reports. */
+    if(length>=7 && memcmp(p,"@CPUS1 ",7)==0) return;
     if(!usb_serial_jtag_is_connected()) { hidden_bytes+=length; return; }
     flockfile(stdout);
     clearerr(stdout);
