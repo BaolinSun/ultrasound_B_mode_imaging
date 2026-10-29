@@ -283,9 +283,10 @@ test('ESP page links to the local viewer without starting receive, scan or HV',a
   assert.match(link,/target="_blank"/);
   assert.match(link,/rel="noopener noreferrer"/);
   assert.doesNotMatch(link,/onclick|disabled/);
-  assert.ok(html.indexOf('id="viewer-title"')<html.indexOf('连接与目标地址'));
-  assert.match(html,/同一台电脑/);
-  assert.match(html,/bmode_web_viewer\.py --device-ip 192\.168\.3\.27/);
+  const control=html.match(/<section\b[\s\S]*?<\/section>/)[0];
+  assert.match(control,/id="image-viewer-link"/);
+  assert.match(control,/>超声实时图像<\/a>/);
+  assert.doesNotMatch(html,/viewer-title|bmode_web_viewer\.py/);
   const e=setup();await e.settle();
   assert.ok(e.backend.calls.every(call=>!call.options.method||call.options.method==='GET'));
   assert.equal(e.elements['image-viewer-link'].listeners.click,undefined);
@@ -352,7 +353,7 @@ test('temperature time axis appends left to right with local clock labels and th
  assert.equal(xs[0],64);assert.ok(xs[1]>xs[0]&&xs[1]<680);
  assert.equal(e.elements['temp-x-0'].textContent,clock(first));
  for(let i=0;i<4;i++)assert.match(e.elements['temp-x-'+i].textContent,/^\d{2}:\d{2}:\d{2}$/);
- assert.match(html,/background:#202129/);assert.match(html,/stroke-width:1\.25/);
+ assert.match(html,/background:linear-gradient\(145deg,#182536,#101b29\)/);assert.match(html,/stroke-width:2;/);
  assert.match(html,/本地时间 \(HH:MM:SS\) →/);
 });
 
@@ -721,7 +722,7 @@ test('TX standby controls are independent and the two power gates are combined',
 test('panels follow requested order, parameters are independent and IDs remain unique',()=>{
  const cards=[...html.matchAll(/<section\b[\s\S]*?<\/section>/g)].map(m=>m[0]);
  assert.deepEqual(cards.map(c=>c.match(/<h2[^>]*>(.*?)<\/h2>/)[1]),[
-  'Zynq 控制与配置','Zynq CPU 状态','AFE / TX 电源管理','超声参数控制','实时超声图像',
+  'Zynq 控制与配置','Zynq CPU 状态','AFE / TX 电源管理','超声参数控制',
   '温度监测 · 实时曲线','设备与传输状态','Zynq SDIO → Wi-Fi TCP/UDP 测试','连接与目标地址']);
  for(const id of ['zynq-gain','zynq-gain-set','zynq-down','zynq-down-set','down-result']){
   assert.ok(cards[3].includes(`id="${id}"`));assert.ok(!cards[0].includes(`id="${id}"`));
@@ -755,4 +756,19 @@ test('new parameter card mirrors shared command progress and errors without dupl
  assert.equal(e.backend.calls.filter(c=>c.options.method==='POST').length,1);
  e.backend.commandConflict=true;await e.elements['zynq-gain-set'].listeners.click();await e.settle();
  assert.equal(e.elements['parameter-feedback'].classList.contains('chip-error'),true);
+});
+
+
+test('temperature redesign preserves values, highlights report validity and keeps history bounded',async()=>{
+ const e=setup();await e.settle();assert.equal(e.elements['temp-live'].textContent,'等待数据');
+ e.backend.status.temperatures=temperatureSample(1,42.5,31.25,28.75);await e.context.refresh();
+ assert.equal(e.elements['temp-live']['data-tone'],'ok');assert.equal(e.elements['temp-zynq']['data-valid'],'true');
+ assert.equal(e.elements['temp-zynq'].textContent,'42.50 °C');
+ e.backend.status.temperatures.power.status='read_error';await e.context.refresh();
+ assert.equal(e.elements['temp-live']['data-tone'],'warn');assert.equal(e.elements['temp-power']['data-valid'],'false');
+ e.backend.status.temperatures.age_ms=31000;await e.context.refresh();assert.equal(e.elements['temp-live'].textContent,'报告已过期');
+ assert.equal(e.elements['temp-zynq']['data-valid'],'false');
+ e.backend.offline=true;await e.context.refresh();assert.equal(e.elements['temp-live'].textContent,'连接中断');
+ assert.equal(e.backend.calls.some(c=>c.options.method==='POST'),false);
+ assert.match(html,/class="temperature-readings"/);assert.match(html,/class="temp-plot"/);
 });

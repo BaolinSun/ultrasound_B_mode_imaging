@@ -13,9 +13,17 @@ button.secondary{background:#e4eaf1;color:#263e56}button:disabled{opacity:.5;cur
 dl{display:grid;grid-template-columns:130px 1fr;gap:8px;margin:0}dt{color:#53657a}dd{margin:0;overflow-wrap:anywhere}
 progress{width:100%;height:18px;margin-top:18px}.notice{padding:12px 16px;border-left:4px solid #126f78;background:#e0f2f1;white-space:pre-wrap}.error{border-color:#bc3939;background:#ffeceb}
 a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template-columns:1fr}.card{padding:18px}dl{grid-template-columns:100px 1fr}}
-.temp-chart{display:block;width:100%;height:auto;margin:16px 0 0;background:#202129;border:1px solid #383c49;border-radius:10px}
-.temp-chart text{font:12px system-ui,sans-serif;fill:#e3e7ee}.temp-grid{stroke:#343844;stroke-width:1}.temp-axis{fill:none;stroke:#b5bdcc;stroke-width:1}.temp-line{fill:none;stroke-width:1.25;stroke-linejoin:round;stroke-linecap:round}
-.temp-zynq-color{color:#126f78}.temp-power-color{color:#b65c12}.temp-afe-color{color:#7653b5}
+.control-viewer{display:flex;justify-content:flex-end;margin:0 0 16px}.control-viewer .viewer-link{margin:0}
+.temperature-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:20px}.temperature-heading h2{margin:0 0 4px}.temperature-heading .status-pill{flex:none}
+.temperature-readings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:20px}
+.temp-reading{display:flex;flex-direction:column;gap:6px;padding:16px;border:1px solid #dce5eb;border-top:3px solid var(--temp-color);border-radius:10px;background:var(--temp-bg);min-width:0}
+.temp-reading dt{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:#41566b}.temp-reading dd:not(.temp-description){font-size:27px;font-weight:650;line-height:1.5;letter-spacing:-.5px;color:#183347;font-variant-numeric:tabular-nums}.temp-reading dd[data-valid=false]{font-size:16px;font-weight:500;color:#6b7b8e;letter-spacing:0}.temp-reading small{font-size:12px;color:#64768a}
+.temp-zynq{--temp-color:#18858c;--temp-bg:#f2fafb}.temp-power{--temp-color:#bd7129;--temp-bg:#fff9f2}.temp-afe{--temp-color:#8a65c5;--temp-bg:#f8f5fd}
+.temp-swatch{display:inline-block;width:20px;border-top:2px solid var(--temp-color);flex:none}.temp-power .temp-swatch{border-top-style:dashed}.temp-afe .temp-swatch{border-top-style:dotted}
+.temp-plot{overflow:hidden;background:linear-gradient(145deg,#182536,#101b29);border:1px solid #26384c;border-radius:12px}.temp-plot-heading{display:flex;justify-content:space-between;gap:12px;padding:16px 20px 0;color:#e5edf7;font-size:14px}.temp-plot-heading span{color:#a9bcd1;font-size:12px}
+.temp-chart{display:block;width:100%;height:auto;margin:4px 0 0;background:transparent}.temp-chart text{font:12px system-ui,sans-serif;fill:#b5c6d9}.temp-grid{stroke:#2a3b50;stroke-width:.75}.temp-axis{fill:none;stroke:#71879f;stroke-width:1}.temp-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.temp-summary{padding:14px 0 0}.temp-summary p{font-size:13px;margin:3px 0;color:#63768a}.temp-summary #temp-age{color:#344f68;font-weight:500}
+@media(max-width:600px){.temperature-heading{align-items:flex-start;flex-wrap:wrap}.temperature-readings{grid-template-columns:1fr;gap:8px}.temp-reading{display:grid;grid-template-columns:1fr auto;padding:12px 14px;gap:2px 12px}.temp-reading dd:not(.temp-description){grid-column:2;grid-row:1/3;font-size:25px;max-width:170px}.temp-plot-heading{padding:12px 14px 0}.control-viewer .viewer-link{width:100%;text-align:center}.temp-chart text{font-size:14px}}
 .status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0}.status-tile,.chip-panel{border:1px solid #dce5eb;background:#f8fafc;border-radius:12px;padding:14px}.status-tile small{margin-bottom:6px}.status-pill{display:inline-flex;align-items:center;gap:8px;border-radius:20px;padding:5px 11px;background:#e8edf2;color:#53657a;font-weight:650;font-size:14px}.status-pill:before{content:'';width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}.status-pill[data-tone=ok]{background:#dff3e9;color:#176343}.status-pill[data-tone=active]{background:#dff0f6;color:#155f80}.status-pill[data-tone=warn]{background:#fff0d4;color:#8b5b0b}.status-pill[data-tone=error]{background:#ffe4e3;color:#a42f2f}.status-pill[data-tone=stale]{background:#eeedf3;color:#686578}
 .control-actions{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:18px 0}.action-group{padding:14px;border:1px solid #dce5eb;border-radius:12px}.action-group h3,.chip-panel h3{margin:0 0 10px;font-size:16px}.button-row{display:flex;flex-wrap:wrap;gap:8px}.button-row button{margin:0;flex:1;min-width:110px}.control-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0}.control-footer button{margin:0}.danger{background:#a53737}.chip-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.chip-panel .status-pill{font-size:15px;margin-bottom:10px}.chip-panel dl{grid-template-columns:75px 1fr;font-size:14px}.chip-panel .button-row{margin-top:14px}.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.metric{border-radius:9px;background:white;border:1px solid #e2e8ee;padding:10px}.metric strong{display:block;font-size:20px}.chip-error{color:#a42f2f;overflow-wrap:anywhere;font-size:14px}.diagnostics{margin-top:12px;color:#53657a;font-size:14px}.diagnostics pre{white-space:pre-wrap;overflow-wrap:anywhere}
 @media(max-width:600px){.status-grid{grid-template-columns:1fr 1fr}.chip-grid,.control-actions{grid-template-columns:1fr}.control-footer{align-items:flex-start;flex-direction:column}.button-row button{padding:10px 12px}}
@@ -38,6 +46,7 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <div class="action-group"><h3>高压控制</h3><div class="button-row"><button id="zynq-hv-on">开启高压</button><button id="zynq-hv-off" class="secondary">关闭高压</button></div><small>关闭高压同时停止扫描。</small></div>
 <div class="action-group"><h3>扫描控制</h3><div class="button-row"><button id="zynq-start">开始扫描</button><button id="zynq-safe-stop" class="danger">安全停止</button></div><small>安全停止会关闭高压并停止扫描。</small></div>
 </div>
+<div class="control-viewer"><a id="image-viewer-link" class="viewer-link" href="http://127.0.0.1:8080/" target="_blank" rel="noopener noreferrer">超声实时图像</a></div>
 <details class="diagnostics"><summary>通信诊断</summary><pre id="control-raw">暂无 PS 回执</pre></details>
 <p class="muted">开始扫描不自动开启高压；Wi-Fi 配置结束后保持停机。上传按钮只传输 DDR，不启动成像。软件状态不是实际高压或物理收发完成的证明。</p>
 <details><summary>高级命令（每行一条）</summary><textarea id="zynq-lines" rows="6" style="width:100%;font-family:monospace" placeholder="STATUS"></textarea>
@@ -110,18 +119,15 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 
 <p id="parameter-feedback" class="muted" role="status" aria-live="polite">尚未下发命令</p>
 </section>
-<section class="card" aria-labelledby="viewer-title"><h2 id="viewer-title">实时超声图像</h2>
-<p class="muted">先在接收电脑启动图像服务，再从同一台电脑打开本页并点击下方入口。图像在新标签页显示，当前配置页保留。</p>
-<code style="display:block;overflow-wrap:anywhere">python .\pc_tools\bmode_web_viewer.py --device-ip 192.168.3.27</code>
-<a id="image-viewer-link" class="viewer-link" href="http://127.0.0.1:8080/" target="_blank" rel="noopener noreferrer">打开实时图像显示 ↗</a>
-<small>在 esp32c61 目录运行上述命令。打开图像页后点击“开始接收”；无需再点击本页的 SDIO 单帧或连续测试。此入口不会开启高压或启动扫描。</small>
-<small>127.0.0.1 指浏览器所在电脑；手机或其他电脑不能通过此入口访问接收电脑。使用自定义 HTTP 端口时，请直接打开 Python 提示的地址。无法打开通常表示本机图像服务尚未启动。</small>
-</section>
-<section class="card"><h2>温度监测 · 实时曲线</h2><dl>
-<dt class="temp-zynq-color">Zynq 芯片 ━</dt><dd id="temp-zynq">等待温度数据</dd>
-<dt class="temp-power-color">电源 ┄</dt><dd id="temp-power">等待温度数据</dd>
-<dt class="temp-afe-color">AFE 区域 ┈</dt><dd id="temp-afe">等待温度数据</dd>
-</dl>
+
+<section class="card temperature-card" aria-labelledby="temperature-title">
+<div class="temperature-heading"><div><h2 id="temperature-title">温度监测 · 实时曲线</h2><small>三路温度同步监测 · 每 10 秒采样</small></div><span id="temp-live" class="status-pill">等待数据</span></div>
+<div class="temperature-readings">
+<dl class="temp-reading temp-zynq"><dt><span class="temp-swatch"></span>Zynq 芯片</dt><dd id="temp-zynq" data-valid="false">等待温度数据</dd><dd class="temp-description"><small>芯片内部温度</small></dd></dl>
+<dl class="temp-reading temp-power"><dt><span class="temp-swatch"></span>电源</dt><dd id="temp-power" data-valid="false">等待温度数据</dd><dd class="temp-description"><small>电源区域温度</small></dd></dl>
+<dl class="temp-reading temp-afe"><dt><span class="temp-swatch"></span>AFE 区域</dt><dd id="temp-afe" data-valid="false">等待温度数据</dd><dd class="temp-description"><small>模拟前端温度</small></dd></dl>
+</div>
+<div class="temp-plot"><div class="temp-plot-heading"><strong>温度趋势</strong><span>最近 6 分钟 · °C</span></div>
 <svg id="temp-chart" class="temp-chart" viewBox="0 0 720 300" role="img" aria-label="Zynq、电源、AFE 三路温度历史折线图，纵轴摄氏度，横轴本地时分秒，时间从左向右增加" aria-describedby="temp-chart-status">
 <g class="temp-grid"><path d="M64 20H680 M64 72.5H680 M64 125H680 M64 177.5H680 M64 230H680 M64 20V230 M269 20V230 M475 20V230 M680 20V230"/></g>
 <path class="temp-axis" d="M64 20V230H680"/>
@@ -132,10 +138,10 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 <path id="temp-path-power" class="temp-line" stroke="#ffba75" stroke-dasharray="7 4"/>
 <path id="temp-path-afe" class="temp-line" stroke="#df96ff" stroke-dasharray="2 4"/>
 <circle id="temp-dot-zynq" fill="#56d5db" r="0"/><circle id="temp-dot-power" fill="#ffba75" r="0"/><circle id="temp-dot-afe" fill="#df96ff" r="0"/>
-</svg>
+</svg></div>
+<div class="temp-summary"><p id="temp-age" class="muted">每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。</p>
 <p id="temp-chart-status" class="muted" role="status">等待新温度采样，首个有效值显示为圆点。</p>
-<p id="temp-age" class="muted">每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。</p>
-<small>旧数据在左，新数据向右追加；仅显示最近 6 分钟，超过后向左滚动，纵轴自动缩放。仅保存本页面打开后的历史，刷新页面会清空；真实漏采样、读取失败或报告失效处保留断点。短暂网页请求失败后按采样序号判断连续性，不补造数据。不依赖外部网络绘图库。</small></section>
+</div><details class="diagnostics"><summary>曲线说明</summary><small>旧数据在左，新数据向右追加；仅显示最近 6 分钟，超过后向左滚动，纵轴自动缩放。仅保存本页面打开后的历史，刷新页面会清空；真实漏采样、读取失败或报告失效处保留断点。短暂网页请求失败后按采样序号判断连续性，不补造数据。不依赖外部网络绘图库。</small></details></section>
 <section class="card"><h2>设备与传输状态</h2>
 <div class="status-grid" role="group" aria-label="通信与源端就绪状态">
 <div class="status-tile"><small>Wi-Fi</small><span id="runtime-wifi" class="status-pill">未知</span></div>
@@ -252,9 +258,12 @@ function renderTemperatures(t,disconnected=false){
  for(const name of ['zynq','power','afe']){
   const c=t?.[name];
   const state=t?.age_ms>30000?'stale':c?.status||'waiting';
+  el('temp-'+name).setAttribute('data-valid',!disconnected&&state==='ok'&&Number.isFinite(c?.celsius)?'true':'false');
   el('temp-'+name).textContent=disconnected?'网页连接已断开':
    state==='ok'&&Number.isFinite(c?.celsius)?c.celsius.toFixed(2)+' °C':labels[state]||'等待温度数据';
  }
+ const fresh=t&&Number.isFinite(t.age_ms)&&t.age_ms<=30000,allValid=fresh&&['zynq','power','afe'].every(n=>t[n]?.status==='ok'&&Number.isFinite(t[n]?.celsius));
+ badge('temp-live',disconnected?'连接中断':!t?'等待数据':!fresh?'报告已过期':allValid?'实时采样':'部分读取异常',disconnected||!fresh?'stale':allValid?'ok':'warn');
  el('temp-age').textContent=disconnected?'无法获取最新温度，请等待设备连接恢复。':
   t?.seq!=null&&Number.isFinite(t?.age_ms)?`每 10 秒采样；采样序号 ${t.seq}，${(t.age_ms/1000).toFixed(1)} 秒前收到。`:
   '每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。';
