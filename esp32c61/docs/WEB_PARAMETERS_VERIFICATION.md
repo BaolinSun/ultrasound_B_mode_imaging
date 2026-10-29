@@ -29,17 +29,17 @@
 
 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build\ultrasound_psram_udp.bin`
 
-- 大小：1049120 B
-- SHA-256：`4cad37657caa45b8d863b188261f63d37da6e41481e5acf9f39e6d7de781eb8b`
-- 应用分区剩余：486880 B（31.7%）
+- 大小：1050880 B
+- SHA-256：`201b518a4966d254b84ffc7e88768ac97fe1f3000fb82087ea2f963f40285d40`
+- 应用分区剩余：485120 B（31.6%）
 
 ### ESP32 combined
 
 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build-throughput-fast-socket-exp-combined\ultrasound_psram_udp.bin`
 
-- 大小：1049120 B
-- SHA-256：`11172362d05940aa9aae48689a3d2b1a9cbf34a71536e2e8b004acc3856f27c9`
-- 应用分区剩余：486880 B（31.7%）
+- 大小：1050880 B
+- SHA-256：`e8750938825c73d71d444c3bdb310a99d9be45079aaf74ee9f7da91fdbd41fe4`
+- 应用分区剩余：485120 B（31.6%）
 
 ### Zynq SDIO
 
@@ -65,3 +65,10 @@
 - 已知问题 `ESP-HTTP-001` 保留，未宣称解决。
 
 操作说明：[网页参数配置](WEB_PARAMETERS.md)。
+
+## 快捷参数迁移补充（2026-10-29）
+
+首页删除独立参数面板，入口放入 Zynq 控制卡片标题栏。数字增益及图像下采样迁入高级参数页顶部。
+本次仅修改 ESP32 网页资源及浏览器逻辑；PS、PL、PC 图像处理不变，不需要重新下载 Zynq。
+迁移后的首页/参数页 56 项 Node 测试通过，包含五档映射、独立状态、准入、精确回执、停止后状态、错误及防重复提交。默认与 combined 两套固件离线构建通过，并完成模拟接口浏览器布局检查。
+上面的完整 C/Python 回归为此前功能交付记录；本次未操作板卡。

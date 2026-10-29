@@ -1,8 +1,52 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createRequire} from 'node:module';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
 const require=createRequire(import.meta.url),P=require('../main/parameters_core.js');
 const timing=down=>[6144,7059,10,125,3,403,6656,915,6144,down];
+const snapshot=(d=0)=>({zynq_control:{ready:true,synced:true,afe_state:'ready',tx_state:'ready',ps_status:`@STATUS v=1 cfg=0 seq=0 run=1 hv=1 down=${d} cpu1_disabled=0 wfi=1`},sdio:{last_received_bytes:394240,last_received_frame:17}});
+test('quick gates distinguish selection, PS shadow and actual frame; reject busy and unknown chips',()=>{
+ const s=snapshot(3);assert.equal(P.quickState(s).down,3);assert.equal(P.quickState(s).received,1);
+ for(const c of [{ready:false},{busy:true},{config_owned:true},{synced:false},{afe_state:'sleep'},{tx_state:'fault'},{ps_status:'@STATUS v=1 cfg=1 down=2'},{ps_status:'@STATUS v=1 cfg=0 down=2 down=2'}])assert.equal(P.quickState({zynq_control:{...s.zynq_control,...c}}).downAllowed,false);
+ assert.equal(P.quickState(s,true).gainAllowed,false);assert.equal(P.quickState({}).down,null);
+ assert.equal(P.quickState({zynq_control:{...s.zynq_control,ps_status:'@STATUS v=1 cfg=0'}}).downAllowed,false);
+});
+test('quick downsample all five modes use protected transaction and verify exact ACK/state',async()=>{
+ for(let d=0;d<5;d++){
+  let writes;const t={seq:42,async run(cmd,opts){writes=cmd;assert.equal(opts.down,d);return ['CFG BEGIN 42',cmd[0],'CFG END','STATUS'].map((command,i)=>({command,response:i<3?'@ACK 42 '+['CFG_BEGIN','BRAM_WR','CFG_END'][i]:`@STATUS v=1 seq=42 cfg=0 run=0 hv=0 down=${d}`}))}};
+  await P.quickDown(t,String(d),snapshot());assert.deepEqual(writes,['BRAM WR t_timing 9 1 '+d]);assert.match(P.downDescription(d),new RegExp(String(6144>>d)));
+  for(const field of ['seq','down','cfg','run','hv']){const original=t.run;t.run=async(...args)=>{const r=await original(...args);r[3].response=r[3].response.replace(new RegExp(field+'=\\d+'),field+'=99');return r};await assert.rejects(P.quickDown(t,String(d),snapshot()));t.run=original}
+  const original=t.run;t.run=async(...args)=>{const r=await original(...args);r[1].response='@ACK 99 BRAM_WR';return r};await assert.rejects(P.quickDown(t,String(d),snapshot()),/确认不匹配/);
+ }
+});
+test('quick invalid inputs and gain errors never replay or bypass admission',async()=>{
+ let calls=0;const t={async batch(cmd){calls++;return [{command:cmd[0],response:'@ACK 0 GAIN_SET '+cmd[0].split(' ').at(-1)}]}};
+ for(const v of ['',-1,9,'1.5','01',' 1'])await assert.rejects(P.quickGain(t,v,snapshot()));assert.equal(calls,0);
+ for(let v=0;v<9;v++)await P.quickGain(t,v,snapshot());assert.equal(calls,9);
+ for(const v of ['',-1,5,'1.5','01'])await assert.rejects(P.quickDown(t,v,snapshot()));
+ t.uncertain=true;await assert.rejects(P.quickDown(t,0,snapshot()));await assert.rejects(P.quickGain(t,0,snapshot()));
+ t.uncertain=false;t.batch=async()=>{calls++;return [{response:'@ACK 0 GAIN_SET 7'}]};await assert.rejects(P.quickGain(t,3,snapshot()),/未确认/);assert.equal(calls,10);
+});
+function quickUI(){
+ const html=readFileSync(new URL('../main/parameters.html',import.meta.url),'utf8'),elements={};
+ for(const m of html.matchAll(/id="([^"]+)"/g))elements[m[1]]={value:m[1]==='quick-down'?'0':'',textContent:'',disabled:false,listeners:{},classList:{toggle(){}},addEventListener(n,f){this.listeners[n]=f}};
+ const backend={s:snapshot(),posts:0,offline:false,release:null};
+ const tx={seq:42,async batch(c){backend.posts++;if(backend.release)await backend.release;return [{command:c[0],response:'@ACK 0 GAIN_SET '+c[0].split(' ').at(-1)}]}};
+ const c=vm.createContext({P,by:id=>elements[id],transaction:tx,confirm:()=>true,setTimeout(){},setInterval(){},console});
+ vm.runInContext('let locked=false;function lock(v){locked=v;renderQuick()} async function request(){return backend.offline?Promise.reject(Error("offline")):backend.s}',c);
+ c.backend=backend;const js=readFileSync(new URL('../main/parameters.js',import.meta.url),'utf8').split('// Read ESP32 caches only;')[1];vm.runInContext("//"+js,c);
+ return {c,e:elements,b:backend,settle:()=>new Promise(r=>setImmediate(r))};
+}
+test('relocated quick widgets poll read-only cache, show correct sizes and disable offline',async()=>{
+ const t=quickUI();await t.settle();assert.equal(t.b.posts,0);assert.equal(t.e['quick-down-apply'].disabled,false);
+ t.e['quick-down'].value='4';t.e['quick-down'].listeners.change();assert.match(t.e['quick-preview'].textContent,/384.*50176/);assert.match(t.e['quick-configured'].textContent,/1 倍/);assert.match(t.e['quick-received'].textContent,/2 倍.*17/);
+ t.b.offline=true;await t.c.refreshQuick();assert.equal(t.e['quick-gain-apply'].disabled,true);assert.equal(t.e['quick-down-apply'].disabled,true);
+});
+test('relocated gain shares page lock, prevents duplicates, displays matching confirmation',async()=>{
+ const t=quickUI();await t.settle();t.e['quick-gain'].value='3';let release;t.b.release=new Promise(r=>release=r);
+ const first=t.e['quick-gain-apply'].listeners.click();await t.settle();assert.equal(t.e['quick-down-apply'].disabled,true);await t.e['quick-gain-apply'].listeners.click();assert.equal(t.b.posts,1);release();await first;assert.match(t.e['quick-gain-result'].textContent,/3 已确认/);
+});
 test('all table depths/chunks/offsets and five frame configurations',()=>{
  const bram=Object.fromEntries(Object.entries(P.sections).map(([k,n])=>[k,k==='t_timing'?timing(0):Array(n).fill(0xffffffff)]));
  const config={bram,tx7332:{tx7332_config_data:Array(128).fill(0)}};

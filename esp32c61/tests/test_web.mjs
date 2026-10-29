@@ -263,7 +263,7 @@ test('AFE-only power controls use existing jobs, block starts while asleep and n
  const e=setup();await e.settle();
  e.backend.status.zynq_control={ready:true,synced:true,afe_state:'sleep',afe_flags:0,afe_error:'NONE',afe_age_ms:0};
  await e.context.refresh();
- for(const id of ['upload','sdio-once','sdio-stream','zynq-start','zynq-hv-on','zynq-down-set'])assert.equal(e.elements[id].disabled,true);
+ for(const id of ['upload','sdio-once','sdio-stream','zynq-start','zynq-hv-on'])assert.equal(e.elements[id].disabled,true);
  assert.equal(e.elements['afe-wake'].disabled,false);
  assert.equal(e.elements['afe-sleep'].disabled,true);
  const before=e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length;
@@ -591,112 +591,6 @@ test('configuration gate disables image submissions and safe stop sends HV DISAB
  assert.equal('localStorage' in e.context,false);
 });
 
-async function downsampleEnvironment(d=0){
- const e=setup();await e.settle();
- e.backend.status.zynq_control={ready:true,busy:false,config_owned:false,synced:true,afe_state:'ready',tx_state:'ready',
-  ps_status:`@STATUS v=1 cfg=0 owner=2 seq=0 run=1 hv=1 run_src=ps spi=1 down=${d} afe=ready tx=ready cpu1_disabled=1 wfi=1`};
- await e.context.refresh();return e;
-}
-function successfulDownsampleJob(e,d,override={}){
- const seq=123; // Deterministic getRandomValues in this test environment.
- const commands=[`CFG BEGIN ${seq}`,`BRAM WR t_timing 9 1 ${d}`,'CFG END','STATUS'];
- e.backend.job={busy:false,state:'succeeded',count:4,completed:4,results:commands.map((command,i)=>({command,
-  response:i<3?`@ACK ${seq} ${['CFG_BEGIN','BRAM_WR','CFG_END'][i]}`:
-   `@STATUS v=1 cfg=0 owner=2 seq=${seq} run=0 hv=0 run_src=ps spi=0 down=${d} afe=ready tx=ready cpu1_disabled=1 wfi=1`})),...override};
- return commands;
-}
-test('downsampling accepts current CPU1/WFI status fields without disabling its controls',async()=>{
- const e=await downsampleEnvironment();
- const current='@STATUS v=1 cfg=0 owner=0 seq=0 run=0 hv=0 run_src=ps spi=0 down=0 afe=ready tx=ready cpu1_disabled=1 wfi=1';
- for(const text of [current,current.replace('cpu1_disabled=1 wfi=1','cpu1_disabled=0 wfi=0'),current+' future2=ok']){
-  const fields=e.context.psStatusFields(text);
-  assert.notEqual(fields,null);assert.equal(fields.down,'0');
-  e.backend.status.zynq_control.ps_status=text;await e.context.refresh();
-  assert.equal(e.elements['zynq-down-set'].disabled,false);assert.equal(e.elements['zynq-down'].disabled,false);
-  assert.match(e.elements['down-configured'].textContent,/PS 已下发配置：1 倍/);
- }
- for(const bad of [current+' cpu1_disabled=1',current+' 1field=0',current+' bad-key=0',current+' future2=',current+' future2=1.5']){
-  assert.equal(e.context.psStatusFields(bad),null);
-  e.backend.status.zynq_control.ps_status=bad;await e.context.refresh();
-  assert.equal(e.elements['zynq-down-set'].disabled,true);
- }
- assert.equal(e.backend.calls.some(c=>c.options.method==='POST'),false);
-});
-
-test('downsampling offers all five sizes, sends one safe transaction and never restarts imaging or upload',async()=>{
- for(const [d,n] of [787456,394240,197632,99328,50176].entries()){
-  const e=await downsampleEnvironment();const commands=successfulDownsampleJob(e,d);
-  e.elements['zynq-down'].value=String(d);e.elements['zynq-down'].listeners.change();
-  assert.match(e.elements['down-preview'].textContent,new RegExp(`${6144>>d} 点/线 · ${n} B/帧`));
-  assert.match(e.elements['down-configured'].textContent,/1 倍/); // Selection is not applied state.
-  await e.elements['zynq-down-set'].listeners.click();
-  assert.deepEqual(e.backend.commandBody.commands,commands);assert.equal(e.backend.commandBody.allow_hv,false);
-  assert.match(e.elements['down-result'].textContent,/配置成功/);
-  assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,1);
-  assert.ok(e.backend.calls.filter(c=>c.options.method==='POST').every(c=>c.path==='/api/zynq/commands'));
-  assert.doesNotMatch(e.backend.commandBody.commands.join('\n'),/BEAM START|HV ENABLE/);
-  assert.equal(e.elements['zynq-start'].disabled,false);assert.equal(e.elements['zynq-hv-on'].disabled,false);
- }
-});
-test('downsampling distinguishes PS shadow, selection and last CRC-passed frame, not current BEGIN or source snapshot',async()=>{
- const e=await downsampleEnvironment(3);
- e.backend.status.sdio={last_received_bytes:394240,last_received_frame:57,frame_bytes:50176,source_down:4};
- await e.context.refresh();
- assert.match(e.elements['down-configured'].textContent,/8 倍/);
- assert.match(e.elements['down-received'].textContent,/2 倍.*394240.*57/);
- assert.match(e.elements['down-preview'].textContent,/1 倍/);
- e.backend.status.sdio.last_received_bytes=0;await e.context.refresh();
- assert.match(e.elements['down-received'].textContent,/等待/);
- const posts=e.backend.calls.filter(c=>c.options.method==='POST').length;
- await e.context.refresh();assert.equal(e.backend.calls.filter(c=>c.options.method==='POST').length,posts);
-});
-test('downsampling rejects invalid selection, old or unknown PS and occupied control, preserving safe stop',async()=>{
- for(const invalid of ['', '-1','5','1.5','NaN',' 1','01']){
-  const e=await downsampleEnvironment();e.elements['zynq-down'].value=invalid;
-  await e.elements['zynq-down-set'].listeners.click();assert.equal(e.backend.commandBody,undefined);
- }
- for(const change of [{synced:false},{busy:true},{config_owned:true},{ready:false},
-  {ps_status:'@STATUS v=1 cfg=1 run=0 hv=0 down=2'},
-  {ps_status:'@STATUS v=1 cfg=0 run=0 hv=0'}, {ps_status:'@STATUS v=1 cfg=0 run=0 hv=0 down=5'}]){
-  const e=await downsampleEnvironment();Object.assign(e.backend.status.zynq_control,change);await e.context.refresh();
-  assert.equal(e.elements['zynq-down-set'].disabled,true);
-  await e.elements['zynq-down-set'].listeners.click();assert.equal(e.backend.commandBody,undefined);
-  if(change.ready!==false)assert.equal(e.elements['zynq-safe-stop'].disabled,false);
- }
- const e=await downsampleEnvironment();e.backend.offline=true;await e.context.refresh();
- assert.equal(e.elements['zynq-down-set'].disabled,true);assert.match(e.elements['down-configured'].textContent,/未知/);
-});
-test('downsampling checks exact ACKs, command order, final down/run/HV/transaction state and never retries failures',async()=>{
- for(const fault of ['down','cfg','run','hv','seq','old','duplicate','ack','order','short','nack','unknown','conflict','lost']){
-  const e=await downsampleEnvironment();e.elements['zynq-down'].value='2';successfulDownsampleJob(e,2);
-  const job=e.backend.job;
-  if(['down','cfg','run','hv','seq'].includes(fault))job.results[3].response=job.results[3].response.replace(`${fault}=${fault==='down'?'2':fault==='seq'?'123':'0'}`,`${fault}=1`);
-  if(fault==='old')job.results[3].response='@STATUS v=1 cfg=0 run=0 hv=0';
-  if(fault==='duplicate')job.results[3].response+=' down=2';
-  if(fault==='ack')job.results[1].response='@ACK 999 BRAM_WR';
-  if(fault==='order')job.results[0].command='STATUS';
-  if(fault==='short'){job.completed=3;job.results.pop()}
-  if(fault==='nack'||fault==='unknown'){job.state=fault==='nack'?'failed':'unknown';job.error='injected failure';job.completed=1;job.results=job.results.slice(0,1)}
-  if(fault==='conflict')e.backend.commandConflict=true;
-  if(fault==='lost')e.backend.jobHook=async()=>{throw Error('network lost')};
-  await e.elements['zynq-down-set'].listeners.click();
-  assert.doesNotMatch(e.elements['down-result'].textContent,/配置成功/);
-  assert.match(e.elements['down-result'].textContent,/失败或结果未确认/);
-  assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,1,fault);
- }
-});
-test('downsampling prevents double submit and keeps safety stop available during async work',async()=>{
- const e=await downsampleEnvironment();successfulDownsampleJob(e,0);
- let release,entered;const waiting=new Promise(resolve=>{release=resolve}),started=new Promise(resolve=>{entered=resolve});
- e.backend.commandHook=async()=>{entered();await waiting};
- const first=e.elements['zynq-down-set'].listeners.click();await started;
- assert.equal(e.elements['zynq-down-set'].disabled,true);assert.equal(e.elements['zynq-down'].disabled,true);
- assert.equal(e.elements['zynq-safe-stop'].disabled,false);
- await e.elements['zynq-down-set'].listeners.click();
- release();await first;
- assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,1);
-});
-
 test('TX standby controls are independent and the two power gates are combined',async()=>{
  const e=setup();await e.settle();
  for(const afe of ['ready','sleep'])for(const tx of ['ready','sleep']){
@@ -705,7 +599,7 @@ test('TX standby controls are independent and the two power gates are combined',
   assert.equal(e.elements['tx-sleep'].disabled,tx!=='ready');
   assert.equal(e.elements['tx-wake'].disabled,tx==='ready');
   assert.equal(e.elements['afe-wake'].disabled,afe==='ready');
-  if(afe!=='ready'||tx!=='ready')for(const id of ['upload','sdio-once','sdio-stream','zynq-start','zynq-hv-on','zynq-down-set'])assert.equal(e.elements[id].disabled,true);
+  if(afe!=='ready'||tx!=='ready')for(const id of ['upload','sdio-once','sdio-stream','zynq-start','zynq-hv-on'])assert.equal(e.elements[id].disabled,true);
  }
  await e.elements['tx-query'].listeners.click();assert.deepEqual(e.backend.commandBody.commands,['TX7332 STATUS']);
  await e.elements['tx-wake'].listeners.click();assert.deepEqual(e.backend.commandBody.commands,['TX7332 WAKE']);
@@ -719,14 +613,13 @@ test('TX standby controls are independent and the two power gates are combined',
 });
 
 
-test('panels follow requested order, parameters are independent and IDs remain unique',()=>{
+test('panels follow requested order, advanced entry is in control card and IDs remain unique',()=>{
  const cards=[...html.matchAll(/<section\b[\s\S]*?<\/section>/g)].map(m=>m[0]);
  assert.deepEqual(cards.map(c=>c.match(/<h2[^>]*>(.*?)<\/h2>/)[1]),[
-  'Zynq 控制与配置','Zynq CPU 状态','AFE / TX 电源管理','超声参数控制',
+  'Zynq 控制与配置','Zynq CPU 状态','AFE / TX 电源管理',
   '温度监测 · 实时曲线','设备与传输状态','Zynq SDIO → Wi-Fi TCP/UDP 测试','连接与目标地址']);
- for(const id of ['zynq-gain','zynq-gain-set','zynq-down','zynq-down-set','down-result']){
-  assert.ok(cards[3].includes(`id="${id}"`));assert.ok(!cards[0].includes(`id="${id}"`));
- }
+ assert.ok(cards[0].includes('id="parameters-link"'));assert.match(cards[0],/href="\/parameters"/);
+ assert.doesNotMatch(html,/id="(?:parameters-panel|zynq-gain|zynq-down)"/);
  const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);assert.equal(new Set(ids).size,ids.length);
 });
 test('runtime shows actionable current state separately from historical errors and clears on disconnect',async()=>{
@@ -748,17 +641,6 @@ test('runtime shows actionable current state separately from historical errors a
  e.backend.offline=true;await e.context.refresh();assert.equal(e.elements['runtime-source']['data-tone'],'stale');
  assert.equal(e.elements['runtime-heap'].textContent,'无法更新');assert.equal(e.backend.calls.some(c=>c.options.method==='POST'),false);
 });
-test('new parameter card mirrors shared command progress and errors without duplicate submission',async()=>{
- const e=setup();await e.settle();e.elements['zynq-gain'].value='3';
- await e.elements['zynq-gain-set'].listeners.click();await e.settle();
- assert.deepEqual(e.backend.commandBody.commands,['GAIN SET 3']);
- assert.equal(e.elements['parameter-feedback'].textContent,e.elements['control-feedback'].textContent);
- assert.equal(e.backend.calls.filter(c=>c.options.method==='POST').length,1);
- e.backend.commandConflict=true;await e.elements['zynq-gain-set'].listeners.click();await e.settle();
- assert.equal(e.elements['parameter-feedback'].classList.contains('chip-error'),true);
-});
-
-
 test('temperature redesign preserves values, highlights report validity and keeps history bounded',async()=>{
  const e=setup();await e.settle();assert.equal(e.elements['temp-live'].textContent,'等待数据');
  e.backend.status.temperatures=temperatureSample(1,42.5,31.25,28.75);await e.context.refresh();

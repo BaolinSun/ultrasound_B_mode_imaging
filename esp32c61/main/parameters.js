@@ -5,7 +5,7 @@ const selections=new Set();
 function message(text,error=false){by('message').textContent=text;by('message').classList.toggle('error',error)}
 async function request(path,body){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);try{const r=await fetch(path,{cache:'no-store',signal:controller.signal,...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok)throw Error(d.message||'HTTP '+r.status);return d}finally{clearTimeout(timer)}}
 const transaction=new P.Transaction(request,{progress(n,total,results){by('progress').max=total;by('progress').value=n;message(`已确认 ${n}/${total} 条参数命令`);by('results').textContent=results.map(x=>x.command+'\n'+x.response).join('\n')}});
-function lock(value){locked=value;by('editor').disabled=value;by('files').disabled=value;for(const id of ['apply','validate','query'])by(id).disabled=value;by('cancel').disabled=!value;for(const c of by('targets').querySelectorAll('input'))c.disabled=value}
+function lock(value){locked=value;by('editor').disabled=value;by('files').disabled=value;for(const id of ['apply','validate','query'])by(id).disabled=value;by('cancel').disabled=!value;for(const c of by('targets').querySelectorAll('input'))c.disabled=value;renderQuick()}
 function values(){return category==='afe5832'?config.afe5832?.raw_registers:category==='tx7332'?config.tx7332?.tx7332_config_data:config.bram?.[category]}
 function put(value){if(category==='afe5832')config.afe5832=value;else if(category==='tx7332')config.tx7332={tx7332_config_data:value};else{config.bram??={};config.bram[category]=value}}
 function categoryValue(){return category==='afe5832'?config.afe5832:values()}
@@ -76,3 +76,23 @@ by('safe-stop').onclick=async()=>{if(by('safe-stop').disabled)return;by('safe-st
 by('query').onclick=async()=>{lock(true);try{const r=await transaction.batch(['STATUS']);const f=P.statusFields(r[0].response);by('device').textContent=r[0].response+'（刚刚查询；PS 软件记录）';if(f.cfg==='0')transaction.uncertain=false;message('状态查询完成；不会恢复扫描或高压')}catch(e){message(e.message,true)}finally{lock(false)}};
 window.addEventListener('beforeunload',e=>{if(locked){e.preventDefault();e.returnValue='配置仍在执行；关闭页面不会回滚已写入参数'}});
 draw();
+// Read ESP32 caches only; polling never sends UART STATUS or starts acquisition.
+let quickSnapshot={},quickPending=false;
+function renderQuick(){const state=P.quickState(quickSnapshot,locked||transaction.uncertain);
+ by('quick-gain-apply').disabled=!state.gainAllowed;by('quick-gain').disabled=locked;
+ by('quick-down').disabled=by('quick-down-apply').disabled=!state.downAllowed;
+ const d=by('quick-down').value;by('quick-preview').textContent=/^[0-4]$/.test(d)?'待设置：'+P.downDescription(Number(d)):'请选择合法倍率';
+ by('quick-configured').textContent=state.down===null?'PS 已下发配置：未知，请查询 PS；旧固件缺少 down 字段时需更新。':'PS 已下发配置：'+P.downDescription(state.down)+'（软件记录）';
+ by('quick-received').textContent=state.received<0?'最近完整帧：等待数据':'最近完整帧：'+P.downDescription(state.received)+' · 帧号 '+quickSnapshot.sdio.last_received_frame+'（历史快照，不代表新配置）';
+ by('quick-status').textContent=locked?'参数操作处理中，请勿重复提交':state.gainAllowed?'控制服务就绪；快捷设置与表格配置共用事务保护':'等待 PS 握手、芯片就绪及空闲控制服务；可使用下方“查询 PS 状态”刷新。';
+}
+async function refreshQuick(){if(quickPending)return;quickPending=true;try{quickSnapshot=await request('/api/status')}catch{quickSnapshot={}}finally{quickPending=false;renderQuick()}}
+async function applyQuick(kind){if(locked||by('quick-'+kind+'-apply').disabled)return;const value=by('quick-'+kind).value,target=by('quick-'+kind+'-result');
+ if(kind==='down'&&!confirm('将排空上传、关闭高压并停止扫描；完成后保持停止。是否应用下采样？'))return;
+ lock(true);target.textContent='正在处理，请勿重复提交…';
+ try{await (kind==='down'?P.quickDown(transaction,value,quickSnapshot):P.quickGain(transaction,value,quickSnapshot));target.textContent=kind==='down'?'配置成功：'+P.downDescription(Number(value))+'。扫描、高压及上传保持停止；下方时序表草稿未改动。':'数字增益 '+value+' 已确认下发';target.classList.toggle('error',false)}catch(e){if(e.unknown)transaction.uncertain=true;target.textContent='失败或结果未确认：'+e.message+'；不会自动重发。';target.classList.toggle('error',true)}finally{lock(false);await refreshQuick()}
+}
+by('quick-down').value='0';by('quick-down').addEventListener('change',renderQuick);
+for(const kind of ['gain','down'])by('quick-'+kind+'-apply').addEventListener('click',()=>applyQuick(kind));
+by('query').addEventListener('click',()=>setTimeout(refreshQuick,500));
+refreshQuick();setInterval(refreshQuick,2000);

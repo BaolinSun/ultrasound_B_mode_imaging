@@ -108,5 +108,20 @@ class Transaction {
   }finally{this.busy=false;this.seq=(this.seq+1)&0x7fffffff;if(!this.seq)this.seq=1}
  }
 }
-return {sections,names,timingNames,HPF,uint,hex,validateTiming,afeCommands,tableCommands,validate,build,targets,warnings,normalize,statusFields,Transaction,OutcomeError};
+const frameLengths=[787456,394240,197632,99328,50176];
+function quickFields(text){if(typeof text!=='string'||!text.startsWith('@STATUS '))return null;const fields={};for(const item of text.slice(8).split(' ')){const m=/^([a-z_][a-z0-9_]*)=([a-z0-9]+)$/.exec(item);if(!m||Object.hasOwn(fields,m[1]))return null;fields[m[1]]=m[2]}return fields.v==='1'?fields:null}
+function quickState(snapshot,localBusy=false){const c=snapshot?.zynq_control??{},fields=c.synced?quickFields(c.ps_status):null;
+ const allowed=!localBusy&&c.ready&&c.synced&&!c.busy&&!c.config_owned&&fields?.cfg==='0'&&c.afe_state==='ready'&&c.tx_state==='ready';
+ const down=fields&&/^[0-4]$/.test(fields.down)?Number(fields.down):null,received=frameLengths.indexOf(snapshot?.sdio?.last_received_bytes);
+ return {gainAllowed:!!allowed,downAllowed:!!allowed&&down!==null,down,received,fields};
+}
+function downDescription(d){return `${1<<d} 倍 · ${6144>>d} 点/线 · ${frameLengths[d]} B/帧`}
+async function quickDown(t,value,snapshot){if(!/^[0-4]$/.test(String(value)))throw Error('下采样参数必须为 0～4');if(!quickState(snapshot).downAllowed||t.busy||t.uncertain)throw Error('控制忙碌、状态未知或芯片尚未就绪，请查询状态');const d=Number(value),seq=t.seq;
+ const results=await t.run(['BRAM WR t_timing 9 1 '+d],{down:d});const expected=['CFG BEGIN '+seq,'BRAM WR t_timing 9 1 '+d,'CFG END','STATUS'];
+ if(results.length!==4||results.some((r,i)=>r.command!==expected[i])||results.slice(0,3).some((r,i)=>r.response!==`@ACK ${seq} ${['CFG_BEGIN','BRAM_WR','CFG_END'][i]}`))throw Error('配置确认不匹配，请查询；不会自动重发');
+ const f=quickFields(results[3].response);if(!f||f.seq!==String(seq)||f.down!==String(d)||f.cfg!=='0'||f.run!=='0'||f.hv!=='0')throw Error('最终 PS 状态不匹配，请查询');return results;
+}
+async function quickGain(t,value,snapshot){if(!/^[0-8]$/.test(String(value)))throw Error('数字增益必须为 0～8 的整数');if(!quickState(snapshot).gainAllowed||t.busy||t.uncertain)throw Error('控制忙碌、状态未知或芯片尚未就绪，请查询状态');const r=await t.batch(['GAIN SET '+value]);if(r.length!==1||!new RegExp('^@ACK \\d+ GAIN_SET '+value+'$').test(r[0].response))throw Error('数字增益回执未确认，请查询；不会自动重发');return r;
+}
+return {sections,names,timingNames,HPF,uint,hex,validateTiming,afeCommands,tableCommands,validate,build,targets,warnings,normalize,statusFields,Transaction,OutcomeError,quickFields,quickState,quickDown,quickGain,downDescription};
 });
