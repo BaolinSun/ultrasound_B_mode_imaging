@@ -285,7 +285,7 @@ test('ESP page links to the local viewer without starting receive, scan or HV',a
   assert.doesNotMatch(link,/onclick|disabled/);
   const control=html.match(/<section\b[\s\S]*?<\/section>/)[0];
   assert.match(control,/id="image-viewer-link"/);
-  assert.match(control,/>超声实时图像<\/a>/);
+  assert.match(control,/超声实时图像<\/a>/);
   assert.doesNotMatch(html,/viewer-title|bmode_web_viewer\.py/);
   const e=setup();await e.settle();
   assert.ok(e.backend.calls.every(call=>!call.options.method||call.options.method==='GET'));
@@ -771,4 +771,19 @@ test('temperature redesign preserves values, highlights report validity and keep
  e.backend.offline=true;await e.context.refresh();assert.equal(e.elements['temp-live'].textContent,'连接中断');
  assert.equal(e.backend.calls.some(c=>c.options.method==='POST'),false);
  assert.match(html,/class="temperature-readings"/);assert.match(html,/class="temp-plot"/);
+});
+
+
+test('viewer shortcut is immediately left of query, has a decorative icon and independent color',()=>{
+ const row=html.match(/<div class="control-shortcuts">([\s\S]*?)<\/div>/)?.[1];
+ assert.ok(row);assert.ok(row.indexOf('image-viewer-link')<row.indexOf('zynq-query'));
+ assert.match(row,/<span aria-hidden="true">▧<\/span> 超声实时图像/);
+ assert.doesNotMatch(html,/control-viewer/);
+ assert.match(html,/background:#51459b;color:white;text-decoration:none/);
+});
+test('temperature cards use compact values and the power legend, line and dot are red',()=>{
+ assert.match(html,/gap:4px;padding:12px/);assert.match(html,/font-size:22px;font-weight:650;line-height:1.35/);
+ assert.match(html,/temp-power\{--temp-color:#c74a51;--temp-bg:#fff4f4/);
+ assert.match(html,/id="temp-path-power"[^>]*stroke="#ff8087"[^>]*stroke-dasharray="7 4"/);
+ assert.match(html,/id="temp-dot-power" fill="#ff8087"/);
 });
