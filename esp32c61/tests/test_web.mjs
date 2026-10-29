@@ -777,12 +777,13 @@ test('temperature redesign preserves values, highlights report validity and keep
 test('viewer shortcut is immediately left of query, has a decorative icon and independent color',()=>{
  const row=html.match(/<div class="control-shortcuts">([\s\S]*?)<\/div>/)?.[1];
  assert.ok(row);assert.ok(row.indexOf('image-viewer-link')<row.indexOf('zynq-query'));
- assert.match(row,/<span aria-hidden="true">▧<\/span> 超声实时图像/);
+ assert.match(row,/<svg class="viewer-icon"[^>]*aria-hidden="true"/);
+ assert.match(row,/<\/svg> 超声实时图像/);
  assert.doesNotMatch(html,/control-viewer/);
- assert.match(html,/background:#51459b;color:white;text-decoration:none/);
+ assert.match(html,/background:#173b65;color:white;text-decoration:none/);
 });
 test('temperature cards use compact values and the power legend, line and dot are red',()=>{
- assert.match(html,/gap:4px;padding:12px/);assert.match(html,/font-size:22px;font-weight:650;line-height:1.35/);
+ assert.match(html,/gap:3px;padding:9px 10px/);assert.match(html,/font-size:18px;font-weight:650;line-height:1.3/);
  assert.match(html,/temp-power\{--temp-color:#c74a51;--temp-bg:#fff4f4/);
  assert.match(html,/id="temp-path-power"[^>]*stroke="#ff8087"[^>]*stroke-dasharray="7 4"/);
  assert.match(html,/id="temp-dot-power" fill="#ff8087"/);
