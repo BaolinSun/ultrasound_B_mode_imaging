@@ -12,15 +12,16 @@ function setup(){
    classList:{toggle(name,on){if(on)classes.add(name);else classes.delete(name)},contains(name){return classes.has(name)}},
    addEventListener(name,fn){this.listeners[name]=fn},removeAttribute(name){delete this[name]}};
  }
- const backend={calls:[],revoked:[],seq:1,imageCalls:0,pending:null,offline:false,state:{state:'idle',device_ip:'192.168.3.27',port:50001,
-  transport:null,image_available:false,image_age_s:null,lines:0}};
+ const backend={calls:[],revoked:[],seq:1,imageCalls:0,pending:null,offline:false,confirmed:true,state:{state:'idle',device_ip:'192.168.3.27',port:50001,
+  transport:null,image_available:false,image_age_s:null,lines:0,frozen:false}};
  const context=vm.createContext({document:{getElementById(id){assert.ok(elements[id],id);return elements[id]}},
-  performance:{now:()=>0},setTimeout(){},setInterval(){},URL:{createObjectURL(){return 'blob:test'},revokeObjectURL(url){backend.revoked.push(url)}},
+  confirm:()=>backend.confirmed,performance:{now:()=>0},setTimeout(){},setInterval(){},URL:{createObjectURL(){return 'blob:test'},revokeObjectURL(url){backend.revoked.push(url)}},
   async fetch(path,options){
    backend.calls.push({path,options});if(backend.offline)throw Error('offline');
    if(path==='/api/status')return {ok:true,json:async()=>({...backend.state})};
    if(path==='/api/viewer/start'){backend.state.state='starting';return {ok:true,json:async()=>({accepted:true})}};
    if(path==='/api/viewer/stop'){backend.state.state='stopping';return {ok:true,json:async()=>({accepted:true})}};
+   if(path==='/api/viewer/freeze'||path==='/api/viewer/resume'){backend.state.frozen=path.endsWith('/freeze');return {ok:true,json:async()=>({accepted:true})}};
    if(path.startsWith('/api/image')){
     backend.imageCalls++;
     return {ok:true,status:200,headers:{get(name){return name==='X-Image-Display'?(backend.imageMeta?JSON.stringify(backend.imageMeta):null):String(backend.seq)}},async blob(){if(backend.pending)await backend.pending;return {}}};
@@ -31,12 +32,12 @@ function setup(){
  return {context,e:elements,b:backend,settle:()=>new Promise(resolve=>setImmediate(resolve))};
 }
 
-test('page startup only reads cache; buttons only control upload, never scan/HV/config',async()=>{
+test('startup is read-only; start needs HV confirmation and calls only the fixed action',async()=>{
  const t=setup();await t.settle();
  assert.ok(t.b.calls.every(call=>call.path==='/api/status'));
  await t.e.start.listeners.click();await t.settle();
  assert.equal(t.b.calls.filter(c=>c.path==='/api/viewer/start').length,1);
- const post=t.b.calls.find(c=>c.path==='/api/viewer/start');assert.equal(post.options.body,'{}');
+ const post=t.b.calls.find(c=>c.path==='/api/viewer/start');assert.equal(post.options.body,'{"confirm_hv":true}');
  assert.equal(t.e.start.disabled,true);
  t.b.state.state='running';await t.context.pollStatus();
  await t.e.stop.listeners.click();await t.settle();
@@ -47,10 +48,11 @@ test('page startup only reads cache; buttons only control upload, never scan/HV/
 test('freeze does not stop receive, unfreeze fetches latest not queued frames',async()=>{
  const t=setup();await t.settle();Object.assign(t.b.state,{state:'running',image_available:true,image_age_s:.1,lines:64});
  await t.context.pollStatus();await t.context.pollImage();assert.equal(t.e.image.hidden,false);
- t.e.freeze.listeners.click();await t.settle();const before=t.b.imageCalls;
+ await t.e.freeze.listeners.click();await t.settle();const before=t.b.imageCalls;
  t.b.seq=9;await t.context.pollImage();assert.equal(t.b.imageCalls,before);
- assert.equal(t.b.calls.filter(c=>c.options.method==='POST').length,0);
- t.e.freeze.listeners.click();await t.settle();assert.equal(t.b.imageCalls,before+1);
+ assert.equal(t.b.calls.filter(c=>c.path==='/api/viewer/freeze').length,1);
+ await t.e.freeze.listeners.click();await t.settle();await t.context.pollImage();assert.equal(t.b.imageCalls,before+1);
+ assert.equal(t.b.calls.find(c=>c.path==='/api/viewer/resume').options.body,'{"confirm_hv":true}');
  assert.ok(t.b.revoked.length>0);
 });
 
@@ -74,12 +76,18 @@ test('single in-flight image request and a freeze discards its late result',asyn
  assert.notEqual(t.e.image.hidden,false);
 });
 
-test('backend status is text, not markup; display widgets do not add hardware controls',async()=>{
+test('backend status is text, not markup; hardware effects are visible and command proxy absent',async()=>{
  const t=setup();await t.settle();t.b.state.error='<img src=x onerror=alert(1)>';
  await t.context.pollStatus();assert.equal(t.e.error.textContent,t.b.state.error);
- assert.match(html,/display-dr/);assert.match(html,/仅 PC 处理，不下发硬件/);
+ assert.match(html,/display-dr/);assert.match(html,/显示深度与灰度仅 PC/);assert.match(html,/开始接收：开启高压/);
  assert.doesNotMatch(html,/HV ENABLE|BEAM START|api\/zynq/);
  assert.match(html,/完整帧显示/);
+});
+test('cancelled HV confirmation never submits start or resume',async()=>{
+ const t=setup();await t.settle();t.b.confirmed=false;await t.e.start.listeners.click();
+ assert.equal(t.b.calls.filter(c=>c.options.method==='POST').length,0);
+ Object.assign(t.b.state,{state:'running',frozen:true});await t.context.pollStatus();await t.e.freeze.listeners.click();
+ assert.equal(t.b.calls.filter(c=>c.options.method==='POST').length,0);
 });
 test('published image carries its own display values even when status is ahead',async()=>{
  const t=setup();await t.settle();Object.assign(t.b.state,{state:'running',image_available:true,lines:64,image_display_settings:{brightness_db:19}});

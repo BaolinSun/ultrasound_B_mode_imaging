@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""PC B-mode viewer. Never enables HV, starts scanning or downloads parameters."""
+"""PC B-mode viewer with explicit acquisition, freeze and focus actions."""
 import argparse
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -58,11 +58,13 @@ def make_server(service, address=('127.0.0.1', 8080)):
                 self.js(403, {'error': 'Host 不允许'})
                 return
             url = urlsplit(self.path)
-            if url.path in ('/', '/viewer.js', '/viewer_settings.js') and not url.query:
+            if url.path in ('/', '/viewer.js', '/viewer_settings.js', '/viewer_focus.js') and not url.query:
                 filename, mime = ('viewer.html', 'text/html; charset=utf-8') if url.path == '/' else (url.path[1:], 'text/javascript; charset=utf-8')
                 self.reply(200, (ASSETS/filename).read_bytes(), mime)
             elif url.path == '/api/viewer/settings' and not url.query:
                 self.js(200, service.imaging.get_settings())
+            elif url.path == '/api/viewer/focus' and not url.query:
+                self.js(200, service.focus_library.catalog())
             elif url.path == '/api/status' and not url.query:
                 self.js(200, service.snapshot())
             elif url.path == '/api/image':
@@ -90,26 +92,42 @@ def make_server(service, address=('127.0.0.1', 8080)):
                 self.close_connection = True
                 self.js(403, {'error': '仅允许同源网页操作'})
                 return
-            if self.path not in ('/api/viewer/start', '/api/viewer/stop'):
+            if self.path not in ('/api/viewer/start', '/api/viewer/stop','/api/viewer/freeze','/api/viewer/resume','/api/viewer/focus'):
                 self.close_connection = True
                 self.js(404, {'error': '接口不存在'})
                 return
             try:
                 length = int(self.headers.get('Content-Length', '-1'))
-                if not 0 < length <= 256 or self.headers.get_content_type() != 'application/json':
+                if not 0 < length <= 256 or self.headers.get_content_type() != 'application/json' or self.headers.get('Transfer-Encoding'):
                     raise ValueError()
                 body = self.rfile.read(length)
-                if len(body) != length or json.loads(body) != {}:
+                data = json.loads(body)
+                if len(body) != length or not isinstance(data, dict):
+                    raise ValueError()
+                expected = {'confirm_hv': True} if self.path.endswith(('/start','/resume')) else {}
+                if self.path.endswith('/focus'):
+                    if set(data) != {'focus_mm'} or type(data['focus_mm']) is not int:
+                        raise ValueError()
+                elif data != expected or (expected and data.get('confirm_hv') is not True):
                     raise ValueError()
             except (ValueError, UnicodeDecodeError):
                 self.close_connection = True
-                self.js(400, {'error': '需要空 JSON 对象 {}，不接受配置或控制命令'})
+                self.js(400, {'error': '操作参数无效；开始/继续须确认高压，焦点仅接受 focus_mm，不提供任意命令接口'})
                 return
             try:
-                service.start() if self.path.endswith('/start') else service.stop()
+                if self.path.endswith('/start'):
+                    service.start()
+                elif self.path.endswith('/stop'):
+                    service.stop()
+                elif self.path.endswith('/focus'):
+                    service.set_focus(data['focus_mm'])
+                else:
+                    service.set_frozen(self.path.endswith('/freeze'))
                 self.js(202, {'accepted': True})
             except RuntimeError as exc:
                 self.js(409, {'error': str(exc)})
+            except ValueError as exc:
+                self.js(400, {'error': str(exc)})
 
         def do_PUT(self):
             origin = self.headers.get('Origin')
@@ -198,7 +216,7 @@ def main(argv=None):
         server = make_server(service, ('127.0.0.1', args.http_port))
         log = StatusLog(service)
         print(f'浏览器打开 http://127.0.0.1:{args.http_port}/ （启动程序不会自动上传）', flush=True)
-        print('仅接收/显示：不会启动扫描、开启高压或下载参数。日志: '+str(log.path), flush=True)
+        print('启动服务不操作设备；网页开始/继续会开启高压，停止/冻结会关闭高压；焦点应用会停机。日志: '+str(log.path), flush=True)
         server.serve_forever(poll_interval=.2)
     except KeyboardInterrupt:
         print('正在停止本工具启动的 SDIO 上传…', flush=True)

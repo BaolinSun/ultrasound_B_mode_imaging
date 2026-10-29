@@ -1,9 +1,9 @@
 'use strict';
 const el=id=>document.getElementById(id);
 let frozen=false, sequence=0, revision=0, objectUrl=null, imagePending=false, statusPending=false;
-let available=false, offline=false, actionPending=false;
+let available=false, offline=false, actionPending=0,stopPending=false;
 let imageDisplaySettings=null,imageDisplayRevision=0,lastViewerStatus={};
-const states={idle:'未接收',starting:'正在启动',running:'正在接收',stopping:'正在停止',error:'接收异常'};
+const states={idle:'未接收',starting:'正在启动成像',running:'正在接收',stopping:'正在停止',configuring:'正在配置焦点',error:'接收/控制异常'};
 async function api(path,body){
  const response=await fetch(path,{cache:'no-store',...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
  const data=await response.json();if(!response.ok)throw Error(data.error||'请求失败');return data;
@@ -15,9 +15,12 @@ function clearPicture(){
 function render(s){
  lastViewerStatus=s;
  offline=false;available=!!s.image_available;
+ if(typeof s.frozen==='boolean'&&!actionPending){const next=s.frozen||s.control_action==='freeze';if(next!==frozen){frozen=next;revision++}}
+ el('freeze').textContent=frozen?'继续显示':'冻结画面';
  el('state').textContent=states[s.state]||'状态未知';
- el('start').disabled=actionPending||['starting','running','stopping'].includes(s.state);
- el('stop').disabled=actionPending||!['starting','running'].includes(s.state);
+ el('start').disabled=!!actionPending||['starting','running','stopping','configuring'].includes(s.state);
+ el('stop').disabled=stopPending||s.state==='stopping';
+ el('freeze').disabled=!!actionPending||s.state!=='running'||!!s.control_action;
  el('connection').textContent=`ESP32 ${s.device_ip} · 数据端口 ${s.port} · 协议 ${(s.transport||'待检测').toUpperCase()}`;
  el('error').textContent=s.error||s.processing_error||'';
  for(const [id,key,suffix] of [['receive-fps','receive_fps',' FPS'],['display-fps','display_fps',' FPS'],['throughput','payload_mbit_s',' Mbit/s']])el(id).textContent=Number(s[key]||0).toFixed(2)+suffix;
@@ -26,6 +29,7 @@ function render(s){
  el('pipeline').textContent=`缓存状态采样：PL 完整帧发布 ${Number(s.source_fps||0).toFixed(2)} FPS；SDIO 接收 ${Number(s.sdio_fps||0).toFixed(2)} FPS；源端丢弃 ${source.source_drops||0} / 错误 ${source.source_errors||0}；最近 SDIO ${((source.last_receive_us||0)/1000).toFixed(1)} ms`;
  renderImageFormat(s);
  renderRemaining(s);
+ if(typeof renderFocusStatus==='function')renderFocusStatus(s);
 }
 function renderImageFormat(s){
  const display=imageDisplaySettings||s.image_display_settings||s.display_settings||{};
@@ -37,12 +41,12 @@ function renderRemaining(s){
  const age=s.image_age_s;
  const stale=s.state!=='running'||s.lines!==64||age===null||age>5;
  el('image').classList.toggle('stale',stale);
- el('image-note').textContent=frozen?'画面已冻结；后台继续接收，继续显示时获取最新图像':!available?`等待合法图像线（${s.lines||0}/64）；格式错误时不会强行绘图`:`${stale?'画面非实时 / 行数据过期；':'完整帧图像；'}最近发布 ${Number(age).toFixed(1)} 秒前 · 会话 ${s.session??'—'} · 载荷 ${s.image_frame??'—'}`;
+ el('image-note').textContent=frozen?'画面已冻结；高压已关闭或正在关断，后台继续接收；继续显示会开启高压':!available?`等待合法图像线（${s.lines||0}/64）；格式错误时不会强行绘图`:`${stale?'画面非实时 / 行数据过期；':'完整帧图像；'}最近发布 ${Number(age).toFixed(1)} 秒前 · 会话 ${s.session??'—'} · 载荷 ${s.image_frame??'—'}`;
  if(!available){clearPicture();el('empty').textContent=`等待完整的 64 条合法图像线（${s.lines||0}/64）`}
 }
 async function pollStatus(){
  if(statusPending)return;statusPending=true;
- try{render(await api('/api/status'))}catch(error){offline=true;el('state').textContent='服务连接断开';el('error').textContent=error.message;el('start').disabled=true;el('stop').disabled=true;el('image').classList.toggle('stale',true);el('image-note').textContent='服务已断开，保留的画面不是实时图像'}finally{statusPending=false}
+ try{render(await api('/api/status'))}catch(error){offline=true;el('state').textContent='服务连接断开';el('error').textContent=error.message;el('start').disabled=true;el('stop').disabled=true;el('freeze').disabled=true;el('image').classList.toggle('stale',true);el('image-note').textContent='服务已断开，保留的画面不是实时图像';if(typeof renderFocusStatus==='function')renderFocusStatus({state:'offline'})}finally{statusPending=false}
 }
 async function pollImage(){
  if(imagePending||frozen||offline||!available)return;
@@ -64,12 +68,15 @@ async function pollImage(){
  }catch(error){el('error').textContent=error.message}finally{imagePending=false}
 }
 async function action(name){
- if(actionPending)return;actionPending=true;el('start').disabled=true;el('stop').disabled=true;
- try{await api('/api/viewer/'+name,{});if(name==='start'){clearPicture();frozen=false;el('freeze').textContent='冻结画面'}}catch(error){el('error').textContent=error.message}finally{actionPending=false;await pollStatus()}
+ if((actionPending&&name!=='stop')||(name==='stop'&&stopPending))return;
+ const enabling=name==='start'||name==='resume';if(enabling&&!confirm(name==='start'?'开始接收将开启高压并启动扫描。确认设备及发射条件已准备好？':'继续显示将重新开启高压。确认继续？'))return;
+ actionPending++;if(name==='stop')stopPending=true;el('start').disabled=true;el('freeze').disabled=true;
+ if(name==='freeze'){frozen=true;revision++;el('freeze').textContent='继续显示'}
+ try{await api('/api/viewer/'+name,enabling?{confirm_hv:true}:{});if(name==='start'){clearPicture();frozen=false;el('freeze').textContent='冻结画面'}}catch(error){el('error').textContent=error.message}finally{actionPending--;if(name==='stop')stopPending=false;await pollStatus()}
 }
 el('start').addEventListener('click',()=>action('start'));
 el('stop').addEventListener('click',()=>action('stop'));
-el('freeze').addEventListener('click',()=>{frozen=!frozen;revision++;el('freeze').textContent=frozen?'继续显示':'冻结画面';if(!frozen)pollImage();pollStatus()});
+el('freeze').addEventListener('click',()=>action(frozen?'resume':'freeze'));
 // Target a 50 ms period including fetch time; never overlap image requests.
 async function imageLoop(){const started=performance.now();try{await pollImage()}finally{setTimeout(imageLoop,Math.max(0,50-(performance.now()-started)))}}
 pollStatus();setInterval(pollStatus,1000);imageLoop();

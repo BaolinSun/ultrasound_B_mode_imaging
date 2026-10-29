@@ -42,7 +42,11 @@ class FakeDevice:
     def __init__(self, port, protocol='tcp'):
         self.config = {'target_ip': '127.0.0.1', 'target_port': port}
         self.status = {'connected': True, 'upload_ready': True, 'busy': False, 'sdio_transport': protocol,
-                       'sdio': {'ready': True, 'host_sdio': True, 'free_slots': 2, 'running': False}}
+                       'sdio': {'ready': True, 'host_sdio': True, 'free_slots': 2, 'running': False},
+                       'zynq_control': {'ready':True,'synced':True,'busy':False,'config_owned':False,'afe_state':'ready','tx_state':'ready'}}
+        self.ps = {'run':0,'hv':0,'cfg':0,'seq':0,'down':0}
+        self.jobs = {}
+        self.commands = []
         self.calls = []
         self.reject = self.fail_stop = False
         self.on_start = None
@@ -50,7 +54,27 @@ class FakeDevice:
     def __call__(self, path, body=None):
         self.calls.append((path, body))
         if body is None:
+            if path.startswith('/api/zynq/jobs/'):
+                return copy.deepcopy(self.jobs[path.split('/')[-1]])
             return copy.deepcopy(self.status if path == '/api/status' else self.config)
+        if path == '/api/zynq/commands':
+            results=[]
+            for command in body['commands']:
+                self.commands.append(command)
+                if command == 'STATUS':
+                    response='@STATUS v=1 '+' '.join(f'{k}={val}' for k,val in self.ps.items())+' afe=ready tx=ready'
+                else:
+                    if command == 'HV DISABLE':self.ps.update(run=0,hv=0)
+                    if command == 'HV ENABLE':self.ps['hv']=1
+                    if command == 'BEAM START':self.ps['run']=1
+                    if command.startswith('CFG BEGIN '):self.ps.update(seq=int(command.split()[-1]),cfg=1,run=0,hv=0)
+                    if command in ('CFG END','CFG ABORT'):self.ps.update(cfg=0,run=0,hv=0)
+                    tag='CFG_BEGIN' if command.startswith('CFG BEGIN ') else 'BRAM_WR' if command.startswith('BRAM WR ') else command.replace(' ','_')
+                    response=f'@ACK {self.ps["seq"]} {tag}'
+                results.append({'command':command,'response':response})
+            key=f'{len(self.jobs)+1:08x}'
+            self.jobs[key]={'busy':False,'state':'succeeded','count':len(results),'completed':len(results),'results':results}
+            return {'job_id':key}
         if path == '/api/sdio/start':
             if self.reject: raise v.DeviceRejected('occupied')
             self.status['sdio']['running'] = True
@@ -87,7 +111,9 @@ class ServiceTests(unittest.TestCase):
             self.assertEqual(service.snapshot()['lines'], 64)
             service.stop();service.stop()
             wait_for(lambda: service.snapshot()['state'] == 'idle')
-        self.assertEqual([p for p, body in device.calls if body is not None], ['/api/sdio/start', '/api/sdio/stop'])
+        self.assertEqual([p for p, body in device.calls if body is not None and p.startswith('/api/sdio/')], ['/api/sdio/start', '/api/sdio/stop'])
+        self.assertEqual(device.ps['run'],0)
+        self.assertEqual(device.ps['hv'],0)
         self.assertEqual(service.snapshot()['received_frames'], 1)
 
     def test_stop_waits_for_host_and_callback_ownership_before_closing_receiver(self):
@@ -255,7 +281,7 @@ class HTTPTests(unittest.TestCase):
         for route, body in [('/api/config', b'{}'), ('/api/viewer/start', b'{"HV":"ENABLE"}')]:
             with self.assertRaises(HTTPError): urlopen(Request(base+route, body, headers={'Content-Type': 'application/json'}))
         self.assertFalse(device.calls)
-        with urlopen(Request(base+'/api/viewer/start', b'{}', headers={'Content-Type': 'application/json'})) as response:
+        with urlopen(Request(base+'/api/viewer/start', b'{"confirm_hv":true}', headers={'Content-Type': 'application/json'})) as response:
             self.assertEqual(response.status, 202)
         wait_for(lambda: service.snapshot()['state'] == 'running')
         service.imaging.submit(7, 1, payload())

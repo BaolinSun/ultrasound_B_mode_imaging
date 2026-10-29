@@ -351,3 +351,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Parameter editor transaction tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'Focus preset tests failed' }
 & $Node --test (Join-Path $PSScriptRoot 'test_live_display_web.mjs')
 if ($LASTEXITCODE -ne 0) { throw 'Live display interaction tests failed' }
+& $Node --test (Join-Path $PSScriptRoot 'test_viewer_focus.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Viewer focus interaction tests failed' }

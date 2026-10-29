@@ -33,7 +33,8 @@ function ui(){
 }
 test('selection is read-only; range, bounds, aliases and unavailable gates stay explicit',async()=>{
  const t=ui();await t.p.start();assert.deepEqual(t.b.paths,['/focus/catalog.json']);assert.equal(t.e['focus-value'].textContent,'80');assert.equal(t.e['focus-apply'].disabled,false);
- t.p.select(60);assert.match(t.e['focus-duplicate'].textContent,/70 mm/);t.p.select(100);assert.match(t.e['focus-duplicate'].textContent,/110 mm/);
+ t.p.select(60);assert.equal(t.e['focus-duplicate'].textContent,'');t.p.catalog.get(70).sha256=t.p.catalog.get(60).sha256;t.p.render();assert.match(t.e['focus-duplicate'].textContent,/70 mm/);
+ t.p.select(100);assert.equal(t.e['focus-duplicate'].textContent,'');
  t.p.select(20);assert.equal(t.e['focus-less'].disabled,true);t.e['focus-more'].listeners.click();assert.equal(t.e['focus-value'].textContent,'30');
  t.p.select(170);assert.equal(t.e['focus-more'].disabled,true);assert.equal(t.b.applications.length,0);assert.equal(t.b.paths.length,1);
  t.b.ready=false;t.p.render();assert.equal(t.e['focus-apply'].disabled,true);await t.p.perform('apply');assert.equal(t.b.paths.length,1);

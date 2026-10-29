@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import struct
+import shutil
 import tempfile
 import unittest
 import zlib
@@ -47,11 +48,23 @@ class FocusAssetTests(unittest.TestCase):
 
     def test_identical_source_tables_are_exposed_not_rewritten(self):
         with tempfile.TemporaryDirectory() as folder:
-            catalog = assets.build_assets(ROOT / 'configs', Path(folder))
+            source = Path(folder) / 'source'
+            source.mkdir()
+            for p in (ROOT / 'configs').glob('delay_profile_focus_*mm.json'):
+                shutil.copyfile(p, source / p.name)
+            # Synthetic alias: the user's corrected production tables are distinct.
+            shutil.copyfile(source / 'delay_profile_focus_60mm.json', source / 'delay_profile_focus_70mm.json')
+            catalog = assets.build_assets(source, Path(folder) / 'output')
             entries = {p['focus_mm']: p for p in catalog['profiles']}
             self.assertEqual(entries[60]['same_as_mm'], [70])
-            self.assertEqual(entries[100]['same_as_mm'], [110])
             self.assertEqual(entries[80]['same_as_mm'], [])
+
+    def test_corrected_production_tables_are_all_distinct(self):
+        hashes=[]
+        for depth in assets.DEPTHS:
+            words=assets.load_profile(ROOT/'configs'/f'delay_profile_focus_{depth}mm.json')
+            hashes.append(hashlib.sha256(struct.pack('<16384I',*words)).digest())
+        self.assertEqual(len(set(hashes)),16)
 
     def test_bad_table_lengths_values_and_extra_hardware_fields_fail(self):
         good = {'bram': {'delay_profile': [0] * 16384}}

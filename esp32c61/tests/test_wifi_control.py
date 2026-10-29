@@ -141,7 +141,19 @@ class ReferenceTests(unittest.TestCase):
             cases = [("afe5832_default.json", "build_afe_commands"), ("tx7332_default.json", "build_tx7332_commands")]
             cases += [(name + "_default.json", "build_bram_commands") for name in builder.BRAM_TARGET_ORDER]
             for filename, function in cases:
-                data = json.loads((reference / "configs" / filename).read_text())
+                source = reference / "configs" / filename
+                if filename == 'delay_profile_default.json' and not source.exists():
+                    # The reference checkout now uses focus-specific files. Keep
+                    # comparing both independent builders, using all 16 curated
+                    # profiles rather than skipping the missing default fixture.
+                    profiles = sorted((ROOT/'esp32c61/configs').glob('delay_profile_focus_*mm.json'))
+                    self.assertEqual(len(profiles),16)
+                    for profile in profiles:
+                        data = json.loads(profile.read_text())
+                        with self.subTest(filename=profile.name):
+                            self.assertEqual(builder.build_bram_commands(data,8),module.build_bram_commands(data,8))
+                    continue
+                data = json.loads(source.read_text())
                 if filename == "t_timing_default.json":
                     # Current hardware only accepts 6144 raw samples. Compare
                     # valid packing, never reintroduce the old 2048-point file.
