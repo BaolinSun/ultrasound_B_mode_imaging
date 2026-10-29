@@ -19,12 +19,18 @@ test('compact focus panel is directly right of depth and startup only reads loca
  t.e['focus-preset-170'].listeners.click();assert.equal(t.e['focus-value'].textContent,'170');assert.equal(t.e['focus-more'].disabled,true);assert.equal(t.b.calls.length,1);
  t.e['focus-less'].listeners.click();assert.equal(t.e['focus-value'].textContent,'160');assert.equal(t.e['focus-preset-170'].attrs['aria-pressed'],'false');
  t.c.renderFocusStatus({state:'error',error:'old stream failure'});assert.match(t.e['focus-result'].textContent,/失败/);
- t.c.renderFocusStatus(t.b.state);assert.equal(t.e['focus-result'].textContent,'选择后点击应用');
+ t.c.renderFocusStatus(t.b.state);assert.match(t.e['focus-result'].textContent,/右上角图标下发/);
+ assert.match(html,/id="focus-apply"[^>]+aria-label="下发焦点配置"/);
+ assert.doesNotMatch(html,/>应用焦点<\/button>/);
+ assert.ok(html.indexOf('id="focus-result"')<html.indexOf('class="display-console"'));
+ assert.ok(html.indexOf('id="focus-apply"')<html.indexOf('id="focus-value"'));
+ assert.equal(t.e['focus-apply'].attrs['aria-busy'],'false');
 });
 test('focus apply requires confirmation, serializes and only submits a whitelisted depth',async()=>{
  const t=setup();await t.settle();t.b.confirmed=false;await t.e['focus-apply'].listeners.click();assert.equal(t.b.calls.length,1);
  t.b.confirmed=true;let release;t.b.hold=new Promise(r=>release=r);const first=t.e['focus-apply'].listeners.click();await t.settle();
  assert.equal(t.e['focus-apply'].disabled,true);await t.e['focus-apply'].listeners.click();assert.equal(t.b.calls.length,2);
+ assert.equal(t.e['focus-apply'].attrs['aria-busy'],'true');
  release();await first;assert.equal(JSON.stringify(t.b.calls[1].body),'{"focus_mm":80}');assert.match(t.e['focus-result'].textContent,/8\/2048/);
  assert.equal(t.e['focus-depth'].disabled,true);
 });
