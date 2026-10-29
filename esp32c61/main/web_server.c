@@ -360,6 +360,7 @@ esp_err_t web_server_start(void)
     if (err != ESP_OK) return err;
     const httpd_uri_t routes[] = {
         {.uri = "/", .method = HTTP_GET, .handler = page},
+        {.uri = "/index.html", .method = HTTP_GET, .handler = page},
         {.uri = "/parameters", .method = HTTP_GET, .handler = parameter_asset},
         {.uri = "/parameters_core.js", .method = HTTP_GET, .handler = parameter_asset},
         {.uri = "/parameters.js", .method = HTTP_GET, .handler = parameter_asset},

@@ -29,17 +29,17 @@
 
 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build\ultrasound_psram_udp.bin`
 
-- 大小：1050880 B
-- SHA-256：`201b518a4966d254b84ffc7e88768ac97fe1f3000fb82087ea2f963f40285d40`
-- 应用分区剩余：485120 B（31.6%）
+- 大小：1050960 B
+- SHA-256：`a4046e13cd1ef09ec8360069f3f2a1a84ad6e7cad8c673658a8784d5ebcdbbd1`
+- 应用分区剩余：485040 B（31.6%）
 
 ### ESP32 combined
 
 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build-throughput-fast-socket-exp-combined\ultrasound_psram_udp.bin`
 
-- 大小：1050880 B
-- SHA-256：`e8750938825c73d71d444c3bdb310a99d9be45079aaf74ee9f7da91fdbd41fe4`
-- 应用分区剩余：485120 B（31.6%）
+- 大小：1050960 B
+- SHA-256：`245495f97fc12c4a9248fc21a1156edf197fd07694a8a910ffeb34eb5de33510`
+- 应用分区剩余：485040 B（31.6%）
 
 ### Zynq SDIO
 
@@ -72,3 +72,7 @@
 本次仅修改 ESP32 网页资源及浏览器逻辑；PS、PL、PC 图像处理不变，不需要重新下载 Zynq。
 迁移后的首页/参数页 56 项 Node 测试通过，包含五档映射、独立状态、准入、精确回执、停止后状态、错误及防重复提交。默认与 combined 两套固件离线构建通过，并完成模拟接口浏览器布局检查。
 上面的完整 C/Python 回归为此前功能交付记录；本次未操作板卡。
+
+## 控制台导航补充（2026-10-29）
+
+高级参数入口使用新标签页及 noopener/noreferrer；新增 `/index.html` 与 `/` 共用控制台处理函数。57 项网页测试和默认/combined 离线构建通过。上面的 ESP32 哈希已更新为本轮产物；本轮未操作硬件，仅需更新 ESP32 固件。

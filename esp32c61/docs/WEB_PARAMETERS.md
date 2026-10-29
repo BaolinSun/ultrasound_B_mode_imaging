@@ -3,6 +3,7 @@
 ## 入口与更新要求
 
 ESP32 控制台 → **Zynq 控制与配置 → 高级参数配置**，或打开 `http://192.168.3.27/parameters`。
+高级参数入口在新标签页打开，保留原控制台；控制台可通过 `http://192.168.3.27/` 或 `http://192.168.3.27/index.html` 访问。
 硬件参数页直接由 ESP32 提供，经现有 HTTP→UART→PS 下发，不需要启动 Python，也不需要 USB 控制台。
 
 需要更新本次 ESP32 应用和配套 Zynq PS 应用。**无需更新 bit/XSA、FSBL 或 BOOT.BIN**。

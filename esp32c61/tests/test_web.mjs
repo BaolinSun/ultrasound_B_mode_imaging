@@ -83,6 +83,14 @@ test('CPU card clears stale/lost/offline readings and never renders old zeros as
 
 const html = readFileSync(new URL('../main/index.html', import.meta.url), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
+test('advanced parameters open a separate tab and index.html serves the same console',()=>{
+ const link=html.match(/<a\b[^>]*id="parameters-link"[^>]*>/)[0];
+ assert.match(link,/href="\/parameters"/);assert.match(link,/target="_blank"/);assert.match(link,/rel="noopener noreferrer"/);
+ const server=readFileSync(new URL('../main/web_server.c',import.meta.url),'utf8');
+ for(const uri of ['/','/index.html'])assert.ok(server.includes(`{.uri = "${uri}", .method = HTTP_GET, .handler = page}`));
+ const count=[...server.matchAll(/\.uri\s*=/g)].length+2; // Separate control module registers two handlers.
+ assert.ok(Number(server.match(/max_uri_handlers\s*=\s*(\d+)/)[1])>=count);
+});
 test('CPU0 buttons submit one server-side workflow, respect gates and never start HV or scan',async()=>{
  const e=setup();await e.settle();
  assert.equal(e.elements['cpu0-sleep'].disabled,true); // Older firmware cannot silently accept.
