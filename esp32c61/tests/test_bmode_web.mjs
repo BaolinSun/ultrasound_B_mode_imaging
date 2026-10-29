@@ -23,7 +23,7 @@ function setup(){
    if(path==='/api/viewer/stop'){backend.state.state='stopping';return {ok:true,json:async()=>({accepted:true})}};
    if(path.startsWith('/api/image')){
     backend.imageCalls++;
-    return {ok:true,status:200,headers:{get(){return String(backend.seq)}},async blob(){if(backend.pending)await backend.pending;return {}}};
+    return {ok:true,status:200,headers:{get(name){return name==='X-Image-Display'?(backend.imageMeta?JSON.stringify(backend.imageMeta):null):String(backend.seq)}},async blob(){if(backend.pending)await backend.pending;return {}}};
    }
    throw Error('Unexpected API '+path);
   }});
@@ -80,4 +80,10 @@ test('backend status is text, not markup; display widgets do not add hardware co
  assert.match(html,/display-dr/);assert.match(html,/仅 PC 处理，不下发硬件/);
  assert.doesNotMatch(html,/HV ENABLE|BEAM START|api\/zynq/);
  assert.match(html,/完整帧显示/);
+});
+test('published image carries its own display values even when status is ahead',async()=>{
+ const t=setup();await t.settle();Object.assign(t.b.state,{state:'running',image_available:true,lines:64,image_display_settings:{brightness_db:19}});
+ t.b.imageMeta={revision:2,settings:{brightness_db:7,angles_deg:Array.from({length:64},(_,i)=>-45+90*i/63),depth_mm:80}};
+ await t.context.pollStatus();await t.context.pollImage();assert.match(t.e['frame-format'].textContent,/亮度 7 dB/);
+ t.b.state.image_display_settings.brightness_db=20;await t.context.pollStatus();assert.match(t.e['frame-format'].textContent,/亮度 7 dB/);
 });

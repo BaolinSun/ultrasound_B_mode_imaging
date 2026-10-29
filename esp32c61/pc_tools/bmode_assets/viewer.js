@@ -2,16 +2,18 @@
 const el=id=>document.getElementById(id);
 let frozen=false, sequence=0, revision=0, objectUrl=null, imagePending=false, statusPending=false;
 let available=false, offline=false, actionPending=false;
+let imageDisplaySettings=null,imageDisplayRevision=0,lastViewerStatus={};
 const states={idle:'未接收',starting:'正在启动',running:'正在接收',stopping:'正在停止',error:'接收异常'};
 async function api(path,body){
  const response=await fetch(path,{cache:'no-store',...(body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});
  const data=await response.json();if(!response.ok)throw Error(data.error||'请求失败');return data;
 }
 function clearPicture(){
- revision++;sequence=0;el('image').hidden=true;el('empty').hidden=false;
+ revision++;sequence=0;imageDisplaySettings=null;imageDisplayRevision=0;el('image').hidden=true;el('empty').hidden=false;
  el('image').removeAttribute('src');if(objectUrl){URL.revokeObjectURL(objectUrl);objectUrl=null}
 }
 function render(s){
+ lastViewerStatus=s;
  offline=false;available=!!s.image_available;
  el('state').textContent=states[s.state]||'状态未知';
  el('start').disabled=actionPending||['starting','running','stopping'].includes(s.state);
@@ -22,9 +24,15 @@ function render(s){
  el('coverage').textContent=`${s.lines||0} / 64`;
  const source=s.source_status||{};
  el('pipeline').textContent=`缓存状态采样：PL 完整帧发布 ${Number(s.source_fps||0).toFixed(2)} FPS；SDIO 接收 ${Number(s.sdio_fps||0).toFixed(2)} FPS；源端丢弃 ${source.source_drops||0} / 错误 ${source.source_errors||0}；最近 SDIO ${((source.last_receive_us||0)/1000).toFixed(1)} ms`;
- const display=s.image_display_settings||s.display_settings||{};
- el('frame-format').textContent=`当前：${s.sample_rate_mhz??25} MHz · ${s.samples_per_line??6144} 点 × 64 线 · 抽取 2^${s.decimation||0} · Q2.14 · 双线性扫描转换 · TGC ${display.tgc_enabled===false?'关闭':'开启'} · DR ${display.dynamic_range_db??45} dB · 亮度 ${display.brightness_db??3} dB · 对比度 ${display.contrast??1}`;
+ renderImageFormat(s);
+ renderRemaining(s);
+}
+function renderImageFormat(s){
+ const display=imageDisplaySettings||s.image_display_settings||s.display_settings||{};
+ if(!frozen)el('frame-format').textContent=`当前：${s.sample_rate_mhz??25} MHz · ${s.samples_per_line??6144} 点 × 64 线 · 抽取 2^${s.decimation||0} · Q2.14 · 双线性扫描转换 · TGC ${display.tgc_enabled===false?'关闭':'开启'} · DR ${display.dynamic_range_db??45} dB · 亮度 ${display.brightness_db??3} dB · 对比度 ${display.contrast??1}`;
  if(typeof renderDisplayStatus==='function')renderDisplayStatus(s);
+}
+function renderRemaining(s){
  el('counters').textContent=`有效载荷 ${s.received_frames||0} · 网络坏帧 ${s.bad_frames||0} · 协议错误 ${s.protocol_errors||0} · 图像整帧格式错误 ${s.format_errors||0} · 处理丢弃 ${s.queue_drops||0} · 本地 UDP 队列丢包 ${s.local_queue_drops||0} · 非法数据报 ${s.invalid_datagrams||0}`;
  const age=s.image_age_s;
  const stale=s.state!=='running'||s.lines!==64||age===null||age>5;
@@ -44,10 +52,14 @@ async function pollImage(){
   if(response.status===204)return;
   if(!response.ok)throw Error('图像读取失败');
   const next=Number(response.headers.get('X-Image-Sequence'));
+  let metadata=null;try{metadata=JSON.parse(response.headers.get('X-Image-Display'))}catch{/* Older viewer servers have no image metadata. */}
   const blob=await response.blob();
   if(frozen||requestRevision!==revision||!available||!Number.isSafeInteger(next)||next<=sequence)return;
   const old=objectUrl;objectUrl=URL.createObjectURL(blob);sequence=next;
   el('image').src=objectUrl;el('image').hidden=false;el('empty').hidden=true;
+  imageDisplaySettings=metadata?.settings&&Array.isArray(metadata.settings.angles_deg)&&metadata.settings.angles_deg.length===64?metadata.settings:null;
+  imageDisplayRevision=Number.isSafeInteger(metadata?.revision)?metadata.revision:0;
+  renderImageFormat(lastViewerStatus);
   if(old)URL.revokeObjectURL(old);
  }catch(error){el('error').textContent=error.message}finally{imagePending=false}
 }

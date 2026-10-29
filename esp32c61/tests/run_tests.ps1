@@ -347,3 +347,5 @@ if ($LASTEXITCODE -ne 0) { throw 'Web interaction tests failed' }
 if ($LASTEXITCODE -ne 0) { throw 'B-mode viewer interaction tests failed' }
 & $Node --test (Join-Path $PSScriptRoot 'test_parameters.mjs')
 if ($LASTEXITCODE -ne 0) { throw 'Parameter editor transaction tests failed' }
+& $Node --test (Join-Path $PSScriptRoot 'test_live_display_web.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Live display interaction tests failed' }

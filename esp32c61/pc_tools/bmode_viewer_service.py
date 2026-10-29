@@ -161,8 +161,8 @@ class ViewerService:
         with self.lock:
             current = self.imaging.get_settings()['settings']
             settings = settings_model.from_profile(value, current) if profile else settings_model.validate(value)
-            if self.state in ('starting', 'running', 'stopping') and any(settings[k] != current[k] for k in settings_model.GEOMETRY):
-                raise RuntimeError('修改几何配置前请停止接收；不会替用户停止其他上传')
+            if self.state in ('starting', 'running', 'stopping') and settings['angles_deg'] != current['angles_deg']:
+                raise RuntimeError('修改角度映射前请停止接收；不会替用户停止其他上传')
             return self.imaging.set_settings(settings, expected_revision)
 
     def __init__(self, device_ip, port=50001, data_bind='0.0.0.0', api=None, route_ip=None, imaging=None):

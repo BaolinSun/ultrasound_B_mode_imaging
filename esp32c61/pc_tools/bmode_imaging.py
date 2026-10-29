@@ -131,12 +131,14 @@ class Renderer:
     def apply_settings(self, settings):
         settings = settings_model.validate(settings)
         geometry = any(settings[k] != self.settings[k] for k in settings_model.GEOMETRY)
+        reset_reference = geometry or any(settings[k] != self.settings[k] for k in ('tgc_enabled', 'tgc_points'))
         self.settings = deepcopy(settings)
         if geometry:
             self.scan = precompute_scan_converter(self.down, settings)
         self.lut = np.array(settings['lut'], dtype=np.uint8)
         self.gain = tgc_gain(settings['tgc_points'])[::1 << self.down]
-        self.reset()
+        if reset_reference:
+            self.reset()
 
     def reset(self):
         self.reference = None
@@ -218,13 +220,13 @@ class ImagingWorker:
         with self.cv:
             if type(expected_revision) is not int or expected_revision != self.settings_revision:
                 raise RuntimeError('显示配置已被其他页面修改，请重新读取')
-            if self.accepting and any(settings[k] != self.settings[k] for k in settings_model.GEOMETRY):
-                raise RuntimeError('修改角度或显示深度前请停止接收')
+            if self.accepting and settings['angles_deg'] != self.settings['angles_deg']:
+                raise RuntimeError('修改角度映射前请停止接收')
             self.settings = deepcopy(settings)
             self.settings_revision += 1
             # Invalidate an in-flight old rendering, but retain immutable input.
-            self.image = self.image_at = self.image_frame = None
-            self.image_settings_revision = 0
+            # Retain the last published PNG and its own geometry until the new
+            # revision is rendered. Slider edits must not flash an empty image.
             self.cv.notify_all()
         return self.get_settings()
 
@@ -328,6 +330,12 @@ class ImagingWorker:
     def latest(self, after):
         with self.cv:
             return (self.sequence, self.image) if self.image is not None and self.sequence > after else (self.sequence, None)
+
+    def latest_with_metadata(self, after):
+        with self.cv:
+            png = self.image if self.image is not None and self.sequence > after else None
+            return self.sequence, png, {'revision': self.image_settings_revision,
+                                        'settings': deepcopy(self.image_display_settings)}
 
     def close(self):
         with self.cv:

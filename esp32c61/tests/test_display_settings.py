@@ -78,9 +78,18 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(w.snapshot()['samples_per_line'], 768)
         with self.assertRaises(RuntimeError):w.set_settings(value, 1)
         value['depth_mm'] = 100
-        with self.assertRaises(RuntimeError):w.set_settings(value, 2)
-        w.finish();w.set_settings(value, 2);wait_for(lambda: w.get_settings()['applied_revision'] == 3)
-        self.assertFalse(w.snapshot()['image_available'])
+        w.set_settings(value, 2)
+        wait_for(lambda: w.snapshot()['image_settings_revision'] == 3)
+        self.assertEqual(w.snapshot()['image_display_settings']['depth_mm'], 100)
+        sequence, png, meta=w.latest_with_metadata(0)
+        self.assertEqual(sequence,w.snapshot()['image_sequence'])
+        self.assertTrue(png.startswith(b'\x89PNG'))
+        self.assertEqual(meta['revision'],3)
+        self.assertEqual(meta['settings']['depth_mm'],100)
+        self.assertTrue(w.accepting)
+        value['angles_deg'] = list(np.linspace(-40, 40, 64))
+        with self.assertRaises(RuntimeError):w.set_settings(value, 3)
+        w.finish();w.set_settings(value, 3);wait_for(lambda: w.get_settings()['applied_revision'] == 4)
 
     def test_http_origin_body_limits_revision_and_no_device_writes(self):
         def forbidden(*args):raise AssertionError('hardware I/O')
@@ -117,6 +126,35 @@ class SettingsTests(unittest.TestCase):
         wait_for(lambda:w.snapshot()['image_settings_revision']==2)
         self.assertEqual(w.snapshot()['images'],1)
         self.assertEqual(w.snapshot()['image_display_settings']['brightness_db'],10)
+
+    def test_live_depth_all_decimations_and_gray_smoothing_continuity(self):
+        w=b.ImagingWorker();self.addCleanup(w.close);w.reset()
+        for down in range(5):
+            w.submit(1,down+1,payload(down=down));wait_for(lambda:w.snapshot()['image_frame']==down+1)
+            settings=w.get_settings();value=deepcopy(settings['settings']);value['depth_mm']=80+down*10
+            old_png=w.latest(0)[1]
+            w.set_settings(value,settings['revision'])
+            self.assertTrue(w.snapshot()['image_available'])
+            wait_for(lambda:w.snapshot()['image_settings_revision']==settings['revision']+1)
+            self.assertEqual(w.snapshot()['image_display_settings']['depth_mm'],80+down*10)
+            self.assertEqual(w.snapshot()['samples_per_line'],6144>>down)
+            self.assertIsNotNone(old_png)
+        r=b.Renderer();r.reference=1.23;s=deepcopy(self.default);s['brightness_db']=9;r.apply_settings(s)
+        self.assertEqual(r.reference,1.23)
+        s['tgc_enabled']=False;r.apply_settings(s);self.assertIsNone(r.reference)
+
+    def test_service_allows_live_depth_without_any_device_request(self):
+        def forbidden(*args):raise AssertionError('hardware I/O')
+        s=service_module.ViewerService('127.0.0.1',api=forbidden);self.addCleanup(s.close)
+        # Exercise admission during reception without launching a control worker.
+        s.state='running';s.imaging.reset();s.imaging.submit(1,1,payload(down=2))
+        wait_for(lambda:s.imaging.snapshot()['image_available'])
+        v=deepcopy(self.default);v['depth_mm']=150
+        s.set_display_settings(v,1)
+        wait_for(lambda:s.imaging.snapshot()['image_settings_revision']==2)
+        self.assertEqual(s.state,'running')
+        self.assertEqual(s.imaging.snapshot()['image_display_settings']['depth_mm'],150)
+        s.state='idle'
 
 
 class BrowserGoldenTests(unittest.TestCase):

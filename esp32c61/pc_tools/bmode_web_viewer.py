@@ -76,8 +76,10 @@ def make_server(service, address=('127.0.0.1', 8080)):
                 except ValueError:
                     self.js(400, {'error': '无效图像序号'})
                     return
-                sequence, png = service.imaging.latest(after)
-                self.reply(200 if png else 204, png or b'', 'image/png', {'X-Image-Sequence': sequence})
+                sequence, png, metadata = service.imaging.latest_with_metadata(after)
+                self.reply(200 if png else 204, png or b'', 'image/png', {
+                    'X-Image-Sequence': sequence,
+                    'X-Image-Display': json.dumps(metadata, separators=(',', ':'), allow_nan=False)})
             else:
                 self.js(404, {'error': '接口不存在'})
 
