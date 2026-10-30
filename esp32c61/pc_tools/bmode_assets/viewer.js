@@ -69,7 +69,7 @@ async function pollImage(){
 }
 async function action(name){
  if((actionPending&&name!=='stop')||(name==='stop'&&stopPending))return;
- const enabling=name==='start'||name==='resume';if(enabling&&!confirm(name==='start'?'开始接收将开启高压并启动扫描。确认设备及发射条件已准备好？':'继续显示将重新开启高压。确认继续？'))return;
+ const enabling=name==='start'||name==='resume';
  actionPending++;if(name==='stop')stopPending=true;el('start').disabled=true;el('freeze').disabled=true;
  if(name==='freeze'){frozen=true;revision++;el('freeze').textContent='继续显示'}
  try{await api('/api/viewer/'+name,enabling?{confirm_hv:true}:{});if(name==='start'){clearPicture();frozen=false;el('freeze').textContent='冻结画面'}}catch(error){el('error').textContent=error.message}finally{actionPending--;if(name==='stop')stopPending=false;await pollStatus()}

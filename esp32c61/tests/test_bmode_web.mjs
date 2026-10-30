@@ -32,7 +32,7 @@ function setup(){
  return {context,e:elements,b:backend,settle:()=>new Promise(resolve=>setImmediate(resolve))};
 }
 
-test('startup is read-only; start needs HV confirmation and calls only the fixed action',async()=>{
+test('startup is read-only; start calls only the fixed action',async()=>{
  const t=setup();await t.settle();
  assert.ok(t.b.calls.every(call=>call.path==='/api/status'));
  await t.e.start.listeners.click();await t.settle();
@@ -83,11 +83,12 @@ test('backend status is text, not markup; hardware effects are visible and comma
  assert.doesNotMatch(html,/HV ENABLE|BEAM START|api\/zynq/);
  assert.match(html,/完整帧显示/);
 });
-test('cancelled HV confirmation never submits start or resume',async()=>{
- const t=setup();await t.settle();t.b.confirmed=false;await t.e.start.listeners.click();
- assert.equal(t.b.calls.filter(c=>c.options.method==='POST').length,0);
+test('start and resume submit directly without opening a confirmation popup',async()=>{
+ const t=setup();await t.settle();t.context.confirm=()=>{throw Error('HV action must not open a confirmation popup')};
+ await t.e.start.listeners.click();
+ assert.equal(t.b.calls.filter(c=>c.path==='/api/viewer/start').length,1);
  Object.assign(t.b.state,{state:'running',frozen:true});await t.context.pollStatus();await t.e.freeze.listeners.click();
- assert.equal(t.b.calls.filter(c=>c.options.method==='POST').length,0);
+ assert.equal(t.b.calls.filter(c=>c.path==='/api/viewer/resume').length,1);
 });
 test('published image carries its own display values even when status is ahead',async()=>{
  const t=setup();await t.settle();Object.assign(t.b.state,{state:'running',image_available:true,lines:64,image_display_settings:{brightness_db:19}});

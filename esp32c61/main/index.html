@@ -450,7 +450,6 @@ async function sendZynq(lines,options={}){
  if(!lines.length)return;
  if(lines.some(s=>s.length>159||!/^[\x20-\x7e]+$/.test(s)))throw Error('每条命令必须为不超过 159 字节的 ASCII');
  const hv=lines.includes('HV ENABLE');
- if(hv&&!confirm('即将开启高压。请确认硬件连接及操作条件安全。是否继续？'))return;
  if(!controlClient){controlClient=controlId();controlRequest=Number.parseInt(controlId(),16)&0x7fffffff}
  controlBusy++;for(const id of controlButtons)el(id).disabled=true;
  controlFeedback('命令处理中，请勿重复提交…');

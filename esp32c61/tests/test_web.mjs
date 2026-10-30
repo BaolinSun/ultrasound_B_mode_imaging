@@ -570,16 +570,16 @@ test('status uses text nodes, removes stale IP and reports send errors',async()=
   assert.equal(e.elements['sta-link'].href,undefined);
 });
 
-test('Wi-Fi controls need no token; HV confirmation remains and polling only reads cache',async()=>{
+test('Wi-Fi HV action submits without a popup; polling remains read-only',async()=>{
  const e=setup();await e.settle();
  e.backend.status.zynq_control={ready:true,busy:false,config_owned:false,synced:true,ps_status:'@STATUS v=1 cfg=0 run=0 hv=0'};
  await e.context.refresh();
  await e.context.sendZynq(['STATUS']);
  assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,1);
  assert.equal(e.elements['control-token'],undefined);
- e.backend.confirmed=false;await e.context.sendZynq(['HV ENABLE']);
- assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,1);
- e.backend.confirmed=true;await e.context.sendZynq(['HV ENABLE']);
+ e.context.confirm=()=>{throw Error('HV action must not open a confirmation popup')};
+ await e.context.sendZynq(['HV ENABLE']);
+ assert.equal(e.backend.calls.filter(c=>c.path==='/api/zynq/commands').length,2);
  const post=e.backend.calls.filter(c=>c.path==='/api/zynq/commands').at(-1);
  assert.equal(post.options.headers['X-Control-Token'],undefined);
  assert.equal(JSON.parse(post.options.body).allow_hv,true);
