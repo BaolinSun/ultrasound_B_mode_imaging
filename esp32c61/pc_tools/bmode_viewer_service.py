@@ -189,6 +189,10 @@ class ViewerService:
         self.imaging = imaging or ImagingWorker()
         self.lock = threading.Lock()
         self.state, self.error, self.protocol = 'idle', '', None
+        # ESP32 retains only a bounded job cache. A complete OFF + STATUS
+        # sequence must not race another shutdown sequence and evict its receipt.
+        # Separate from the state lock so snapshots and stop remain responsive.
+        self.shutdown_lock = threading.Lock()
         self.worker = None
         self.stop_request = threading.Event()
         self.transport = None
@@ -259,10 +263,17 @@ class ViewerService:
                 self.worker.start()
 
     def _priority_off(self):
-        try:
-            ViewerControl(self.device_ip, self.api).off(urgent=True)
-        except Exception as exc:
-            self.off_error = '优先关断未确认: '+str(exc)
+        with self.shutdown_lock:
+            try:
+                ViewerControl(self.device_ip, self.api).off(urgent=True)
+            except Exception as exc:
+                self.off_error = '优先关断未确认: '+str(exc)
+
+    def _final_off(self):
+        # Still recheck after the foreground operation has unwound: a late
+        # in-flight enable must not outlive the earlier priority shutdown.
+        with self.shutdown_lock:
+            self.control.off()
 
     def _priority_result(self, verified=False):
         if self.off_thread and self.off_thread.is_alive():
@@ -347,7 +358,7 @@ class ViewerService:
         finally:
             if touched:
                 try:
-                    self.control.off()
+                    self._final_off()
                     off_verified = True
                 except Exception as exc:
                     failure += '；关断未确认: '+str(exc)
@@ -436,7 +447,7 @@ class ViewerService:
                 transport.quiesce()
             if hardware:
                 try:
-                    self.control.off()
+                    self._final_off()
                     off_verified = True
                 except Exception as exc:
                     failure = (failure+'；' if failure else '')+'关闭扫描/高压未确认: '+str(exc)

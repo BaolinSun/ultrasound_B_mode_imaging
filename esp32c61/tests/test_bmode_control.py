@@ -112,6 +112,55 @@ class ControlTests(unittest.TestCase):
         self.assertEqual((device.ps['run'], device.ps['hv']), (0, 0))
         self.assertNotIn('BEAM START', device.commands)
 
+    def test_stop_serializes_shutdown_jobs_with_bounded_device_cache(self):
+        service, device = self.service()
+        held, release, overlap = threading.Event(), threading.Event(), threading.Event()
+        cache_lock = threading.Lock()
+        priority_thread = None
+        pause = True
+        job_sequence = 0
+
+        def bounded(path, body=None):
+            nonlocal priority_thread, pause, job_sequence
+            if body and body.get('commands') == ['HV DISABLE']:
+                if held.is_set() and not release.is_set():
+                    overlap.set()
+                elif priority_thread is None:
+                    priority_thread = threading.current_thread()
+            if (path.startswith('/api/zynq/jobs/') and
+                    threading.current_thread() is priority_thread and pause):
+                pause = False
+                held.set()
+                release.wait(2)
+            with cache_lock:
+                if path.startswith('/api/zynq/jobs/') and path.rsplit('/', 1)[-1] not in device.jobs:
+                    raise ControlFailure('设备 HTTP 404，执行结果未知', unknown=True)
+                result = device(path, body)
+                if body and path == '/api/zynq/commands':
+                    # Completed active and finished refer to the same latest job.
+                    key = result['job_id']
+                    job_sequence += 1
+                    fresh = f'{job_sequence:08x}'
+                    device.jobs = {fresh: device.jobs[key]}
+                    result = {'job_id': fresh}
+                return result
+
+        service.api = bounded
+        service.start()
+        wait_for(lambda: service.snapshot()['state'] == 'running')
+        try:
+            service.stop()
+            self.assertTrue(held.wait(2))
+            # The worker is already exiting but must not overwrite this receipt.
+            time.sleep(.25)
+            self.assertFalse(overlap.is_set(), 'two shutdown flows submitted overlapping jobs')
+            self.assertEqual(service.snapshot()['state'], 'stopping')
+        finally:
+            release.set()
+        wait_for(lambda: service.snapshot()['state'] in ('idle', 'error'))
+        self.assertEqual(service.snapshot()['state'], 'idle', service.snapshot()['error'])
+        self.assertEqual((device.ps['run'], device.ps['hv']), (0, 0))
+
     def test_focus_waits_for_upload_callback_and_slots_then_stays_off(self):
         service, device = self.service()
         entered = threading.Event()
