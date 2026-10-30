@@ -144,6 +144,31 @@ static esp_err_t put_config(httpd_req_t *req)
     return response;
 }
 
+static esp_err_t get_temperatures(httpd_req_t *req)
+{
+    /* Dedicated compact endpoint: no cJSON tree and no internal-SRAM fallback.
+     * A coherent snapshot is copied under the cache lock, formatted after unlock. */
+    size_t bytes=sizeof(temperature_history_t)+TEMP_HISTORY_JSON_BYTES;
+    temperature_history_t *snapshot=heap_caps_malloc(bytes,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!snapshot) {
+        httpd_resp_set_status(req,"503 Service Unavailable");
+        return httpd_resp_sendstr(req,"Temperature history unavailable");
+    }
+    char *body=(char *)(snapshot+1);
+    temperature_cache_history_get(snapshot,(uint64_t)esp_timer_get_time()/1000U);
+    size_t length=temperature_history_json(snapshot,body,TEMP_HISTORY_JSON_BYTES);
+    esp_err_t result;
+    if(!length) {
+        httpd_resp_set_status(req,"503 Service Unavailable");
+        result=httpd_resp_sendstr(req,"Temperature history unavailable");
+    }
+    else {
+        httpd_resp_set_type(req,"application/json");
+        httpd_resp_set_hdr(req,"Cache-Control","no-store");
+        result=httpd_resp_send(req,body,(ssize_t)length);
+    }
+    free(snapshot);return result;
+}
 static esp_err_t get_status(httpd_req_t *req)
 {
     wifi_manager_status_t wifi;
@@ -160,6 +185,7 @@ static esp_err_t get_status(httpd_req_t *req)
         temperature_cache_get(&t,(uint64_t)esp_timer_get_time()/1000U);
         cJSON *temperatures=cJSON_AddObjectToObject(json,"temperatures");
         if(temperatures) {
+            cJSON_AddBoolToObject(temperatures,"history_available",t.history_available);
             cJSON_AddNumberToObject(temperatures,"period_ms",TEMP_PERIOD_MS);
             if(t.has_sample) {
                 cJSON_AddNumberToObject(temperatures,"seq",t.seq);
@@ -356,7 +382,7 @@ esp_err_t web_server_start(void)
 {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.stack_size = 6144;
-    config.max_uri_handlers = 16;
+    config.max_uri_handlers = 17;
     config.uri_match_fn = httpd_uri_match_wildcard;
     config.lru_purge_enable = true;
     config.recv_wait_timeout = 5;
@@ -375,6 +401,7 @@ esp_err_t web_server_start(void)
         {.uri = "/api/config", .method = HTTP_GET, .handler = get_config},
         {.uri = "/api/config", .method = HTTP_PUT, .handler = put_config},
         {.uri = "/api/status", .method = HTTP_GET, .handler = get_status},
+        {.uri = "/api/temperatures", .method = HTTP_GET, .handler = get_temperatures},
         {.uri = "/api/upload", .method = HTTP_POST, .handler = upload},
         {.uri = "/api/stop", .method = HTTP_POST, .handler = stop},
         {.uri = "/api/sdio/start", .method = HTTP_POST, .handler = sdio_start},

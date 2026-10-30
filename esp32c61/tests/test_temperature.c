@@ -145,8 +145,60 @@ static void service_tests(void) {
     before=reports;now=4998;temperature_service_poll();assert(reports==before);
     now=4999;temperature_service_poll();assert(reports==before+1);
 }
+static void history_tests(void) {
+    temperature_history_t h;
+    temperature_cache_history_get(NULL,0);
+    temperature_cache_uart_lost();
+    for(unsigned i=0;i<40;i++)feed_message(i,7,1000+10000*i);
+    temperature_cache_history_get(&h,391000);
+    assert(h.available && h.count==37 && h.records[0].seq==3 && h.records[36].seq==39);
+    uint32_t generation=h.generation;
+    feed_message(39,0,400000); /* Duplicate does not overwrite the original sample. */
+    temperature_cache_history_get(&h,391000);
+    assert(h.count==37 && h.records[36].mask==7 && h.records[36].received_ms==391000);
+    char json[TEMP_HISTORY_JSON_BYTES];
+    size_t n=temperature_history_json(&h,json,sizeof(json));
+    assert(n>0 && n<sizeof(json) && strstr(json,"[3,360000,7,25000,0,-625]"));
+    assert(!temperature_history_json(&h,json,16));
+    assert(!temperature_history_json(&h,json,0));
+    assert(!temperature_history_json(&h,json,180));
+    assert(!temperature_history_json(&h,json,n));
+    assert(!temperature_history_json(NULL,json,sizeof(json)));
+    assert(!temperature_history_json(&h,NULL,sizeof(json)));
+    feed_message(42,5,421000);temperature_cache_history_get(&h,421000);
+    assert(h.source_gaps>=2 && h.records[h.count-1].seq==42 && h.records[h.count-1].mask==5);
+    temperature_cache_history_get(&h,900000);assert(h.count==0);
+    temperature_cache_uart_lost();temperature_cache_history_get(&h,900000);
+    assert(h.generation!=generation && !h.count && h.uart_resets>0);
+    feed_message(UINT32_MAX,7,910000);feed_message(0,7,920000);
+    temperature_cache_history_get(&h,920000);generation=h.generation;
+    assert(h.count==2 && h.records[0].seq==UINT32_MAX && h.records[1].seq==0);
+    feed_message(UINT32_MAX-20,7,930000);temperature_cache_history_get(&h,930000);
+    assert(h.count==1 && h.generation!=generation);
+    const char *boot="@UART_LOG UART0 reboot\n";
+    temperature_cache_feed((const uint8_t*)boot,strlen(boot),940000);
+    temperature_cache_history_get(&h,940000);assert(!h.count);
+    /* Worst-case integer values must fit the fixed JSON response budget. */
+    for(unsigned i=0;i<TEMP_HISTORY_POINTS;i++) {
+        h.records[i]=(temperature_record_t){.seq=UINT32_MAX-i,.mask=7,
+            .received_ms=0,.mc={INT32_MIN,INT32_MAX,INT32_MIN}};
+    }
+    h.now_ms=UINT64_MAX;h.count=TEMP_HISTORY_POINTS;
+    assert(temperature_history_json(&h,json,sizeof(json))>0);
+    h.available=false;assert(!temperature_history_json(&h,json,sizeof(json)));h.available=true;
+    h.count=TEMP_HISTORY_POINTS+1;assert(!temperature_history_json(&h,json,sizeof(json)));
+    h.count=1;h.now_ms=0;h.records[0].received_ms=1;
+    assert(!temperature_history_json(&h,json,sizeof(json)));
+    h.count=0;assert(temperature_history_json(&h,json,sizeof(json))>0);
+    feed_message(2,7,950000);feed_message(3,7,940000);
+    temperature_cache_history_get(&h,940000);assert(h.count==1);
+    temperature_cache_get(NULL,0);
+}
 int main(void) {
-    protocol_tests();cache_tests();service_tests();
+    temperature_history_t unavailable;temperature_cache_history_get(&unavailable,0);
+    assert(!unavailable.available && !unavailable.count);
+    assert(temperature_cache_init() && temperature_cache_init());
+    protocol_tests();cache_tests();history_tests();service_tests();
     puts("PASS: temperature conversion, strict CRC protocol, cache freshness, independent failures, period/wrap and no catch-up");
     return 0;
 }

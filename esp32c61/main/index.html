@@ -21,9 +21,9 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 .temp-reading dt{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#41566b}.temp-reading dd:not(.temp-description){font-size:18px;font-weight:650;line-height:1.3;letter-spacing:-.5px;color:#183347;font-variant-numeric:tabular-nums}.temp-reading dd[data-valid=false]{font-size:12px;font-weight:500;color:#6b7b8e;letter-spacing:0}.temp-reading small{font-size:10px;color:#64768a}
 .temp-zynq{--temp-color:#18858c;--temp-bg:#f2fafb}.temp-power{--temp-color:#c74a51;--temp-bg:#fff4f4}.temp-afe{--temp-color:#8a65c5;--temp-bg:#f8f5fd}
 .temp-power dt,.temp-power dd[data-valid=true]{color:#b53743}
-.temp-swatch{display:inline-block;width:20px;border-top:2px solid var(--temp-color);flex:none}.temp-power .temp-power dt,.temp-power dd[data-valid=true]{color:#b53743}
-.temp-swatch{border-top-style:dashed}.temp-afe .temp-power dt,.temp-power dd[data-valid=true]{color:#b53743}
-.temp-swatch{border-top-style:dotted}
+.temp-swatch{display:inline-block;width:20px;border-top:2px solid var(--temp-color);flex:none}
+.temp-power .temp-swatch{border-top-style:dashed}
+.temp-afe .temp-swatch{border-top-style:dotted}
 .temp-plot{overflow:hidden;background:linear-gradient(145deg,#182536,#101b29);border:1px solid #26384c;border-radius:12px}.temp-plot-heading{display:flex;justify-content:space-between;gap:12px;padding:16px 20px 0;color:#e5edf7;font-size:14px}.temp-plot-heading span{color:#a9bcd1;font-size:12px}
 .temp-chart{display:block;width:100%;height:auto;margin:4px 0 0;background:transparent}.temp-chart text{font:12px system-ui,sans-serif;fill:#b5c6d9}.temp-grid{stroke:#2a3b50;stroke-width:.75}.temp-axis{fill:none;stroke:#71879f;stroke-width:1}.temp-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
 .temp-summary{padding:14px 0 0}.temp-summary p{font-size:13px;margin:3px 0;color:#63768a}.temp-summary #temp-age{color:#344f68;font-weight:500}
@@ -124,7 +124,7 @@ a{color:#126f78}@media(max-width:600px){main{margin-top:18px}.grid{grid-template
 </svg></div>
 <div class="temp-summary"><p id="temp-age" class="muted">每 10 秒采样；等待 Zynq 报告。不依赖数据上传或目标地址。</p>
 <p id="temp-chart-status" class="muted" role="status">等待新温度采样，首个有效值显示为圆点。</p>
-</div><details class="diagnostics"><summary>曲线说明</summary><small>旧数据在左，新数据向右追加；仅显示最近 6 分钟，超过后向左滚动，纵轴自动缩放。仅保存本页面打开后的历史，刷新页面会清空；真实漏采样、读取失败或报告失效处保留断点。短暂网页请求失败后按采样序号判断连续性，不补造数据。不依赖外部网络绘图库。</small></details></section>
+</div><details class="diagnostics"><summary>曲线说明</summary><small>旧数据在左，新数据向右追加；仅显示最近 6 分钟，超过后向左滚动，纵轴自动缩放。设备缓存最近 6 分钟的实际温度报告，网页每 5 秒补取，短暂断连或页面后台节流不会丢失已缓存采样。真实源端/UART 漏报、读取失败及采样延迟仍保留断点；不补零、不插值。不依赖外部网络绘图库。</small></details></section>
 <section class="card"><h2>设备与传输状态</h2>
 <div class="status-grid" role="group" aria-label="通信与源端就绪状态">
 <div class="status-tile"><small>Wi-Fi</small><span id="runtime-wifi" class="status-pill">未知</span></div>
@@ -177,8 +177,39 @@ function notify(text,error=false){el('message').textContent=text;el('message').c
 async function api(path,options={}){const r=await fetch(path,{cache:'no-store',...options});const j=await r.json();if(!r.ok)throw Error(j.message||`HTTP ${r.status}`);return j}
 async function loadConfig(){const c=await api('/api/config');el('ssid').value=c.ssid;el('target-ip').value=c.target_ip;el('target-port').value=c.target_port;targetConfigured=!!c.target_ip;configLoaded=true}
 const results={sent_local:'本地发送完成（请核对接收端）',invalid:'参数无效',busy:'正在发送',not_ready:'等待配置 / 尚未上传',cancelled:'已停止',link_down:'网络中断',timeout:'上传超时',send_error:'发送失败'};
-const temperatureHistory={points:[],seq:null,gap:true};
+const temperatureHistory={points:[],seq:null,gap:true,generation:null,syncEnabled:false,lastFetch:-Infinity,fetching:false,sourceStats:null};
 const TEMP_CHART_WINDOW_MS=6*60*1000,TEMP_CHART_MAX_POINTS=37;
+function applyTemperatureHistory(data){
+ const h=temperatureHistory,now=Date.now(),uint=v=>Number.isInteger(v)&&v>=0&&v<=0xffffffff;
+ if(data?.version!==1||!uint(data.generation)||!Array.isArray(data.samples)||data.samples.length>TEMP_CHART_MAX_POINTS)throw Error('温度缓存格式错误');
+ const rows=data.samples;
+ for(let i=0;i<rows.length;i++){
+  const r=rows[i],prior=rows[i-1];
+  if(!Array.isArray(r)||r.length!==6||!uint(r[0])||!Number.isInteger(r[1])||r[1]<0||r[1]>TEMP_CHART_WINDOW_MS||!Number.isInteger(r[2])||r[2]<0||r[2]>7||r.slice(3).some(v=>!Number.isInteger(v)||v< -2147483648||v>2147483647)||
+   (prior&&(r[1]>prior[1]||((r[0]-prior[0])>>>0)===0||((r[0]-prior[0])>>>0)>=0x80000000)))throw Error('温度缓存采样无效');
+ }
+ const tail=rows.at(-1);
+ // A slower history response must not replace a newer status sample.
+ if(h.generation===data.generation&&tail&&h.seq!==null&&((tail[0]-h.seq)>>>0)>=0x80000000)return;
+ h.points=rows.map((r,i)=>{
+  const prior=rows[i-1],step=prior?(r[0]-prior[0])>>>0:1,delayed=prior&&prior[1]-r[1]>20000;
+  return {seq:r[0],at:now-r[1],values:r.slice(3).map((v,c)=>r[2]&(1<<c)?v/1000:null),gap:!prior||step!==1||!!delayed,
+   reason:step!==1?`源端/UART 采样序号缺失 ${step-1} 组`:delayed?'源端采样间隔超过 20 秒':''};
+ });
+ h.seq=tail?.[0]??null;h.gap=false;h.generation=data.generation;
+ h.sourceStats=data;
+ const t=tail?{seq:tail[0],age_ms:tail[1],period_ms:10000}:null;
+ if(t)for(const [i,name] of ['zynq','power','afe'].entries())t[name]={status:tail[1]>30000?'stale':tail[2]&(1<<i)?'ok':'read_error',celsius:tail[2]&(1<<i)?tail[i+3]/1000:null};
+ renderTemperatures(t);
+}
+async function syncTemperatureHistory(){
+ const h=temperatureHistory;
+ if(!h.syncEnabled||h.fetching||Date.now()-h.lastFetch<5000)return;
+ h.fetching=true;h.lastFetch=Date.now();
+ try{applyTemperatureHistory(await api('/api/temperatures',typeof AbortSignal!=='undefined'&&AbortSignal.timeout?{signal:AbortSignal.timeout(4000)}:{}))}
+ catch(e){el('temp-chart-status').textContent+=' 设备历史暂不可用，等待下次补取；未补造缺失数据。'}
+ finally{h.fetching=false}
+}
 function updateTemperatureChart(t,disconnected){
  const h=temperatureHistory,now=Date.now(),names=['zynq','power','afe'];
  const hasSample=Number.isInteger(t?.seq)&&t.seq>=0&&t.seq<=0xffffffff&&Number.isFinite(t?.age_ms)&&t.age_ms>=0;
@@ -196,7 +227,7 @@ function updateTemperatureChart(t,disconnected){
   const missing=step>1&&step<0x80000000;
   const delayed=!!last&&at-last.at>20000;
   const reason=missing?`采样序号缺失 ${step-1} 组`:delayed?'采样间隔超过 20 秒':h.gap?'温度报告失效或重新开始':'';
-  h.points.push({at,values,gap:h.gap||step!==1||delayed,reason});
+  h.points.push({seq:t.seq,at,values,gap:h.gap||step!==1||delayed,reason});
   h.seq=t.seq;h.gap=false;
  }
  // Leave one sample period ahead of the newest point; total visible span <=6 min.
@@ -234,8 +265,10 @@ function updateTemperatureChart(t,disconnected){
  el('temp-chart-status').textContent=disconnected?'网页连接中断：保留历史，恢复后按采样序号确认连续性。':
   !fresh?(h.points.length?'温度报告已过期或不可用：保留历史，不补零。':'等待新温度采样，首个有效值显示为圆点。'):
   `最近 6 分钟已记录 ${h.points.length} 组采样；${values.length?'折线仅连接连续有效数据。':'当前各通道均读取失败，等待下一次采样。'}${breaks.length?' 最近断点：'+breaks.at(-1).reason+'。':''}`;
+ if(h.sourceStats)el('temp-chart-status').textContent+=` 设备缓存补取已启用；源端/UART 累计缺失 ${h.sourceStats.source_gaps||0} 组，格式/CRC 错误 ${h.sourceStats.parse_errors||0} 次，UART 丢失 ${h.sourceStats.uart_resets||0} 次。`;
 }
 function renderTemperatures(t,disconnected=false){
+ if(t?.history_available===true)temperatureHistory.syncEnabled=true;
  updateTemperatureChart(t,disconnected);
  const labels={waiting:'等待温度数据',read_error:'读取失败',stale:'数据已过期'};
  for(const name of ['zynq','power','afe']){
@@ -365,7 +398,7 @@ function render(s){
  if(d.stopping||d.running||d.raw_busy||d.free_slots<2)el('upload').disabled=true;
  renderZynqControl(s);
 }
-async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;renderRuntime({},true);renderProvisioning({},true);renderTemperatures(null,true);renderCpus(null,true);renderZynqControl({});el('upload').disabled=true;el('stop').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false}}
+async function refresh(){if(refreshing)return;refreshing=true;try{if(!configLoaded){await loadConfig();notify('请确认配置，并先启动上位机接收程序。')}render(await api('/api/status'));if(offline){notify('设备连接已恢复。请核对配置后启动上位机接收程序。');offline=false}}catch(e){offline=true;renderRuntime({},true);renderProvisioning({},true);renderTemperatures(null,true);renderCpus(null,true);renderZynqControl({});el('upload').disabled=true;el('stop').disabled=true;el('sdio-once').disabled=true;el('sdio-stream').disabled=true;notify('无法访问设备：'+e.message+'。若配置热点已关闭，请连接路由器并访问上方局域网地址。',true)}finally{refreshing=false;await syncTemperatureHistory()}}
 el('config-form').addEventListener('submit',async event=>{event.preventDefault();saving=true;el('save').disabled=true;el('upload').disabled=true;const c={ssid:el('ssid').value,target_ip:el('target-ip').value.trim(),target_port:Number(el('target-port').value)};
  if(el('open-network').checked)c.password='';else if(el('password').value)c.password=el('password').value;
  try{const r=await api('/api/config',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(c)});targetConfigured=!!c.target_ip;configLoaded=true;el('password').value='';el('open-network').checked=false;notify(r.message)}catch(e){notify(e.message,true)}finally{saving=false;el('save').disabled=false;await refresh()}});

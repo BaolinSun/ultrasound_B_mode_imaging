@@ -164,3 +164,30 @@ D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build-throughput-fast-
 4. 暂停 Zynq 超过 30 秒，页面显示 stale；恢复报告后回到 ok/read_error。两端分别复位，应先清空旧值，再恢复。
 5. USB 模式验证等待主机数据时温度继续更新；原 USB 参数和数据功能需实机回归。SDIO/USB 选择仍由 C 宏决定。
 6. 长时间上传观察温度、错误和堆余量；短测不代替 48 小时稳定性测试。无 RTL 改动，本次不重新运行综合、时序或 CDC，不宣称解决已有板级/CDC 风险。
+
+## 2026-10-30：设备历史补取与图例修复
+
+图例 CSS 选择器曾被误改，导致三路标识都显示点线。现修复为 Zynq 青色实线、电源红色虚线、AFE 紫色点线，与绘图区一致。
+
+原页面只取 `/api/status` 中最新一组温度；浏览器后台节流、短暂 HTTP 故障或较长轮询间隔会跳过中间报告。截图中的“采样序号缺失 4 组”只能说明网页见到的序号不连续，单凭截图不能区分是网页漏取还是源端/UART 真正漏报。
+
+- ESP32 在 PSRAM 保存最多 37 组、最近 360 秒的真实 UART 温度报告，不写 NVS，不新增内部 SRAM 历史数组。历史按接收时间和序号存储，重复报告不刷新时间。
+- 新增只读 `GET /api/temperatures`，使用紧凑整数数组，不构造 cJSON 树。网页每 5 秒补取缓存，最近 6 分钟之外的数据继续滚出。普通 `/api/status` 的温度字段保持兼容，增加 `history_available`。
+- API 格式为 `{version:1,generation,period_ms:10000,source_gaps,parse_errors,uart_resets,samples:[...]}`，每行依次为 `[seq,age_ms,valid_mask,zynq_mC,power_mC,afe_mC]`。`age_ms` 由同一次设备快照计算，三路毫摄氏度按有效位显示。
+- `generation` 在 ESP32 启动、Zynq 启动标记、UART 数据丢失或源序号回退时变化；网页以新会话重建历史，不跨复位连接。uint32 正常回绕不误判重启。
+- 只有实际收到且通过 CRC 的采样进入缓存。真正序号缺失、源端间隔超过 20 秒、无效通道仍保留断点，不补零、不插值。页面显示源端/UART 序号缺失、温度格式/CRC 错误和 UART 接收丢失累计数。
+- 新缓存 API 独立于大状态 JSON；已有状态查询成功建立历史支持后，即使 `/api/status` 临时 HTTP 500，仍可补取温度。本次并未解决 `KNOWN_ISSUES.md` 中通用 SRAM/JSON 分配问题。PSRAM 申请失败时继续提供原有最新温度，历史请求明确返回 503，不回退占用内部 SRAM。
+- 静态历史记录申请为 `37 * sizeof(temperature_record_t)`，每次历史响应临时申请 `sizeof(temperature_history_t) + 4096` 字节，均限定 PSRAM，响应后释放临时块；无随运行时间增长的队列。
+
+仅需重新构建、更新 ESP32 固件，再强制刷新设备网页。无需更换 Zynq ELF、PL bit/XSA 或 PC 图像后端。不连接、不烧录设备；网页预览使用本地模拟温度，不代表实际板测。
+
+离线验证：温度模型、寄存器故障注入及计时宏回归通过；缓存可测主机路径行覆盖率 100%、分支取向覆盖率 94.12%。网页专项 47 项通过，包含缓存补取、真实缺失、通道错误、会话重建、状态 JSON 故障下继续读取缓存及图例线型。ESP-IDF 6.1 默认和 combined 配置构建成功。真实 UART 连续采样、后台标签页、网络短断及连续图像传输需之后另行上板验收。
+
+完整网页回归共 83 项通过。两份应用均为 1251424 B，1500 KiB 应用分区剩余 284576 B（19%）。本轮产物（含当前工作区内用户自行更新的焦点表，未将这些表纳入修复提交）：
+
+| 配置 | 绝对路径 | SHA256 |
+|---|---|---|
+| 默认 | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build\ultrasound_psram_udp.bin` | `478c42973069e4cea61c0c6a2b96a880a92115095a8ed9fadc71e05c7f5c9558` |
+| combined | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build-throughput-fast-socket-exp-combined\ultrasound_psram_udp.bin` | `4730d92840ad67d62c1337d7f5e624e648bcb4495195cababb236863be133b4c` |
+
+浏览器离线模拟已核对 computed style：`solid / dashed / dotted`，三路连续采样均仅有一个 SVG 连续路径段。预览保存在 `esp32c61/logs/temperature_history_preview.png`；预览中温度为模拟值，全部写入接口返回 403，未访问真实板卡。

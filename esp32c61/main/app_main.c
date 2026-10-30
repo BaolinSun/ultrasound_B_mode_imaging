@@ -6,11 +6,13 @@
 #include "sdio_bridge.h"
 #include "zynq_uart_bridge.h"
 #include "zynq_control.h"
+#include "temperature_cache.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 
 void app_main(void)
 {
+    if(!temperature_cache_init()) ESP_LOGW("app","Temperature history PSRAM unavailable; latest readings remain available");
     esp_err_t uart_err=zynq_uart_bridge_start();
     if(uart_err!=ESP_OK) ESP_LOGE("app","Zynq UART log unavailable: %s; data services continue",esp_err_to_name(uart_err));
     ESP_ERROR_CHECK(config_store_init());

@@ -221,7 +221,14 @@ function setup() {
         result={message:'配置已保存'};
       }
     } else if(path === '/api/config')result={...backend.config};
-    else if(path === '/api/status')result={...backend.status};
+    else if(path === '/api/status'){
+      if(backend.failStatus){ok=false;result={message:'JSON allocation failed'}}
+      else result={...backend.status};
+    }
+    else if(path === '/api/temperatures'){
+      if(backend.temperatureHistory)result=backend.temperatureHistory;
+      else {ok=false;result={message:'history unavailable'}}
+    }
     else if(path === '/api/upload') {
       backend.status.busy=true;backend.status.result='busy';backend.status.total_bytes=787456;
       backend.status.active_ip=backend.config.target_ip;backend.status.active_port=backend.config.target_port;
@@ -677,4 +684,52 @@ test('temperature cards use compact values and the power legend, line and dot ar
  assert.match(html,/temp-power\{--temp-color:#c74a51;--temp-bg:#fff4f4/);
  assert.match(html,/id="temp-path-power"[^>]*stroke="#ff8087"[^>]*stroke-dasharray="7 4"/);
  assert.match(html,/id="temp-dot-power" fill="#ff8087"/);
+});
+
+test('temperature history backfills browser missed reports without inventing samples',async()=>{
+ const e=setup();await e.settle();await sample(e,temperatureSample(1));
+ e.backend.temperatureHistory={version:1,generation:10,source_gaps:0,parse_errors:0,uart_resets:0,
+  samples:Array.from({length:6},(_,i)=>[i+1,(5-i)*10000,7,40000+i,30000,28000])};
+ const t=temperatureSample(6);t.history_available=true;
+ await sample(e,t,50000);
+ assert.equal(chartHistory(e).length,6);
+ assert.equal((e.elements['temp-path-zynq'].d.match(/M/g)||[]).length,1);
+ assert.equal((e.elements['temp-path-zynq'].d.match(/L/g)||[]).length,5);
+ assert.doesNotMatch(e.elements['temp-chart-status'].textContent,/最近断点/);
+ assert.equal(e.backend.calls.filter(c=>c.path==='/api/temperatures').length,1);
+ await e.context.refresh();assert.equal(e.backend.calls.filter(c=>c.path==='/api/temperatures').length,1);
+});
+
+test('compact temperature history still refreshes when the large status JSON fails',async()=>{
+ const e=setup();await e.settle();
+ e.backend.temperatureHistory={version:1,generation:20,samples:[[1,0,7,41000,31000,29000]]};
+ const t=temperatureSample(1);t.history_available=true;await sample(e,t);
+ e.backend.now+=10000;e.backend.failStatus=true;
+ e.backend.temperatureHistory.samples=[[1,10000,7,41000,31000,29000],[2,0,7,42000,32000,30000]];
+ await e.context.refresh();
+ assert.equal(chartHistory(e).length,2);assert.equal(e.elements['temp-zynq'].textContent,'42.00 °C');
+ assert.equal(e.elements['temp-live']['data-tone'],'ok');
+ assert.equal(e.elements['runtime-wifi']['data-tone'],'stale');
+});
+
+test('history preserves genuine source gaps, channel errors and restart boundaries',async()=>{
+ const e=setup();await e.settle();
+ e.context.applyTemperatureHistory({version:1,generation:1,source_gaps:4,
+  samples:[[1,60000,7,41000,31000,29000],[6,10000,5,42000,32000,30000],[7,0,7,43000,33000,31000]]});
+ assert.equal(chartHistory(e).length,3);assert.equal(chartHistory(e)[1].values[1],null);
+ assert.equal((e.elements['temp-path-zynq'].d.match(/M/g)||[]).length,2);
+ assert.match(e.elements['temp-chart-status'].textContent,/源端\/UART 采样序号缺失 4 组/);
+ const before=chartHistory(e);
+ assert.throws(()=>e.context.applyTemperatureHistory({version:1,generation:1,samples:[[8,0,8,1,2,3]]}));
+ assert.deepEqual(chartHistory(e),before);
+ e.context.applyTemperatureHistory({version:1,generation:2,samples:[[0,0,7,40000,0,-5000]]});
+ assert.equal(chartHistory(e).length,1);assert.deepEqual(chartHistory(e)[0].values,[40,0,-5]);
+ e.context.applyTemperatureHistory({version:1,generation:2,samples:[]});assert.equal(chartHistory(e).length,0);
+});
+
+test('temperature legend scopes solid, dashed and dotted styles to their channels',()=>{
+ assert.match(html,/\.temp-swatch\{[^}]*border-top:2px solid/);
+ assert.match(html,/\.temp-power \.temp-swatch\{border-top-style:dashed\}/);
+ assert.match(html,/\.temp-afe \.temp-swatch\{border-top-style:dotted\}/);
+ assert.doesNotMatch(html,/(?:^|\n)\.temp-swatch\{border-top-style:(?:dashed|dotted)/);
 });
