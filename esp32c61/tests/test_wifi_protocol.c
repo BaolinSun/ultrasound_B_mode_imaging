@@ -2,6 +2,8 @@
 #include <assert.h>
 int main(int argc,char **argv) {
     if(argc==2) return wc_validate(argv[1])?1:0;
+    assert(!wc_validate("CFG BEGIN 1 FOCUS"));assert(wc_validate("CFG BEGIN 1 OTHER"));
+    assert(wc_validate("CFG BEGIN 1 FOCUS extra"));
     assert(wc_crc("123456789",9)==0xcbf43926U);
     char line[WC_LINE];wc_message m;
     for(unsigned i=1;i<160;i++) {

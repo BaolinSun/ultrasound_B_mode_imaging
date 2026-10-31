@@ -73,7 +73,7 @@ class FakeDevice:
                     if command == 'HV DISABLE':self.ps.update(run=0,hv=0)
                     if command == 'HV ENABLE':self.ps['hv']=1
                     if command == 'BEAM START':self.ps['run']=1
-                    if command.startswith('CFG BEGIN '):self.ps.update(seq=int(command.split()[-1]),cfg=1,run=0,hv=0)
+                    if command.startswith('CFG BEGIN '):self.ps.update(seq=int(command.split()[2]),cfg=1,run=0,hv=0)
                     if command in ('CFG END','CFG ABORT'):self.ps.update(cfg=0,run=0,hv=0)
                     tag='CFG_BEGIN' if command.startswith('CFG BEGIN ') else 'BRAM_WR' if command.startswith('BRAM WR ') else command.replace(' ','_')
                     response=f'@ACK {self.ps["seq"]} {tag}'

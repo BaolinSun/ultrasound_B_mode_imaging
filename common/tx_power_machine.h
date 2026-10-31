@@ -22,6 +22,7 @@ typedef struct {
     unsigned phase;
     const char *error;
 } tx_power_machine;
+int tp_confirm_idle(tx_power_machine *,uint32_t timeout_ms);
 void tp_init(tx_power_machine *,const tx_power_ops *);
 int tp_prepare(tx_power_machine *,uint32_t);
 int tp_sleep(tx_power_machine *,uint32_t);

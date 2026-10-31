@@ -38,7 +38,7 @@ python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 -c "FOCUS STATUS
 当前表库 80 mm 的显式事务示例（每个更新版本应以新清单 CRC 为准）：
 
 ```powershell
-python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 -c "CFG BEGIN 100" -c "FOCUS SET 80 0x27cdd731" -c "CFG END" -c "STATUS" -c "FOCUS STATUS"
+python .\pc_tools\zynq_wifi_control.py --device-ip 192.168.3.27 -c "CFG BEGIN 100 FOCUS" -c "FOCUS SET 80 0x27cdd731" -c "CFG END" -c "STATUS" -c "FOCUS STATUS"
 ```
 
 旧 PS/ESP32 不支持命令、表库未就绪、CRC 不匹配或 ACK 不匹配均明确失败；不重放未知结果，不自动启用高压或扫描。PC 后端仍校验本地 configs 是否被修改；修改后重启服务，并更新匹配的 PS 表库与 ESP32 焦点资料。
@@ -70,11 +70,11 @@ ELF 检查读取实际文件字节：16 张表均在只读应用 DDR 内，合�
 
 | 配置 | 绝对路径 | SHA256 |
 |---|---|---|
-| build | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\workspace\B_mode_focus_imaging\build\B_mode_focus_imaging.elf` | `d73c938298e19bd96b73b6fcd34a116e59522d3de2d483ec6b80d4c0b2aaca78` |
-| vitis_frame_store_usb | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\build\vitis_frame_store_usb\B_mode_focus_imaging.elf` | `d88b68efc3c3320779ede80f1da229b05861b87abba01b1ae0025e803f9ffef9` |
-| vitis_frame_store_sdio | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\build\vitis_frame_store_sdio\B_mode_focus_imaging.elf` | `52f3fc50fead1035cb9cdc44bc3654389ad017a527b358870e5fd8f2539ac152` |
-| build | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build\ultrasound_psram_udp.bin` | `815d3f5f4bce54c8cdf189a41862df3b7d06ad775e42b58e70c16af834bd905a` |
-| build-throughput-fast-socket-exp-combined | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build-throughput-fast-socket-exp-combined\ultrasound_psram_udp.bin` | `18faf839ce95ed5add2ed67707aca4207f35bb0c656462832271a6e656b06752` |
+| build | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\workspace\B_mode_focus_imaging\build\B_mode_focus_imaging.elf` | `e994175c844316f59ef83bb921e8b27997b04b4af1d3b4d07943b40c621aeef6` |
+| vitis_frame_store_usb | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\build\vitis_frame_store_usb\B_mode_focus_imaging.elf` | `f9c62e7fe62ef79813e953123cc6641965b593e5724ac8afcfdfd154db734c15` |
+| vitis_frame_store_sdio | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\build\vitis_frame_store_sdio\B_mode_focus_imaging.elf` | `9d061c646282739e5695941759dab086280ff5b1ef4dfcfd282c5210773494d6` |
+| build | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build\ultrasound_psram_udp.bin` | `5142ddbe9bfdda43a3ad46a80f2b8b7449cf57699193bb75ba40c97384ce6e47` |
+| build-throughput-fast-socket-exp-combined | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build-throughput-fast-socket-exp-combined\ultrasound_psram_udp.bin` | `c91aa15dc36176850e85aa59cd1349e7878b80f08455860482a8de4e8a15d0af` |
 
 Vitis IDE 默认目录及独立 USB/SDIO 构建均成功，应用分配区末端为 `0x002850D0`。16 张表均已通过 ELF 实际字节 CRC/SHA 与只读 DDR 地址检查。两份 ESP32 应用均为 1252976 B，应用分区剩余 283024 B。
 
@@ -84,7 +84,7 @@ Vitis IDE 默认目录及独立 USB/SDIO 构建均成功，应用分配区末端
 
 这些均为离线结果，不代表实测焦点切换时间或实际成像质量。本轮没有下载、烧录、操作高压/扫描或覆盖 BOOT.BIN。
 
-## 2026-10-31：实机配置与耗时验证
+## 2026-10-31：前一版本实机配置与耗时验证（尚有固定 1 秒等待）
 
 用户更新两端固件后，经网络测试；未刷写、复位或开启高压、扫描。开始时设备与本机显示服务均空闲，AFE/TX ready，PS 实时查询为 80 mm，抽取参数 down=3。
 
@@ -102,3 +102,19 @@ Vitis IDE 默认目录及独立 USB/SDIO 构建均成功，应用分配区末端
 结论：DDR 预存表选择、写入命令和回执核对在本轮实机测试中正常；实时图像页一次切换约 3 秒。没有进行高压发射/体模成像，因此本记录不等于实际声场或图像焦点效果验收，也不代替长时间稳定性测试。
 
 详细原始记录：`esp32c61/logs/focus_verified_20261031-164927.jsonl`（Git 忽略的本地日志）。
+
+## 焦点专用停扫优化：取消无条件 1 秒等待
+
+两个预设焦点入口现使用 `CFG BEGIN <事务号> FOCUS`，ACK 标签仍为 CFG_BEGIN，后续 FOCUS SET/END/STATUS 不变。普通 CFG BEGIN、USB/UART1 配置、普通 STOP 与异常中止仍保留原行为；不修改通用 Beamform_Stop() 的 sleep(1)。
+
+专用流程先完成 ESP32 上传排空和 PS USB 配置门控，然后关闭高压、仅清 RUN 请求，保留 SPI 配置控制。若本次 PS 启动中的有效 PAUSE 证明仍成立，则复用；否则执行新的 frame_store_pause()，以硬件输入/处理/AXI 及 FIFO 清理回执确认。失败拒绝配置，不强行放行。
+
+随后复用现有 TX 硬件窗口发送一个新的 control=0 请求，不置 HOLD/STDBY、不复位、不改时钟。现有 PL 仅在 TX 请求、四路 SPI、读请求及触发流水级连续空闲八个 TX 周期后确认新请求。PS 必须收到匹配本次序号的 ACK，且 live IDLE、CLOCK_READY 正常、无 BUSY/ERROR，才能继续。旧 ACK 不放行；TX 确认最多等 1 秒，并有计数防护处理计时源故障。超时或 ABI 丢失进入安全故障，保持高压关闭；不在 TX 未确认时清 SPI。
+
+确认完成后再调用 Beamform_Halt()。配置事务仅允许 FOCUS SET 和查询/结束/中止及安全关闭命令，不能借此向 AFE、TX 寄存器、增益或其他 BRAM 参数写入。写焦点前再次检查 TX 确认证明与 DDR 排空证明；任何证明被复位或新操作破坏均拒绝。写入 CRC 校验继续保留。
+
+必须配套更新 Zynq 应用、ESP32 固件和 PC 后端，刷新网页；旧固件明确拒绝新语法，不静默回退。不需要更新 bit/XSA，不改变 AFE/TX 电源模式、CPU 策略或图像协议。本轮没有连接、下载、烧录或操作板卡，没有覆盖 BOOT.BIN。
+
+离线验证：277 项 Python 回归中 276 项通过、1 项既有历史样本跳过；网页、原生 C、USB/SDIO 和电源控制回归通过。新增测试覆盖复用/失效 PAUSE、扫描中仅清RUN、TX旧ACK/错误序号/停钟/超时/计时源冻结/ABI异常、焦点事务写入限制及普通配置仍走旧停止路径。现有 TX 硬件、SPI和读回 CDC 自检查仿真通过，未修改 RTL。Vitis USB/SDIO 及 IDE 默认目录、ESP-IDF 默认/combined 构建成功，焦点表 ELF 校验通过。
+
+上方约 3 秒的数据属于优化前版本；本版本尚未上板测速，不能直接视为已经达到 1～2 秒。板测需分别覆盖已停机连续切换，以及成像/上传活跃时的排空，检查耗时、错误CRC/超时拒绝、最终高压和扫描关闭、手动恢复后成像正常。

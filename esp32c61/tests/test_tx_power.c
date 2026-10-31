@@ -7,8 +7,19 @@ static uint32_t r[16];
 static bool gated,idle;
 static int stop_error,pause_error;
 static unsigned issues,pauses,pause_delay;
-static uint64_t ms(void *c){(void)c;return now;}
-static uint32_t read_reg(void *c,unsigned a){(void)c;return r[a/4];}
+static unsigned config_test;
+static uint64_t ms(void *c){(void)c;return config_test&&config_test!=7?now++:now;}
+static uint32_t read_reg(void *c,unsigned a){
+ (void)c;
+ if(config_test && (r[TP_STATUS/4]&TP_BUSY) && now>=3){
+  if(config_test==1){r[TP_ACK/4]=r[TP_SEQUENCE/4];r[TP_STATUS/4]=TP_IDLE|TP_CLOCK_READY;}
+  if(config_test==3){r[TP_ACK/4]=r[TP_SEQUENCE/4]-1;r[TP_STATUS/4]=TP_IDLE|TP_CLOCK_READY;}
+  if(config_test==4){r[TP_ACK/4]=r[TP_SEQUENCE/4];r[TP_STATUS/4]=TP_IDLE;}
+  if(config_test==5)r[TP_VERSION/4]=0;
+  if(config_test==6){r[TP_ACK/4]=r[TP_SEQUENCE/4];r[TP_STATUS/4]=TP_IDLE|TP_CLOCK_READY|TP_ERROR;}
+ }
+ return r[a/4];
+}
 static void write_reg(void *c,unsigned a,uint32_t v){(void)c;r[a/4]=v;if(a==TP_SEQUENCE){issues++;r[TP_STATUS/4]|=TP_BUSY;}}
 static int stop(void *c){(void)c;return stop_error;}
 static bool io_idle(void *c){(void)c;return idle;}
@@ -20,6 +31,7 @@ static void ack(void){
     r[TP_STATUS/4]=TP_IDLE|TP_CLOCK_READY|((r[TP_CONTROL/4]&1)?TP_HELD:0)|((r[TP_CONTROL/4]&2)?TP_ASLEEP:0);
 }
 static void init(void){
+    config_test=0;
     memset(r,0,sizeof(r));r[0]=TP_MAGIC;now=0;idle=true;stop_error=pause_error=0;issues=pauses=pause_delay=0;
     tx_power_ops o={0,ms,read_reg,write_reg,stop,io_idle,pause_io,gate};tp_init(&p,&o);
     assert(p.state==TX_WAKING&&gated);ack();tp_poll(&p);assert(tp_allowed(&p)&&!gated);
@@ -63,5 +75,13 @@ int main(void){
     init();o=p.io;r[TP_ACK/4]=UINT32_MAX;r[TP_SEQUENCE/4]=UINT32_MAX;tp_init(&p,&o);assert(p.sequence==1);ack();tp_poll(&p);assert(p.state==TX_READY);
     init();tp_prepare(&p,1);now=89999;pause_delay=2;assert(tp_sleep(&p,1)<0&&issues==1&&p.state==TX_FAULT);
     init();tp_prepare(&p,1);tp_sleep(&p,1);ack();tp_poll(&p);pause_delay=5001;assert(tp_wake(&p)<0&&issues==2&&p.state==TX_FAULT);
+    init();assert(tp_confirm_idle(&p,0)<0&&issues==1);
+    idle=false;assert(tp_confirm_idle(&p,10)<0&&issues==1);
+    init();r[TP_CONTROL/4]=TP_HOLD;assert(tp_confirm_idle(&p,10)<0&&issues==1);
+    init();config_test=1;assert(!tp_confirm_idle(&p,20)&&p.state==TX_READY&&tp_allowed(&p)&&issues==2&&r[TP_CONTROL/4]==0);
+    for(unsigned mode=2;mode<=7;mode++){
+        init();config_test=mode;assert(tp_confirm_idle(&p,10)<0&&p.state==TX_FAULT&&gated);
+        assert(!(r[TP_CONTROL/4]&(TP_HELD|TP_ASLEEP)));
+    }
     puts("PASS tx_power_machine: drain, ownership, ACK, settle, reset, fault");return 0;
 }

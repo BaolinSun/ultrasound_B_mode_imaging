@@ -43,10 +43,15 @@ void focus_bank_invalidate(void){focused=0;}
 const char *Focus_Apply(unsigned depth,unsigned crc);
 static unsigned hv,run,enables,writes,afe_fail,tx_full,resume_failure,downsample,pause_failure;
 static unsigned usb_drain_failure, usb_config_blocked;
+static unsigned pause_calls,retained_ok,tx_idle_fail,tx_proof=1,request_calls,stop_calls;
 static unsigned hv_stuck,halt_with_hv;
 int usb_image_config_begin(void) { usb_config_blocked=!usb_drain_failure;return usb_drain_failure?-1:0; }
 void usb_image_config_end(void) { usb_config_blocked=0; }
-int frame_store_pause(void) { assert(!hv&&!run);return pause_failure?-1:0; }
+int frame_store_pause(void) { assert(!hv&&!run);pause_calls++;retained_ok=!pause_failure;return pause_failure?-1:0; }
+int frame_store_pause_retained(void){return retained_ok?0:-1;}
+int tx_power_confirm_config_idle(void){assert(!hv&&!run);return tx_idle_fail?-1:0;}
+int tx_power_config_idle_retained(void){return tx_proof;}
+void Beamform_RequestStop(void){run=0;request_calls++;}
 const volatile frame_store_pause_diag_t *frame_store_pause_diagnostic(void) {
     static const frame_store_pause_diag_t d={.reason=FS_DRAIN_TIMEOUT,.version=FS_MAGIC,.flags=13,.axi=0x2e101};return &d;
 }
@@ -83,7 +88,7 @@ u32 XBram_ReadReg(u32 base,u32 off) { (void)base;(void)off;assert(0);return 0; }
 void hv_enable(void) { hv=1;enables++; }
 void hv_disable(void) { if(!hv_stuck)hv=0; }
 u32 hv_is_enabled(void) { return hv; }
-void Beamform_Stop(void) { hv=run=0; }
+void Beamform_Stop(void) { stop_calls++;hv=run=0; }
 int Beamform_Start(void) { if(resume_failure){hv=run=0;return -1;}hv_enable();run=1;return 0; }
 void Beamform_Halt(void) { if(hv)halt_with_hv++;run=0; }
 void Beamform_Pause(void) { run=0; }
@@ -278,6 +283,22 @@ int main(void) {
     uart_handle_wifi_line("CFG END",12,capture);assert(!hv&&!run);
     uart_handle_wifi_line("FOCUS STATUS",12,capture);assert(strstr(answer,"depth=80")&&strstr(answer,"ready=1"));
     uart_handle_wifi_line("CFG BEGIN 112",12,capture);uart_handle_wifi_line("CFG ABORT",12,capture);assert(!focused);
+    unsigned old_stops=stop_calls,old_pause=pause_calls;retained_ok=1;
+    uart_handle_wifi_line("CFG BEGIN 120 FOCUS",12,capture);
+    assert(strstr(answer,"CFG_BEGIN")&&stop_calls==old_stops&&pause_calls==old_pause&&request_calls);
+    uart_handle_wifi_line("BRAM WR delay_profile 0 1 0",12,capture);assert(strstr(answer,"FOCUS_ONLY_TRANSACTION")&&!uart_config_active());
+    retained_ok=0;old_pause=pause_calls;hv=run=1;
+    uart_handle_wifi_line("CFG BEGIN 121 FOCUS",12,capture);assert(strstr(answer,"CFG_BEGIN")&&pause_calls==old_pause+1&&!hv&&!run);
+    uart_handle_wifi_line("FOCUS SET 80 0x12345678",12,capture);assert(strstr(answer,"FOCUS_SET"));
+    uart_handle_wifi_line("CFG END",12,capture);assert(!hv&&!run);
+    tx_idle_fail=1;uart_handle_wifi_line("CFG BEGIN 122 FOCUS",12,capture);assert(strstr(answer,"FOCUS_TX_IDLE_OR_DRAIN")&&!uart_config_active());tx_idle_fail=0;
+    retained_ok=0;pause_failure=1;old_stops=stop_calls;
+    uart_handle_wifi_line("CFG BEGIN 123 FOCUS",12,capture);assert(strstr(answer,"DDR_DRAIN")&&!uart_config_active()&&stop_calls==old_stops);pause_failure=0;
+    uart_handle_wifi_line("CFG BEGIN 124 FOCUS",12,capture);assert(strstr(answer,"CFG_BEGIN"));tx_proof=0;
+    uart_handle_wifi_line("FOCUS SET 80 0x12345678",12,capture);assert(strstr(answer,"FOCUS_TX_PROOF_LOST")&&!uart_config_active());tx_proof=1;
+    uart_handle_usb_line("CFG BEGIN 125 FOCUS",capture);assert(strstr(answer,"CFG_KIND"));
+    old_stops=stop_calls;uart_handle_wifi_line("CFG BEGIN 126",12,capture);assert(strstr(answer,"CFG_BEGIN")&&stop_calls==old_stops+1);
+    uart_handle_wifi_line("CFG END",12,capture);
     puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE+TX power interlocks/bounded TX/CPU1 warning only/STOP closes HV first");
     return 0;
 }

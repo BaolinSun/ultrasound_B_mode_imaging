@@ -147,7 +147,7 @@ class ViewerControl:
         try:
             self.active(cancel)
             owned = True  # Lost submission ACK may still mean CFG was accepted.
-            self.batch(['CFG BEGIN '+str(self.sequence)])
+            self.batch(['CFG BEGIN '+str(self.sequence)+' FOCUS'])
             for offset in range(0, len(commands), 8):
                 self.active(cancel)
                 self.batch(commands[offset:offset+8])

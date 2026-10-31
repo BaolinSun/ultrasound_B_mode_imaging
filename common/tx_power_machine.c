@@ -19,6 +19,19 @@ bool tp_allowed(const tx_power_machine *p) {
     return p->state==TX_READY && abi(p) && ack(p) &&
       (rd(p,TP_STATUS)&(TP_HELD|TP_ASLEEP|TP_CLOCK_READY|TP_ERROR))==TP_CLOCK_READY;
 }
+int tp_confirm_idle(tx_power_machine *p,uint32_t timeout_ms) {
+    /* Control remains zero: no STDBY, HOLD, reset or clock change. A fresh
+     * sequence is ACKed only after eight quiet TX-domain cycles in existing PL. */
+    if(!timeout_ms || !tp_allowed(p) || rd(p,TP_CONTROL)!=0 || !p->io.idle(p->io.ctx)) return -1;
+    uint64_t start=p->io.ms(p->io.ctx);
+    issue(p,0);
+    for(unsigned polls=0;polls<10000000U;polls++) {
+        if(!abi(p)) {fault(p,"TX_CONFIG_ABI");return -1;}
+        if(ack(p) && (rd(p,TP_STATUS)&63U)==(TP_IDLE|TP_CLOCK_READY) && rd(p,TP_CONTROL)==0) return 0;
+        if(p->io.ms(p->io.ctx)-start>=timeout_ms) break;
+    }
+    fault(p,"TX_CONFIG_IDLE_TIMEOUT");return -1;
+}
 const char *tp_name(tx_power_state s) {
     static const char *const n[]={"unknown","ready","quiescing","sleep","waking","fault"};
     return (unsigned)s<6?n[s]:"fault";

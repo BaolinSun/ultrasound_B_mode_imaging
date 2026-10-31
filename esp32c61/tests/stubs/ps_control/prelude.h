@@ -24,6 +24,7 @@ typedef void (*command_response_fn)(const char *);
 #define XST_INVALID_PARAM 2
 u32 XBram_ReadReg(u32,u32);
 void Beamform_Stop(void);
+void Beamform_RequestStop(void);
 int Beamform_Start(void);
 void Beamform_Pause(void);
 int Beamform_Resume(void);

@@ -2,6 +2,8 @@
 #define UB_TX_POWER_H
 #include "xil_types.h"
 void tx_power_init(void);
+int tx_power_confirm_config_idle(void);
+int tx_power_config_idle_retained(void);
 u32 tx_power_operation_sequence(void);
 void tx_power_poll(void);
 int tx_power_allowed(void);

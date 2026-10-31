@@ -87,7 +87,7 @@ static inline const char *wc_validate(const char *line) {
         return n==4&&!strcmp(t[1],"SET")&&wc_uint(t[2],&a)&&a>=20&&a<=170&&a%10==0&&wc_uint(t[3],&b)?NULL:"FOCUS_ARGS";
     }
     if(!strcmp(t[0],"CFG")) {
-        if(!strcmp(t[1],"BEGIN")) return n==3&&wc_uint(t[2],&a)?NULL:"CFG_SEQ";
+        if(!strcmp(t[1],"BEGIN")) return (n==3 || (n==4&&!strcmp(t[3],"FOCUS")))&&wc_uint(t[2],&a)?NULL:"CFG_SEQ";
         return n==2&&(!strcmp(t[1],"END")||!strcmp(t[1],"ABORT"))?NULL:"CFG_OP";
     }
     if(!strcmp(t[0],"BEAM")) return n==2&&(!strcmp(t[1],"START")||!strcmp(t[1],"STOP"))?NULL:"BEAM_OP";

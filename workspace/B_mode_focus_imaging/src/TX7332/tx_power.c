@@ -13,7 +13,7 @@
 #include "../../../../common/tx_power_machine.c"
 static tx_power_machine machine;
 static int initialized;
-static u32 operation_sequence;
+static u32 operation_sequence,config_idle_sequence;
 u32 tx_power_operation_sequence(void) { return operation_sequence; }
 static uint64_t ms(void *c) {(void)c;XTime t;XTime_GetTime(&t);return (uint64_t)t*1000U/(uint64_t)(COUNTS_PER_SECOND);}
 static uint32_t read_reg(void *c,unsigned a) {(void)c;return Xil_In32(TP_BASE+a);}
@@ -34,6 +34,17 @@ static int pause_tx(void *c) {
     int rc=sleeping?frame_store_pause_retained():frame_store_pause();
     if(!rc)Beamform_Halt();
     return rc;
+}
+int tx_power_confirm_config_idle(void) {
+    config_idle_sequence=0;
+    if(!initialized || hv_is_enabled() || Beamform_GetRunRequest() || frame_store_pause_retained()!=0) return -1;
+    if(tp_confirm_idle(&machine,1000)!=0) return -1;
+    config_idle_sequence=machine.sequence;return 0;
+}
+int tx_power_config_idle_retained(void) {
+    return initialized && config_idle_sequence && machine.sequence==config_idle_sequence &&
+        tp_allowed(&machine) && read_reg(0,TP_CONTROL)==0 &&
+        (read_reg(0,TP_STATUS)&63U)==(TP_IDLE|TP_CLOCK_READY);
 }
 void tx_power_init(void) {
     tx_power_ops ops={0,ms,read_reg,write_reg,stop_tx,idle_tx,pause_tx,gating};

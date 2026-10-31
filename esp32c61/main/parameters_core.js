@@ -98,7 +98,7 @@ class Transaction {
   try{
    if(focus){const info=await this.batch(['FOCUS STATUS']);if(!/^@FOCUS v=1 ready=1 depth=\d+ crc=0x[0-9a-fA-F]{8} words=16384$/.test(info[0].response))throw new OutcomeError('PS 焦点表库未就绪，请更新固件');}
    // Mark possible ownership before POST: a lost reply must never trigger replay.
-   this.owned=true;responses.push(...await this.batch(['CFG BEGIN '+this.seq]));
+   this.owned=true;responses.push(...await this.batch(['CFG BEGIN '+this.seq+(focus?' FOCUS':'')]));
    for(let n=0;n<snapshot.length;n+=8){if(this.cancelled)throw new OutcomeError('用户取消');const part=snapshot.slice(n,n+8);responses.push(...await this.batch(part));this.progress(Math.min(n+8,snapshot.length),snapshot.length, responses.slice(-8))}
    if(this.cancelled)throw new OutcomeError('用户取消');
    if(focus){const ack=responses.find(v=>v.command===commands[0]);if(!ack||ack.response.toLowerCase()!==`@ACK ${this.seq} FOCUS_SET ${focus[1]} ${focus[2]}`.toLowerCase())throw new OutcomeError('焦点 ACK 不匹配',true);}

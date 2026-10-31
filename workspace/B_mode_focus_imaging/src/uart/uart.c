@@ -43,6 +43,7 @@ static volatile u8 uart_line_overflow = 0;
 static u32 uart_cfg_seq = 0;
 static u8 uart_cfg_active = 0;
 static u8 uart_cfg_done = 0;
+static u8 cfg_focus_only;
 int uart_config_active(void) { return uart_cfg_active!=0; }
 int uart_idle_pending(void) {
     if(uart_cfg_active || uart_line_count || uart_line_overflow || uartps.Config.BaseAddress!=UART_BASEADDR) return 1;
@@ -59,7 +60,7 @@ static u64 cfg_activity;
 static u64 command_ms(void) { XTime t; XTime_GetTime(&t); return (u64)t/(COUNTS_PER_SECOND/1000U); }
 static int owns_cfg(void) { return cfg_owner==command_source && (cfg_owner!=SOURCE_WIFI || cfg_session==wifi_session); }
 static void wifi_abort(void) {
-    focus_bank_invalidate(); hv_disable(); Beamform_Halt(); uart_cfg_active=0; uart_cfg_done=0;
+    cfg_focus_only=0; focus_bank_invalidate(); hv_disable(); Beamform_Halt(); uart_cfg_active=0; uart_cfg_done=0;
     usb_image_config_end();
     (void)AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
 }
@@ -258,6 +259,9 @@ static void uart_handle_cfg(char **ctx)
 	}
 
 	if (strcmp(op, "BEGIN") == 0) {
+        char *kind=uart_next_token(ctx);
+        int focus_only=kind && !strcmp(kind,"FOCUS");
+        if(kind && (!focus_only || command_source!=SOURCE_WIFI || uart_next_token(ctx))) {uart_nack(0,"CFG_KIND");return;}
 		if (!uart_parse_u32(arg, &value)) {
 			uart_nack(0, "CFG_SEQ");
 			return;
@@ -268,10 +272,18 @@ static void uart_handle_cfg(char **ctx)
 		}
 		uart_cfg_seq = value;
 		if (usb_image_config_begin() != 0) {
-			Beamform_Stop(); uart_nack(value, "USB_DRAIN"); return;
+			if(focus_only) {hv_disable();Beamform_RequestStop();}
+            else Beamform_Stop();
+            uart_nack(value, "USB_DRAIN"); return;
 		}
-		Beamform_Stop();
-        if(frame_store_pause()!=0) {
+        if(focus_only) {
+            /* Do not reset SPI control while an accepted TX operation retires. */
+            hv_disable();Beamform_RequestStop();
+            if(hv_is_enabled() || Beamform_GetRunRequest()) {
+                usb_image_config_end();uart_nack(value,"FOCUS_STOP_FAILED");return;
+            }
+        } else Beamform_Stop();
+        if((!focus_only || frame_store_pause_retained()!=0) && frame_store_pause()!=0) {
             const volatile frame_store_pause_diag_t *d=frame_store_pause_diagnostic();
             xil_printf("@DDR PAUSE reason=%u version=%08x seq=%u ack=%u result=%u flags=%08x\r\n",
                 (unsigned)d->reason,(unsigned)d->version,(unsigned)d->sequence,
@@ -283,6 +295,14 @@ static void uart_handle_cfg(char **ctx)
                 d->reason==FS_DRAIN_TIMEOUT?((d->flags&4U)?"DDR_DRAIN_BUSY":"DDR_DRAIN_TIMEOUT"):"DDR_DRAIN_RESULT";
 			usb_image_config_end(); uart_nack(value,why); return;
         }
+        if(focus_only) {
+            if(tx_power_confirm_config_idle()!=0 || frame_store_pause_retained()!=0 || !tx_power_config_idle_retained()) {
+                /* Keep SPI control intact on failure; HV/RUN stay off. */
+                usb_image_config_end();uart_nack(value,"FOCUS_TX_IDLE_OR_DRAIN");return;
+            }
+            Beamform_Halt();
+        }
+        cfg_focus_only=(u8)focus_only;
 		uart_cfg_active = 1;
 		cfg_owner=command_source; cfg_session=wifi_session; cfg_activity=command_ms();
 		uart_cfg_done = 0;
@@ -302,7 +322,7 @@ static void uart_handle_cfg(char **ctx)
 		if(AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL)!=XST_SUCCESS) {
 			uart_nack(uart_cfg_seq,"AFE_MAP_FAIL"); return;
 		}
-		uart_cfg_active = 0;
+		uart_cfg_active = 0; cfg_focus_only=0;
 		usb_image_config_end();
 		uart_cfg_done = 1;
 		if(command_source==SOURCE_WIFI) { hv_disable(); Beamform_Halt(); }
@@ -314,7 +334,7 @@ static void uart_handle_cfg(char **ctx)
 	if (strcmp(op, "ABORT") == 0) {
         focus_bank_invalidate();
 		AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
-		uart_cfg_active = 0;
+		uart_cfg_active = 0; cfg_focus_only=0;
 		usb_image_config_end();
 		uart_cfg_done = 0;
 		Beamform_Stop();
@@ -625,6 +645,10 @@ static void uart_handle_line(char *line)
 	   strcmp(line,"BEAM STOP") && strcmp(line,"STATUS")) {
 		uart_emitf("@NACK %u CFG_OWNER",uart_cfg_seq); return;
 	}
+    if(uart_cfg_active && cfg_focus_only && strcmp(line,"STATUS") && strcmp(line,"CFG END") && strcmp(line,"CFG ABORT") &&
+       strcmp(line,"HV DISABLE") && strcmp(line,"BEAM STOP") && strncmp(line,"FOCUS SET ",10)) {
+        uart_nack(uart_cfg_seq,"FOCUS_ONLY_TRANSACTION");return;
+    }
 	if(!strcmp(line,"STATUS")) {
 		cpu0_idle_report_request();
 		uart_emitf("@STATUS v=1 cfg=%u owner=%u seq=%u run=%u hv=%u run_src=ps spi=%u down=%u afe=%s tx=%s cpu1_disabled=%u wfi=%u",uart_cfg_active,
@@ -643,6 +667,7 @@ static void uart_handle_line(char *line)
         u32 depth,crc;
         if(command_source!=SOURCE_WIFI || !uart_cfg_active || !owns_cfg()) {uart_nack(uart_cfg_seq,"FOCUS_CFG_OWNER");return;}
         if(!op || strcmp(op,"SET") || !uart_parse_u32(depth_text,&depth) || !uart_parse_u32(crc_text,&crc) || uart_next_token(&ctx)) {uart_nack(uart_cfg_seq,"FOCUS_ARGS");return;}
+        if(cfg_focus_only && !tx_power_config_idle_retained()) {uart_nack(uart_cfg_seq,"FOCUS_TX_PROOF_LOST");return;}
         const char *error=Focus_Apply(depth,crc);
         if(error) uart_nack(uart_cfg_seq,error);
         else uart_emitf("@ACK %u FOCUS_SET %u 0x%08x",uart_cfg_seq,depth,crc);

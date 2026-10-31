@@ -50,7 +50,7 @@ def validate_command(line):
                 depth=number(t[2],170);number(t[3])
                 if depth>=20 and depth%10==0: return line
         if root == "CFG":
-            if op == "BEGIN" and len(t) == 3:
+            if op == "BEGIN" and (len(t) == 3 or (len(t) == 4 and t[3] == "FOCUS")):
                 number(t[2]); return line
             if op in ("END", "ABORT") and len(t) == 2:
                 return line

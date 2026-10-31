@@ -79,7 +79,7 @@ test('preset transaction uses one CRC-bound SET and checks final focus without r
    });return {busy:false,state:failure==='old'?'failed':'succeeded',count:current.length,completed:current.length,results};
   },{random:()=>12,delay:async()=>{}});
   if(failure)await assert.rejects(tx.run(['FOCUS SET 80 0x12345678']));else await tx.run(['FOCUS SET 80 0x12345678']);
-  const commands=posts.flat();assert.equal(commands.filter(c=>c.startsWith('FOCUS SET ')).length,failure==='old'?0:1);
+  const commands=posts.flat();if(!failure)assert.ok(commands.includes('CFG BEGIN 12 FOCUS'));assert.equal(commands.filter(c=>c.startsWith('FOCUS SET ')).length,failure==='old'?0:1);
   assert.ok(!commands.some(c=>/BRAM WR|BEAM START|HV ENABLE/.test(c)));
   if(failure==='old')assert.ok(!commands.some(c=>c.startsWith('CFG BEGIN')));
  }
