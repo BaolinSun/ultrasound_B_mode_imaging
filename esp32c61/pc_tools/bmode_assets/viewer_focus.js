@@ -11,7 +11,7 @@ function renderFocusStatus(s=lastViewerStatus){
  el('focus-apply').setAttribute('aria-busy',String(viewerFocusPending||s.control_action==='focus'));
  el('focus-apply').setAttribute('title',`下发 ${depth} mm 焦点配置（停扫并关闭高压）`);
  for(const d of viewerFocusPresets){el('focus-preset-'+d).disabled=blocked;el('focus-preset-'+d).setAttribute('aria-pressed',String(d===depth&&!!profile))}
- if(s.control_action==='focus')focusMessage(s.state==='configuring'?`焦点下发 ${s.focus?.completed||0}/2048`:'焦点：正在停扫并排空上传…');
+ if(s.control_action==='focus')focusMessage(s.state==='configuring'?`焦点切换 ${s.focus?.completed||0}/1`:'焦点：正在停扫并排空上传…');
  else if(s.error)focusMessage('操作失败，请查看页面提示',true);
  else if(viewerFocusError)focusMessage(viewerFocusError,true);
  else if(s.focus?.last_applied_mm)focusMessage('最近下发 '+s.focus.last_applied_mm+' mm');

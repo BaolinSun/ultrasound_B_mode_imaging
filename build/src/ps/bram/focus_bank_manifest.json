@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "byte_order": "little",
+  "profiles": [
+    {
+      "depth_mm": 20,
+      "words": 16384,
+      "crc32": "8ef35983",
+      "sha256": "75f7ba15caba87f6ca9774fb60d669fc71598b21373e9ee577571a2a5deae822"
+    },
+    {
+      "depth_mm": 30,
+      "words": 16384,
+      "crc32": "c5ce7ecc",
+      "sha256": "da4275bbbbb063521fb306138353132df367d0d37b05e2458ae60d67cfbe6dbc"
+    },
+    {
+      "depth_mm": 40,
+      "words": 16384,
+      "crc32": "9b9864e9",
+      "sha256": "40a84829ab7a37027e0f290b201676c373cf36bc75578bb4f94ef0ef61576e31"
+    },
+    {
+      "depth_mm": 50,
+      "words": 16384,
+      "crc32": "17fcaf30",
+      "sha256": "d65ec69af39404df938d3a020bce3f9fe008f56b4444f7a42538148a8686bef4"
+    },
+    {
+      "depth_mm": 60,
+      "words": 16384,
+      "crc32": "84a2bfba",
+      "sha256": "5baf72b6887b23f57944a24ab9ffa68d0728cc700c0f99883110da672d5d5d5b"
+    },
+    {
+      "depth_mm": 70,
+      "words": 16384,
+      "crc32": "b5596e89",
+      "sha256": "d14fb7cdf299b897c28174170d7b5829b4bb585708acfd025700f4837a50ef60"
+    },
+    {
+      "depth_mm": 80,
+      "words": 16384,
+      "crc32": "27cdd731",
+      "sha256": "481ebb2b5ba634c5fe47c3ec431ad000a7a1950ca41e52ae558de5c543954b90"
+    },
+    {
+      "depth_mm": 90,
+      "words": 16384,
+      "crc32": "8bcd1b8f",
+      "sha256": "e136ea6cb546f060a14fc8c9b91c7bce693a17141b34ad517fe2e5acae831ed2"
+    },
+    {
+      "depth_mm": 100,
+      "words": 16384,
+      "crc32": "779dd011",
+      "sha256": "4f808497b7ac2500fdc7dc9f335c9026f9d21133e8bc241344440c396942bb96"
+    },
+    {
+      "depth_mm": 110,
+      "words": 16384,
+      "crc32": "5e0e8298",
+      "sha256": "a73a2aa2e5425fa189fe04b1fd94f0922ebaaf6677e08a7a8c5205c37ab4347f"
+    },
+    {
+      "depth_mm": 120,
+      "words": 16384,
+      "crc32": "ab13063d",
+      "sha256": "b17f5e1780e754aeb26c1677e69056870a687f03a763ec9d4c65936fde2109b1"
+    },
+    {
+      "depth_mm": 130,
+      "words": 16384,
+      "crc32": "7983163b",
+      "sha256": "d7d58403be76c7ac8c1e9365d2e1c0bbc4732dc45dbce5259a2eb18498f16e60"
+    },
+    {
+      "depth_mm": 140,
+      "words": 16384,
+      "crc32": "6e456f1f",
+      "sha256": "7f3347acaad37aefa3e00f14e227d84a0b938881c6b557a09328c7a6596f06bb"
+    },
+    {
+      "depth_mm": 150,
+      "words": 16384,
+      "crc32": "3206f98a",
+      "sha256": "f9e540149db69903090b9993bbae47a20818be25a8bc8e9c88faf3b403ba259f"
+    },
+    {
+      "depth_mm": 160,
+      "words": 16384,
+      "crc32": "34d94dc1",
+      "sha256": "0e5fa3d79a7284d7fd981f49f9cdd6158b321ddae318db0bc1f32036cf9dd1ef"
+    },
+    {
+      "depth_mm": 170,
+      "words": 16384,
+      "crc32": "4fdefe3e",
+      "sha256": "1228eb39bb5eacb0f73b668198b7652613453d50121f61e188f160a1fa62e20d"
+    }
+  ],
+  "source_sha256": {
+    "tools/para_cal/generate_bram_defaults.m": "abae165300d8fe36a1e093839df692de88971ae74ccc6b7b5795ffe85f473577",
+    "tools/para_cal/generate_transmit_delay_profiles.m": "96c9954eacbb0cfd00f3b1d0288740d705170430fb93c18b408e5226117e0cf6",
+    "tools/para_cal/para_dfilter_quant.m": "150acbbd5d6ba9b488fa02756de38f61144b61c03c975a10802806e0f7c3909c",
+    "tools/para_cal/para_fdemod_quant.m": "d9c61e8b64faa26869332b90537c1df18be1e67b2d028b7d0403429c96ff9c5a",
+    "tools/para_cal/para_hamming_quant.m": "25dfa6a28c749094aab6b915864dcbea3a54d8c9307d00001db77796bfa41b00",
+    "tools/para_cal/para_log_quant.m": "d13d08bad8de27b0e3974a573bc721193e560b6b7772c13d3f70604b8c913c24",
+    "tools/para_cal/para_sin_beta_quant.m": "d25372506db842d21b5597d0699824c96900f4d773e6104ef37877566954f6a6",
+    "tools/para_cal/para_timing_quant.m": "3898837957cb8ad51634bda79ab6805ef52fadc8ba7bcce322526ea1fbd55e6d",
+    "tools/para_cal/para_transmit_delay.m": "ae1e9e883a02db4ffb385844a841e9cd5b69cea03492ed8cd815f4f0c5f01e58",
+    "tools/para_cal/para_x_element_quant.m": "5ddd32cf5665b27ee95c52d0fa287eb4605df430b719c1c8ed9a8c0b53be2cb9",
+    "tools/para_cal/scripts/load_probe_channel_map.m": "57c47e5ae928df110f910f211ff619306bf311e577a7aec3b2e9e6ea43ecaef5",
+    "tools/para_cal/scripts/map_physical_to_tx_hardware.m": "1ca4021a1afc7807f2cf98ae17d3e9f76adaac9662172673863728174001cebc",
+    "tools/para_cal/scripts/probe_channel_map.csv": "64ac22d57d0efeb9d1b40a6a5fcbab93263770905f4fe47b34439fc1de1db312",
+    "tools/para_cal/scripts/quantize_integer_words.m": "d5135423a58d9e51e050c3cd60605189cf9b8169bc9da222c0bd6c88488d8389",
+    "tools/para_cal/scripts/quantize_signed_words.m": "bb5d2b2d08aeba22ec40b09b76f0d950ca0cf431baab553deb217b5fa1ca9f0b",
+    "tools/para_cal/scripts/quantize_unsigned_words.m": "70d48f7824d2206856be9e00304ae11608e1816dc451b63ef34c2e619667f586",
+    "tools/para_cal/scripts/write_bram_json.m": "b2b5fb36ccba50d18b73c799a3104bd2cd4de179dc7435af5d7f0e57e2210a9f",
+    "tools/para_cal/scripts/write_C_array_file.m": "0bdcc748ac0cf0d086e41c18fbffee998683a81e23170ae608ba779f60f065c7"
+  },
+  "c_sha256": "72903a7a5915cfd65f96099717792e5131769a47cb29da952de1d4712fb294d4"
+}

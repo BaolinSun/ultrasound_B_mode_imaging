@@ -84,23 +84,28 @@ class Transaction {
   for(;;){let job;try{job=await this.request('/api/zynq/jobs/'+accepted.job_id)}catch(e){throw new OutcomeError('查询中断，执行结果未知：'+e.message,true)}
    if(!job.busy){const results=job.results??[];if(job.state==='unknown')throw new OutcomeError('PS 执行结果未知：'+job.error,true);
     if(job.state!=='succeeded')throw new OutcomeError('批次失败：'+(job.error||job.state));
-    if(job.count!==commands.length||job.completed!==commands.length||results.length!==commands.length||results.some((v,i)=>v.command!==commands[i]||!/^@(ACK|RD|STATUS) /.test(v.response??'')))throw new OutcomeError('批次回执不完整或不匹配',true);
+    if(job.count!==commands.length||job.completed!==commands.length||results.length!==commands.length||results.some((v,i)=>v.command!==commands[i]||!/^@(ACK|RD|STATUS|FOCUS) /.test(v.response??'')))throw new OutcomeError('批次回执不完整或不匹配',true);
     return results;
    }if(this.now()>=deadline)throw new OutcomeError('等待命令超时，执行结果未知',true);await this.delay(150);
   }
  }
  async run(commands,{down=null}={}){
   if(this.busy||this.uncertain)throw Error('控制忙碌或上次结果未知；请先查询设备状态');
-  if(!commands.length||commands.some(c=>!(/^(AFE (WR|RD) |TX7332 (WR|RD) |BRAM WR )/.test(c))||c.length>159||!/^[\x20-\x7e]+$/.test(c)))throw Error('不是有效的参数命令');
+  if(!commands.length||commands.some(c=>!(/^(AFE (WR|RD) |TX7332 (WR|RD) |BRAM WR |FOCUS SET )/.test(c))||c.length>159||!/^[\x20-\x7e]+$/.test(c)))throw Error('不是有效的参数命令');
+  const focus=commands.length===1?/^FOCUS SET (20|30|40|50|60|70|80|90|100|110|120|130|140|150|160|170) (0x[0-9a-fA-F]{8})$/.exec(commands[0]):null;
+  if(commands.some(c=>c.startsWith('FOCUS '))&&!focus)throw Error('焦点短命令格式错误');
   const snapshot=commands.slice();this.busy=true;this.cancelled=false;const responses=[];
   try{
+   if(focus){const info=await this.batch(['FOCUS STATUS']);if(!/^@FOCUS v=1 ready=1 depth=\d+ crc=0x[0-9a-fA-F]{8} words=16384$/.test(info[0].response))throw new OutcomeError('PS 焦点表库未就绪，请更新固件');}
    // Mark possible ownership before POST: a lost reply must never trigger replay.
    this.owned=true;responses.push(...await this.batch(['CFG BEGIN '+this.seq]));
    for(let n=0;n<snapshot.length;n+=8){if(this.cancelled)throw new OutcomeError('用户取消');const part=snapshot.slice(n,n+8);responses.push(...await this.batch(part));this.progress(Math.min(n+8,snapshot.length),snapshot.length, responses.slice(-8))}
    if(this.cancelled)throw new OutcomeError('用户取消');
+   if(focus){const ack=responses.find(v=>v.command===commands[0]);if(!ack||ack.response.toLowerCase()!==`@ACK ${this.seq} FOCUS_SET ${focus[1]} ${focus[2]}`.toLowerCase())throw new OutcomeError('焦点 ACK 不匹配',true);}
    responses.push(...await this.batch(['CFG END','STATUS']));this.owned=false;
    const state=statusFields(responses.at(-1).response);
    if(state.cfg!=='0'||state.run!=='0'||state.hv!=='0'||(down!==null&&state.down!==String(down)))throw new OutcomeError('最终状态不匹配，请查询 PS；不会自动恢复');
+   if(focus){const info=await this.batch(['FOCUS STATUS']);if(info[0].response.toLowerCase()!==`@FOCUS v=1 ready=1 depth=${focus[1]} crc=${focus[2]} words=16384`.toLowerCase())throw new OutcomeError('焦点最终状态不匹配',true);responses.push(...info);}
    return responses;
   }catch(e){
    if(e.unknown){this.uncertain=true;throw e}

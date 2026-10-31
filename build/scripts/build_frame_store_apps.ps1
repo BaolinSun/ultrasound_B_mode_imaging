@@ -23,6 +23,8 @@ foreach($mode in @('usb','sdio')) {
     if($LASTEXITCODE) {throw "$mode configure failed"}
     & $cmake --build $out -j 4
     if($LASTEXITCODE) {throw "$mode build failed"}
+    & "$env:USERPROFILE/miniconda3/envs/esp32c61/python.exe" "$PSScriptRoot/check_focus_bank_elf.py" "$out/B_mode_focus_imaging.elf"
+    if($LASTEXITCODE) {throw "$mode focus bank ELF verification failed"}
     & "$PSScriptRoot/check_frame_store_elf.ps1" -Elf "$out/B_mode_focus_imaging.elf" -Tools $Tools
 }
 # This script deliberately does not pack BOOT.BIN or access hardware.

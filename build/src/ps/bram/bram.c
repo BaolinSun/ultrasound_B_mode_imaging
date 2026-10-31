@@ -3,6 +3,8 @@
 #include "xbram.h"
 #include "xparameters.h"
 #include "bram.h"
+#include "focus_bank.h"
+#include "xpseudo_asm.h"
 #include "sleep.h"
 #include <string.h>
 #include "../HV/hv.h"
@@ -103,7 +105,7 @@ u32 Rx_SetGainShift(u32 gain_shift)
 
 int Beamform_Resume(void)
 {
-    if(!imaging_power_allowed()) return -1;
+    if(!imaging_power_allowed() || !focus_bank_ready()) return -1;
     if(frame_store_resume()!=0) {
         hv_disable(); Beamform_Halt();
         xil_printf("@DDR ERROR resume/ABI; scan not started\r\n"); return -1;
@@ -142,7 +144,7 @@ void Beamform_Halt(void)
 
 int Beamform_Start(void)
 {
-    if(!imaging_power_allowed()) return -1;
+    if(!imaging_power_allowed() || !focus_bank_ready()) return -1;
     if(frame_store_resume()!=0) {
         hv_disable(); Beamform_Halt();
         xil_printf("@DDR ERROR resume/ABI; scan not started\r\n"); return -1;
@@ -185,6 +187,7 @@ u32 Bram_WriteSectionWords(const char *section, u32 offset, const u32 *words, u3
                    (offset+j==9 && words[j]>4U)) return BRAM_CFG_STATUS_RANGE;
             }
         }
+		if(!strcmp(section,"delay_profile")) focus_bank_invalidate();
 		for (u32 j = 0; j < count; j++) {
 			XBram_WriteReg(info->base_addr, (offset + j) * BRAM_DATA_BYTE, words[j]);
 			/* Timing words are write-only: retain the successfully programmed
@@ -307,16 +310,22 @@ void tx7332_config_para(void)
 	}
 }
 
-void delay_profile_para(void)
-{
-
-	for (int i = 0; i < BRAM_DELAY_PROFILE_DEPTH; i++)
-	{
-		XBram_WriteReg(BRAM_TRANS_DYNAM_ADDR, i*BRAM_DATA_BYTE, delay_profile[i]);
-	}
+static int focus_write_word(uint32_t index,uint32_t value,void *ctx) {
+    (void)ctx;XBram_WriteReg(BRAM_TRANS_DYNAM_ADDR,index*4U,value);return 0;
 }
-
-
+const char *Focus_Apply(uint32_t depth,uint32_t crc) {
+    if(!imaging_power_allowed() || Beamform_GetRunRequest() || hv_is_enabled()) return "FOCUS_NOT_STOPPED";
+    if(frame_store_pause_retained()!=0) return "FOCUS_DDR_NOT_DRAINED";
+    const char *error=focus_bank_apply(depth,crc,focus_write_word,NULL);
+    dsb();return error;
+}
+void delay_profile_para(void) {
+    if(focus_bank_init()!=0) {xil_printf("@FOCUS ERROR DDR table integrity; scan disabled\r\n");return;}
+    const focus_entry_t *entry=focus_bank_find(80);
+    const char *error=focus_bank_apply(80,entry->crc,focus_write_word,NULL);
+    dsb();
+    if(error) xil_printf("@FOCUS ERROR default load\r\n");
+}
 
 void para_down(void)
 {

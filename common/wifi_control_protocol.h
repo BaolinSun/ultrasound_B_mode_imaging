@@ -82,6 +82,10 @@ static inline const char *wc_validate(const char *line) {
     if(n<2) return "ARGUMENTS";
     if(!strcmp(t[0],"CPU1"))return n==2&&!strcmp(t[1],"DISABLE")?NULL:"CPU1_OP";
     uint32_t a=0,b=0;
+    if(!strcmp(t[0],"FOCUS")) {
+        if(n==2 && !strcmp(t[1],"STATUS")) return NULL;
+        return n==4&&!strcmp(t[1],"SET")&&wc_uint(t[2],&a)&&a>=20&&a<=170&&a%10==0&&wc_uint(t[3],&b)?NULL:"FOCUS_ARGS";
+    }
     if(!strcmp(t[0],"CFG")) {
         if(!strcmp(t[1],"BEGIN")) return n==3&&wc_uint(t[2],&a)?NULL:"CFG_SEQ";
         return n==2&&(!strcmp(t[1],"END")||!strcmp(t[1],"ABORT"))?NULL:"CFG_OP";

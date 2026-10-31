@@ -11,6 +11,7 @@
 #include "../system_ctrl/cpu1_power.h"
 #include "../system_ctrl/cpu0_idle.h"
 #include "../bram/bram.h"
+#include "../bram/focus_bank.h"
 #include "../HV/hv.h"
 #include "../data_transfer/frame_store.h"
 #include "../usb/usb_transport.h"
@@ -58,7 +59,7 @@ static u64 cfg_activity;
 static u64 command_ms(void) { XTime t; XTime_GetTime(&t); return (u64)t/(COUNTS_PER_SECOND/1000U); }
 static int owns_cfg(void) { return cfg_owner==command_source && (cfg_owner!=SOURCE_WIFI || cfg_session==wifi_session); }
 static void wifi_abort(void) {
-    hv_disable(); Beamform_Halt(); uart_cfg_active=0; uart_cfg_done=0;
+    focus_bank_invalidate(); hv_disable(); Beamform_Halt(); uart_cfg_active=0; uart_cfg_done=0;
     usb_image_config_end();
     (void)AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
 }
@@ -311,6 +312,7 @@ static void uart_handle_cfg(char **ctx)
 	}
 
 	if (strcmp(op, "ABORT") == 0) {
+        focus_bank_invalidate();
 		AFE5832_SetRegMap(AFE5832_REG_MAP_NORMAL);
 		uart_cfg_active = 0;
 		usb_image_config_end();
@@ -611,6 +613,9 @@ static void uart_handle_line(char *line)
         if(afe_power_command(op,wifi_session)!=0) {uart_nack(uart_cfg_seq,afe_power_error());return;}
         uart_emitf("@ACK %u AFE_%s %s",uart_cfg_seq,op,afe_power_state_name());return;
     }
+    if(!strcmp(line,"FOCUS STATUS")) {
+        uart_emitf("@FOCUS v=1 ready=%u depth=%u crc=0x%08x words=16384",focus_bank_ready(),focus_bank_selected(),focus_bank_selected_crc());return;
+    }
     if(!imaging_power_allowed() && strcmp(line,"HV DISABLE") && strcmp(line,"BEAM STOP") && strcmp(line,"STATUS")) {
         uart_nack(uart_cfg_seq,startup_recovery_blocks()?"BOOT_RECOVERY_WAIT_TEMP_OR_CLOCK":
             afe_power_allowed()?"TX_NOT_READY":"AFE_NOT_READY");return;
@@ -633,6 +638,16 @@ static void uart_handle_line(char *line)
 	if (cmd == NULL) {
 		return;
 	}
+    if(!strcmp(cmd,"FOCUS")) {
+        char *op=uart_next_token(&ctx),*depth_text=uart_next_token(&ctx),*crc_text=uart_next_token(&ctx);
+        u32 depth,crc;
+        if(command_source!=SOURCE_WIFI || !uart_cfg_active || !owns_cfg()) {uart_nack(uart_cfg_seq,"FOCUS_CFG_OWNER");return;}
+        if(!op || strcmp(op,"SET") || !uart_parse_u32(depth_text,&depth) || !uart_parse_u32(crc_text,&crc) || uart_next_token(&ctx)) {uart_nack(uart_cfg_seq,"FOCUS_ARGS");return;}
+        const char *error=Focus_Apply(depth,crc);
+        if(error) uart_nack(uart_cfg_seq,error);
+        else uart_emitf("@ACK %u FOCUS_SET %u 0x%08x",uart_cfg_seq,depth,crc);
+        return;
+    }
 	if (strcmp(cmd, "CFG") == 0) {
 		uart_handle_cfg(&ctx);
 		return;

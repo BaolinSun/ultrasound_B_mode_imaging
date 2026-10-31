@@ -24,6 +24,17 @@ $env:PYTHONUTF8 = '1'
 & (Join-Path $projectRoot '../build/scripts/test_sdio_stop.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_cpu_status.ps1') -Compiler $Compiler
 & (Join-Path $projectRoot '../build/scripts/test_usb_frame.ps1') -Compiler $Compiler -OutputDirectory (Join-Path $testOutput 'usb-frame')
+$focusOutput=Join-Path $testOutput 'focus-bank'
+New-Item -ItemType Directory -Force $focusOutput | Out-Null
+$focusSource=Join-Path $projectRoot '../build/src/ps/bram'
+foreach($variant in @('actual','fault')) {
+    $flags=@();$sources=@((Join-Path $PSScriptRoot 'test_focus_bank.c'),(Join-Path $focusSource 'focus_bank.c'))
+    if($variant -eq 'actual') {$sources+=(Join-Path $focusSource 'focus_bank_data.c')} else {$flags+= '-DFOCUS_BANK_FIXTURE'}
+    & $Compiler -std=c11 -O0 -Wall -Wextra -Werror '-I' $focusSource @flags @sources -o (Join-Path $focusOutput "$variant.exe")
+    if($LASTEXITCODE){throw 'Focus bank compilation failed'}
+    & (Join-Path $focusOutput "$variant.exe")
+    if($LASTEXITCODE){throw 'Focus bank tests failed'}
+}
 $socketOutput = Join-Path $testOutput 'tcp-socket'
 New-Item -ItemType Directory -Force -Path $socketOutput | Out-Null
 Push-Location $socketOutput
@@ -229,8 +240,6 @@ foreach ($suite in @('uart_framer','uart_bridge')) {
     try {
         $sources=@((Join-Path $PSScriptRoot "test_$suite.c"),(Join-Path $projectRoot 'main/uart_log_framer.c'))
         if ($suite -eq 'uart_bridge') {
-              if (($uartOutput -join "`n") -match '@CPUS1') { throw 'CPU telemetry was incorrectly printed to USB' }
-              if (($uartOutput -join "`n") -notmatch '\[ZYNQ\] CPU report received') { throw 'Filtering CPU telemetry lost adjacent ordinary logs' }
             $sources+=(Join-Path $projectRoot 'main/zynq_uart_bridge.c')
             $sources+=(Join-Path $projectRoot 'main/temperature_cache.c')
             $sources+=(Join-Path $projectRoot 'main/cpu_status_cache.c')
@@ -241,6 +250,10 @@ foreach ($suite in @('uart_framer','uart_bridge')) {
         $uartOutput=& ./test_uart.exe
         if ($LASTEXITCODE -ne 0) { throw "$suite failed" }
         $uartOutput | Write-Host
+        if ($suite -eq 'uart_bridge') {
+              if (($uartOutput -join "`n") -match '@CPUS1') { throw 'CPU telemetry was incorrectly printed to USB' }
+              if (($uartOutput -join "`n") -notmatch '\[ZYNQ\] CPU report received') { throw 'Filtering CPU telemetry lost adjacent ordinary logs' }
+        }
         if ($suite -eq 'uart_bridge') {
             if (($uartOutput -join "`n") -match 'lost partial|hidden') { throw 'Lost/disconnected bytes were incorrectly forwarded' }
             if (($uartOutput -join "`n") -notmatch '\[ZYNQ\] next') { throw 'UART did not recover after overflow' }

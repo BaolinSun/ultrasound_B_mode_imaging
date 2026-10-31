@@ -42,13 +42,13 @@ test('selection is read-only; range, bounds, aliases and unavailable gates stay 
 });
 test('apply snapshots selection, blocks duplicates and records success only on confirmation',async()=>{
  const t=ui();await t.p.start();let release;t.b.hold=new Promise(r=>release=r);const first=t.p.perform('apply');
- assert.equal(t.b.loading,true);assert.equal(t.e['focus-apply'].disabled,true);t.p.select(170);assert.equal(t.e['focus-depth'].value,'80');await t.p.perform('apply');assert.equal(t.b.paths.length,2);
- t.b.hold=null;release();await first;assert.equal(t.b.applications.length,1);assert.equal(t.b.applications[0].d,80);assert.equal(t.b.applications[0].c.length,2048);assert.match(t.e['focus-applied'].textContent,/80 mm.*ACK/);
+ assert.equal(t.b.loading,false);assert.equal(t.e['focus-apply'].disabled,true);t.p.select(170);assert.equal(t.e['focus-depth'].value,'80');await t.p.perform('apply');assert.equal(t.b.paths.length,1);
+ t.b.hold=null;release();await first;assert.equal(t.b.applications.length,1);assert.equal(t.b.applications[0].d,80);assert.equal(t.b.applications[0].c.length,1);assert.match(t.e['focus-applied'].textContent,/80 mm.*ACK/);
  t.b.success=false;t.p.select(120);await t.p.perform('apply');assert.match(t.e['focus-message'].textContent,/未确认/);assert.match(t.e['focus-applied'].textContent,/80 mm/);
 });
 test('HTTP/corruption/cancellation cannot start writes; loading failures unlock page',async()=>{
  for(const kind of ['http','crc','cancel']){const t=ui();await t.p.start();if(kind==='http')t.b.httpError=true;if(kind==='crc')t.b.corrupt=true;
-  let release;if(kind==='cancel')t.b.hold=new Promise(r=>release=r);const task=t.p.perform('apply');if(kind==='cancel'){t.p.cancelPending();t.b.hold=null;release()}await task;
+  let release;if(kind==='cancel')t.b.hold=new Promise(r=>release=r);const task=t.p.perform('draft');if(kind==='cancel'){t.p.cancelPending();t.b.hold=null;release()}await task;
   assert.equal(t.b.applications.length,0);assert.equal(t.b.loading,false);assert.equal(t.p.busy,false);assert.match(t.e['focus-message'].textContent,/失败|CRC|取消/);
  }
  const t=ui();t.b.httpError=true;await t.p.start();assert.equal(t.e['focus-apply'].disabled,true);t.b.httpError=false;await t.p.start();assert.equal(t.e['focus-apply'].disabled,false);
@@ -62,4 +62,25 @@ test('draft loading never applies hardware and complete protected transaction ha
  const e=t.f.catalog.profiles[0];await tx.run(F.prepare(P,e,t.f.tables[e.url]));
  assert.deepEqual(posts[0].commands,['CFG BEGIN 12']);assert.deepEqual(posts.at(-1).commands,['CFG END','STATUS']);assert.equal(posts.length,258);
  assert.ok(posts.every(p=>p.commands.length<=8&&JSON.stringify(p).length<2048));assert.ok(!posts.flatMap(p=>p.commands).some(c=>/HV ENABLE|BEAM START|t_timing|GAIN SET/.test(c)));
+});
+
+
+test('preset transaction uses one CRC-bound SET and checks final focus without restart',async()=>{
+ for(const failure of ['', 'old', 'ack', 'final']){
+  const posts=[];let current,depth=0,crc='0x00000000';
+  const tx=new P.Transaction(async(path,body)=>{
+   if(body){posts.push(body.commands);current=body.commands;return {job_id:'12345678'}}
+   const results=current.map(command=>{
+    let response='@ACK 12 OK';
+    if(command==='FOCUS STATUS')response=failure==='old'?'@NACK 0 UNKNOWN_CMD':`@FOCUS v=1 ready=1 depth=${failure==='final'?0:depth} crc=${crc} words=16384`;
+    if(command.startsWith('FOCUS SET ')){[, ,depth,crc]=command.split(' ');response=failure==='ack'?'@ACK 99 FOCUS_SET 80 0x12345678':`@ACK 12 FOCUS_SET ${depth} ${crc}`}
+    if(command==='STATUS')response='@STATUS cfg=0 run=0 hv=0';
+    return {command,response};
+   });return {busy:false,state:failure==='old'?'failed':'succeeded',count:current.length,completed:current.length,results};
+  },{random:()=>12,delay:async()=>{}});
+  if(failure)await assert.rejects(tx.run(['FOCUS SET 80 0x12345678']));else await tx.run(['FOCUS SET 80 0x12345678']);
+  const commands=posts.flat();assert.equal(commands.filter(c=>c.startsWith('FOCUS SET ')).length,failure==='old'?0:1);
+  assert.ok(!commands.some(c=>/BRAM WR|BEAM START|HV ENABLE/.test(c)));
+  if(failure==='old')assert.ok(!commands.some(c=>c.startsWith('CFG BEGIN')));
+ }
 });

@@ -5,19 +5,23 @@
 #include "xbram.h"
 void hv_enable(void);
 void hv_disable(void);
-static int resume_failure,boot_wait;
+u32 hv_is_enabled(void);
+static int resume_failure,boot_wait,pause_bad;
+int frame_store_pause_retained(void){return pause_bad?-1:0;}
 int afe_power_allowed(void) { return 1; }
 int tx_power_allowed(void) { return 1; }
 int frame_store_resume(void) { return resume_failure?-1:0; }
 #include "../../build/src/ps/bram/bram.c"
+#include "../../build/src/ps/bram/focus_bank.c"
+#include "../../build/src/ps/bram/focus_bank_data.c"
 
 u32 fdemod_cos_array[8192],fdemod_sin_array[8192],log_table_hex[1024];
 u32 x_element_hex[64],hamming_hex[64],dfilter_hex[64],T_timing_hex[10];
 u32 sin_beta_hex[64],delay_profile_reg[32],tx7332_config_data[128],delay_profile[16384];
-static struct { u32 address,value; } mmio[16];
+static struct { u32 address,value; } mmio[FOCUS_WORDS+16];
 static unsigned count,reads,hv,waits;
 void XBram_WriteReg(u32 base,u32 offset,u32 value) {
-    assert(count<16);mmio[count].address=base+offset;mmio[count++].value=value;
+    assert(count<FOCUS_WORDS+16);mmio[count].address=base+offset;mmio[count++].value=value;
 }
 u32 XBram_ReadReg(u32 base,u32 offset) {
     /* Timing RAM has no readback: status/busy logic must never read it. */
@@ -27,6 +31,7 @@ int usleep(unsigned usec) { assert(usec==100||usec==5000||usec==10000);waits++;r
 unsigned sleep(unsigned seconds) { assert(seconds==1);return 0; }
 void hv_enable(void) { hv=1; }
 void hv_disable(void) { hv=0; }
+u32 hv_is_enabled(void){return hv;}
 static void check_resume(void) {
     count=waits=0;
     assert(Beamform_Resume()==0);
@@ -38,6 +43,7 @@ static void check_resume(void) {
     assert(Beamform_GetRunRequest()==1&&Beamform_GetSpiStartRequest()==1&&!hv&&!reads);
 }
 int main(void) {
+    assert(focus_bank_init()==0);
     assert(!Beamform_GetRunRequest());
     boot_wait=1;count=0;
     assert(Beamform_Resume()==-1 && Beamform_Start()==-1 && !count && !hv);
@@ -79,6 +85,13 @@ int main(void) {
     hv=1;count=0;
     assert(Beamform_Start()==-1 && !hv && !Beamform_GetRunRequest() && !Beamform_GetSpiStartRequest());
     assert(count==2 && waits==0);
+    hv=0;count=0;const focus_entry_t *focus=focus_bank_find(80);
+    pause_bad=1;assert(Focus_Apply(80,focus->crc)&&!count);pause_bad=0;
+    assert(Focus_Apply(80,focus->crc^1)&&!count);
+    boot_wait=1;assert(Focus_Apply(80,focus->crc)&&!count);boot_wait=0;
+    assert(!Focus_Apply(80,focus->crc)&&count==FOCUS_WORDS&&focus_bank_selected()==80);
+    for(unsigned i=0;i<FOCUS_WORDS;i++)assert(mmio[i].address==BRAM_TRANS_DYNAM_ADDR+i*4&&mmio[i].value==focus->words[i]);
+    count=0;invalid=1;assert(Bram_WriteSectionWords("delay_profile",0,&invalid,1)==0&&focus_bank_selected()==0);
     puts("PASS actual PS MMIO: clean SPI edge/resume/pause/halt/run shadow/no write-only reads/TX busy/legacy start-stop");
     return 0;
 }

@@ -33,9 +33,9 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(len({p['sha256'] for p in catalog['profiles']}), 16)
         for depth in range(20, 171, 10):
             commands = service.focus_library.commands(depth)
-            self.assertEqual(len(commands), 2048)
-            self.assertTrue(all(c.startswith('BRAM WR delay_profile ') for c in commands))
-            self.assertTrue(commands[-1].startswith('BRAM WR delay_profile 16376 8 '))
+            self.assertEqual(len(commands), 1)
+            self.assertTrue(all(c.startswith('FOCUS SET ') for c in commands))
+            self.assertTrue(commands[0].startswith(f'FOCUS SET {depth} 0x'))
         for invalid in (True, 0, 25, 180, 80.0, '80'):
             with self.assertRaises(ValueError): service.set_focus(invalid)
         self.assertEqual(device.calls, [])
@@ -177,8 +177,8 @@ class ControlTests(unittest.TestCase):
         device.status['sdio'].update(stopping=False, free_slots=2)
         wait_for(lambda: service.snapshot()['state'] == 'idle', 6)
         self.assertEqual(service.snapshot()['focus']['last_applied_mm'], 90)
-        self.assertEqual(service.snapshot()['focus']['completed'], 2048)
-        commands = [c for c in device.commands if c.startswith('BRAM WR ')]
+        self.assertEqual(service.snapshot()['focus']['completed'], 1)
+        commands = [c for c in device.commands if c.startswith('FOCUS SET ')]
         self.assertEqual(commands, service.focus_library.commands(90))
         end = next(i for i, c in enumerate(device.commands) if c.startswith('CFG BEGIN '))
         self.assertNotIn('HV ENABLE', device.commands[end:])
@@ -189,7 +189,7 @@ class ControlTests(unittest.TestCase):
         entered, release = threading.Event(), threading.Event()
         def pause(path, body=None):
             result = device(path, body)
-            if body and body.get('commands', [''])[0].startswith('BRAM WR '):
+            if body and body.get('commands', [''])[0].startswith('FOCUS SET '):
                 entered.set(); release.wait(2)
             return result
         service.api = pause
@@ -199,7 +199,7 @@ class ControlTests(unittest.TestCase):
             release.set()
         wait_for(lambda: service.snapshot()['state'] == 'idle', 5)
         self.assertIn('CFG ABORT', device.commands)
-        self.assertEqual(sum(c.startswith('BRAM WR ') for c in device.commands), 8)
+        self.assertEqual(sum(c.startswith('FOCUS SET ') for c in device.commands), 1)
         self.assertIsNone(service.snapshot()['focus']['last_applied_mm'])
         self.assertNotIn('HV ENABLE', device.commands)
         self.assertEqual((device.ps['run'], device.ps['hv'], device.ps['cfg']), (0, 0, 0))

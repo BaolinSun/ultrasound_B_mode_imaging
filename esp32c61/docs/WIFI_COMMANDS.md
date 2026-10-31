@@ -1,5 +1,7 @@
 # Wi-Fi 下发 Zynq 命令
 
+> 2026-10-31：预设焦点已改为 DDR 表库短命令切换，需更新配套 Zynq/ESP32 及 PC 代码；详见 [焦点配置说明](FOCUS_CONFIGURATION.md)。旧文中的 2048 条下发仅适用于通用自定义表路径。
+
 网页新增 [20～170 mm 焦点配置](FOCUS_CONFIGURATION.md)，通过原有 `BRAM WR delay_profile` 分批写入内置完整延时表，没有新增 PS 命令。选择焦点不会自动发送，应用时停扫、关闭高压并排空上传，成功后需手动恢复成像。
 
 AFE 独立电源控制新增 `AFE SLEEP`、`AFE WAKE`、`AFE STATUS`。SLEEP/WAKE 每批只能一条，恢复后不会自动启动扫描、高压或上传；安全流程、配套 bit 要求见 [AFE 电源说明](AFE_POWER.md)。

@@ -333,7 +333,7 @@ static void control_task(void *arg) {
                     failure=true;unknown=strncmp(answer,"@NACK ",6)!=0 && strncmp(answer,"@TX ",4)!=0 && strncmp(answer,"@AFE ",5)!=0;
                 }
             } else if(!failure && !exchange(command,answer)) { failure=true; unknown=true; }
-            else if(!failure && strncmp(answer,"@ACK ",5) && strncmp(answer,"@RD ",4) && strncmp(answer,"@STATUS ",8) && strncmp(answer,"@TX ",4) && strncmp(answer,"@AFE ",5)) failure=true;
+            else if(!failure && strncmp(answer,"@ACK ",5) && strncmp(answer,"@FOCUS ",7) && strncmp(answer,"@RD ",4) && strncmp(answer,"@STATUS ",8) && strncmp(answer,"@TX ",4) && strncmp(answer,"@AFE ",5)) failure=true;
             if(failure && power && !combined) {
                 take();
                 if(tx_power){tx_blocked=true;snprintf(tx_error,sizeof(tx_error),"%.79s",answer);if(strncmp(answer,"@TX ",4))strcpy(tx_state,"unknown");}
@@ -419,13 +419,13 @@ esp_err_t zynq_control_submit(const zynq_control_job *input,bool allow_hv,uint32
     }
     if(lease && input->count==1 && (zynq_cpu0_power_op(input->commands[0]) || tx_power_op(input->commands[0]) || !strcmp(input->commands[0],"AFE SLEEP") || !strcmp(input->commands[0],"AFE WAKE"))) {give();return ESP_ERR_TIMEOUT;}
     if(lease && lease_client!=input->client) {
-        for(unsigned i=0;i<input->count;i++) if(!emergency(input->commands[i]) && strcmp(input->commands[i],"STATUS") && strcmp(input->commands[i],"AFE STATUS") && strcmp(input->commands[i],"TX7332 STATUS")) {
+        for(unsigned i=0;i<input->count;i++) if(!emergency(input->commands[i]) && strcmp(input->commands[i],"STATUS") && strcmp(input->commands[i],"FOCUS STATUS") && strcmp(input->commands[i],"AFE STATUS") && strcmp(input->commands[i],"TX7332 STATUS")) {
             give(); return ESP_ERR_TIMEOUT;
         }
     }
     if(afe_blocked||tx_blocked) for(unsigned i=0;i<input->count;i++) {
         const char *c=input->commands[i];
-        if(!zynq_cpu0_power_op(c)&&strcmp(c,"CPU1 DISABLE")&&strcmp(c,"STATUS")&&strcmp(c,"TX7332 STATUS")&&!tx_power_op(c)&&strcmp(c,"AFE STATUS")&&strcmp(c,"AFE SLEEP")&&strcmp(c,"AFE WAKE")&&!emergency(c)) {give();return ESP_ERR_INVALID_STATE;}
+        if(!zynq_cpu0_power_op(c)&&strcmp(c,"CPU1 DISABLE")&&strcmp(c,"FOCUS STATUS")&&strcmp(c,"STATUS")&&strcmp(c,"TX7332 STATUS")&&!tx_power_op(c)&&strcmp(c,"AFE STATUS")&&strcmp(c,"AFE SLEEP")&&strcmp(c,"AFE WAKE")&&!emergency(c)) {give();return ESP_ERR_INVALID_STATE;}
     }
     if(lease && esp_timer_get_time()-lease_activity>=60000000 &&
        !(input->count==1 && !strcmp(input->commands[0],"HV DISABLE"))) { give(); return ESP_ERR_TIMEOUT; }

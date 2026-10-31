@@ -44,6 +44,11 @@ def validate_command(line):
         return line
     if len(t) >= 2:
         root, op = t[:2]
+        if root == "FOCUS":
+            if op == "STATUS" and len(t) == 2: return line
+            if op == "SET" and len(t) == 4:
+                depth=number(t[2],170);number(t[3])
+                if depth>=20 and depth%10==0: return line
         if root == "CFG":
             if op == "BEGIN" and len(t) == 3:
                 number(t[2]); return line

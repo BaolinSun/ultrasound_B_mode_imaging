@@ -44,6 +44,7 @@ class FakeDevice:
         self.status = {'connected': True, 'upload_ready': True, 'busy': False, 'sdio_transport': protocol,
                        'sdio': {'ready': True, 'host_sdio': True, 'free_slots': 2, 'running': False},
                        'zynq_control': {'ready':True,'synced':True,'busy':False,'config_owned':False,'afe_state':'ready','tx_state':'ready'}}
+        self.focus_depth=80;self.focus_crc=0
         self.ps = {'run':0,'hv':0,'cfg':0,'seq':0,'down':0}
         self.jobs = {}
         self.commands = []
@@ -61,7 +62,12 @@ class FakeDevice:
             results=[]
             for command in body['commands']:
                 self.commands.append(command)
-                if command == 'STATUS':
+                if command == 'FOCUS STATUS':
+                    response=f'@FOCUS v=1 ready=1 depth={self.focus_depth} crc=0x{self.focus_crc:08x} words=16384'
+                elif command.startswith('FOCUS SET '):
+                    self.focus_depth=int(command.split()[2]);self.focus_crc=int(command.split()[3],0)
+                    response=f'@ACK {self.ps["seq"]} FOCUS_SET {self.focus_depth} 0x{self.focus_crc:08x}'
+                elif command == 'STATUS':
                     response='@STATUS v=1 '+' '.join(f'{k}={val}' for k,val in self.ps.items())+' afe=ready tx=ready'
                 else:
                     if command == 'HV DISABLE':self.ps.update(run=0,hv=0)

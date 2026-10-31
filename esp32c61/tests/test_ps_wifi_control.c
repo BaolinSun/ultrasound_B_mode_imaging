@@ -35,6 +35,12 @@ int afe_power_command(const char *op,u32 owner) { (void)owner;afe_ready=!strcmp(
 XScuGic xInterruptController;
 static XUartPs_Config config={0xe0000000U,59U};
 static uint64_t clock_ticks;
+static unsigned focused;
+int focus_bank_ready(void){return 1;}
+unsigned focus_bank_selected(void){return focused;}
+unsigned focus_bank_selected_crc(void){return focused?0x12345678:0;}
+void focus_bank_invalidate(void){focused=0;}
+const char *Focus_Apply(unsigned depth,unsigned crc);
 static unsigned hv,run,enables,writes,afe_fail,tx_full,resume_failure,downsample,pause_failure;
 static unsigned usb_drain_failure, usb_config_blocked;
 static unsigned hv_stuck,halt_with_hv;
@@ -43,6 +49,11 @@ void usb_image_config_end(void) { usb_config_blocked=0; }
 int frame_store_pause(void) { assert(!hv&&!run);return pause_failure?-1:0; }
 const volatile frame_store_pause_diag_t *frame_store_pause_diagnostic(void) {
     static const frame_store_pause_diag_t d={.reason=FS_DRAIN_TIMEOUT,.version=FS_MAGIC,.flags=13,.axi=0x2e101};return &d;
+}
+const char *Focus_Apply(unsigned depth,unsigned crc){
+    if(hv||run||pause_failure)return "FOCUS_NOT_STOPPED";
+    if(crc!=0x12345678)return "FOCUS_CATALOG_MISMATCH";
+    focused=depth;writes+=16384;return NULL;
 }
 static char received[1024],transmitted[1024],answer[128];
 static size_t receive_at,receive_len,transmit_len;
@@ -258,6 +269,15 @@ int main(void) {
     hv_stuck=hv=run=1;uart_handle_wifi_line("BEAM STOP",12,capture);
     assert(strstr(answer,"@NACK")&&strstr(answer,"HV_DISABLE_FAILED")&&!run);
     hv_stuck=0;hv_disable();
+    uart_handle_wifi_line("FOCUS SET 80 0x12345678",12,capture);assert(strstr(answer,"FOCUS_CFG_OWNER"));
+    uart_handle_wifi_line("CFG BEGIN 111",12,capture);assert(strstr(answer,"CFG_BEGIN"));
+    uart_handle_wifi_line("FOCUS SET 80 0x12345678",13,capture);assert(strstr(answer,"CFG_OWNER"));
+    uart_handle_wifi_line("FOCUS SET 80 0x87654321",12,capture);assert(strstr(answer,"FOCUS_CATALOG_MISMATCH")&&!uart_config_active());
+    uart_handle_wifi_line("CFG BEGIN 111",12,capture);
+    uart_handle_wifi_line("FOCUS SET 80 0x12345678",12,capture);assert(strstr(answer,"@ACK 111 FOCUS_SET 80 0x12345678"));
+    uart_handle_wifi_line("CFG END",12,capture);assert(!hv&&!run);
+    uart_handle_wifi_line("FOCUS STATUS",12,capture);assert(strstr(answer,"depth=80")&&strstr(answer,"ready=1"));
+    uart_handle_wifi_line("CFG BEGIN 112",12,capture);uart_handle_wifi_line("CFG ABORT",12,capture);assert(!focused);
     puts("PASS PS: framing/CRC/overflow/replay/owners/timeout/safe-END/legacy USB/AFE+TX power interlocks/bounded TX/CPU1 warning only/STOP closes HV first");
     return 0;
 }

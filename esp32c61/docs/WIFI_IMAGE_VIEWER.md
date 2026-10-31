@@ -1,5 +1,7 @@
 # Wi-Fi 超声图像实时网页显示
 
+> 2026-10-31：预设焦点已改为 DDR 表库短命令切换，需更新配套 Zynq/ESP32 及 PC 代码；详见 [焦点配置说明](FOCUS_CONFIGURATION.md)。旧文中的 2048 条下发仅适用于通用自定义表路径。
+
 ## 启动
 
 在 `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61` 中执行：

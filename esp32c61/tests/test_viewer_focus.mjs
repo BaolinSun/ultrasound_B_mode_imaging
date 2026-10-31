@@ -8,7 +8,7 @@ function setup(){
  const e={};for(const m of html.matchAll(/id="([^"]+)"/g))e[m[1]]={value:m[1]==='focus-depth'?'80':'',textContent:'',disabled:false,attrs:{},listeners:{},classList:{toggle(){}},setAttribute(k,v){this.attrs[k]=v},addEventListener(k,v){this.listeners[k]=v}};
  const b={calls:[],confirmed:true,error:'',hold:null,state:{state:'idle',focus:{last_applied_mm:null}},profiles:Array.from({length:16},(_,i)=>({focus_mm:20+10*i,words:16384}))};
  const c=vm.createContext({el:id=>{assert.ok(e[id],id);return e[id]},actionPending:0,offline:false,revision:0,lastViewerStatus:b.state,confirm:()=>b.confirmed,
-  async api(path,body){b.calls.push({path,body});assert.equal(path,'/api/viewer/focus');if(body){if(b.hold)await b.hold;if(b.error)throw Error(b.error);b.state.control_action='focus';b.state.state='configuring';b.state.focus.completed=8;return {accepted:true}}return {version:1,profiles:b.profiles,error:''}},
+  async api(path,body){b.calls.push({path,body});assert.equal(path,'/api/viewer/focus');if(body){if(b.hold)await b.hold;if(b.error)throw Error(b.error);b.state.control_action='focus';b.state.state='configuring';b.state.focus.completed=1;return {accepted:true}}return {version:1,profiles:b.profiles,error:''}},
   async pollStatus(){c.lastViewerStatus=b.state;c.renderFocusStatus(b.state)}});
  vm.runInContext(script,c);return {e,b,c,settle:()=>new Promise(r=>setImmediate(r))};
 }
@@ -31,7 +31,7 @@ test('focus apply requires confirmation, serializes and only submits a whitelist
  t.b.confirmed=true;let release;t.b.hold=new Promise(r=>release=r);const first=t.e['focus-apply'].listeners.click();await t.settle();
  assert.equal(t.e['focus-apply'].disabled,true);await t.e['focus-apply'].listeners.click();assert.equal(t.b.calls.length,2);
  assert.equal(t.e['focus-apply'].attrs['aria-busy'],'true');
- release();await first;assert.equal(JSON.stringify(t.b.calls[1].body),'{"focus_mm":80}');assert.match(t.e['focus-result'].textContent,/8\/2048/);
+ release();await first;assert.equal(JSON.stringify(t.b.calls[1].body),'{"focus_mm":80}');assert.match(t.e['focus-result'].textContent,/1\/1/);
  assert.equal(t.e['focus-depth'].disabled,true);
 });
 test('offline, active control, catalog error and POST failure are visible without replay',async()=>{

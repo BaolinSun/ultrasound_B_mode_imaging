@@ -50,8 +50,7 @@ class FocusLibrary:
         entry = next(p for p in self.entries if p['focus_mm'] == depth)
         if hashlib.sha256(raw).hexdigest() != entry['sha256']:
             raise ValueError('延时文件已变化，请重启 PC 服务以重新校验目录')
-        return ['BRAM WR delay_profile '+str(n)+' 8 '+' '.join(f'0x{v:08X}' for v in words[n:n+8])
-                for n in range(0, len(words), 8)]
+        return [f'FOCUS SET {depth} 0x{entry["crc32"]}']
 
 
 class ViewerControl:
@@ -74,7 +73,14 @@ class ViewerControl:
             replies = job['results']
             for item in replies:
                 command, response = item['command'], item['response']
-                if command == 'STATUS':
+                if command == 'FOCUS STATUS':
+                    if not re.fullmatch(r'@FOCUS v=1 ready=1 depth=[0-9]+ crc=0x[0-9a-fA-F]{8} words=16384',response):
+                        raise ControlFailure('FOCUS 表库未就绪或 PS 固件不匹配，请更新 Zynq 应用')
+                elif command.startswith('FOCUS SET '):
+                    _,_,depth,crc=command.split()
+                    expected=f'@ACK {self.sequence} FOCUS_SET {depth} 0x{int(crc,0):08x}'
+                    if response.lower()!=expected.lower(): raise ControlFailure('FOCUS 确认不匹配，执行结果未知',unknown=True)
+                elif command == 'STATUS':
                     state = fields(response)
                     if client is self.client:
                         self.last_status = state
@@ -134,6 +140,8 @@ class ViewerControl:
         self.verify(run=1, hv=1)
 
     def focus(self, commands, cancel, progress):
+        if len(commands)!=1 or not commands[0].startswith('FOCUS SET '): raise ValueError('预设焦点必须为单条 FOCUS SET')
+        self.batch(['FOCUS STATUS'])
         self.sequence = secrets.randbits(32) or 1
         owned = False
         try:
@@ -148,6 +156,13 @@ class ViewerControl:
             self.batch(['CFG END'])
             owned = False
             state = self.verify(run=0, hv=0)
+            check=self.client.batch(['FOCUS STATUS'])
+            try:
+                reply=check['results'][0]['response']
+                _,_,depth,crc=commands[0].split()
+                expected=f'@FOCUS v=1 ready=1 depth={depth} crc=0x{int(crc,0):08x} words=16384'
+                if reply.lower()!=expected.lower(): raise RuntimeError('焦点最终状态未确认')
+            finally: self.client.history.clear()
             if state.get('seq') != str(self.sequence):
                 raise RuntimeError('焦点配置事务编号不匹配')
         except Exception as exc:

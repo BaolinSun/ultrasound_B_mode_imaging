@@ -40,7 +40,7 @@ class DeviceAPI:
                 raise ValueError('invalid viewer control batch')
             for line in payload['commands']:
                 validate_command(line)
-                if line not in ('STATUS','HV ENABLE','HV DISABLE','BEAM START','CFG END','CFG ABORT') and not line.startswith(('CFG BEGIN ', 'BRAM WR delay_profile ')):
+                if line not in ('FOCUS STATUS','STATUS','HV ENABLE','HV DISABLE','BEAM START','CFG END','CFG ABORT') and not line.startswith(('CFG BEGIN ', 'BRAM WR delay_profile ', 'FOCUS SET ')):
                     raise ValueError('viewer command not allowed')
                 if line == 'HV ENABLE' and not payload['allow_hv']:
                     raise ValueError('HV confirmation required')
@@ -497,7 +497,7 @@ class ViewerService:
                       'elapsed_s': 0. if self.started is None else now-self.started}
             result.update(frozen=self.frozen, control_action=self.control_action,
                           focus={'target_mm': self.focus_job[0] if self.focus_job else None,
-                                 'completed': self.focus_progress, 'total': 2048,
+                                 'completed': self.focus_progress, 'total': 1,
                                  'last_applied_mm': self.focus_last})
         net = transport.snapshot() if transport else {'received_frames': 0, 'received_bytes': 0, 'bad_frames': 0,
                                                      'protocol_errors': 0, 'invalid_datagrams': 0, 'local_queue_drops': 0}

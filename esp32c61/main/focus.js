@@ -34,7 +34,7 @@ class Panel{
   this.el('focus-less').disabled=disabled||depth<=20;this.el('focus-more').disabled=disabled||depth>=170;
   for(const d of presets){const b=this.el('focus-preset-'+d);b.disabled=disabled;b.setAttribute('aria-pressed',String(depth===d&&!!entry))}
   this.el('focus-apply').disabled=disabled||!entry||!this.canApply();this.el('focus-load').disabled=disabled||!entry||!this.canApply();this.el('focus-reload').disabled=this.busy;
-  this.el('focus-source').textContent=entry?entry.source+' · 16384 字 · 2048 条写命令':'尚未加载内置延时文件';
+  this.el('focus-source').textContent=entry?entry.source+' · 16384 字 · DDR 预存表快速切换':'尚未加载内置延时文件';
   const same=entry?[...this.catalog.values()].filter(p=>p.sha256===entry.sha256&&p.focus_mm!==depth).map(p=>p.focus_mm):[];
   this.el('focus-duplicate').textContent=same.length?'注意：本档延时表与 '+same.join(' / ')+' mm 文件完全相同；按原文件下发。':'';
   this.el('focus-admission').textContent=this.canApply()?'控制服务就绪，可应用焦点；拖动或选档不会下发':'应用需 PS 已握手、AFE/TX 就绪、无配置事务且控制服务空闲';
@@ -45,15 +45,19 @@ class Panel{
  }finally{clearTimeout(timer)}}
  async start(){if(this.busy)return;this.busy=true;this.render();this.message('正在读取内置焦点目录…');try{this.catalog=validateCatalog(await this.json('/focus/catalog.json',16000));this.message('16 档焦点已就绪；选择后点击“停扫并应用焦点”')}catch(e){this.catalog=null;this.message(e.message,true)}finally{this.busy=false;this.render()}}
  cancelPending(){if(this.busy&&!this.applying){this.generation++;this.message('已取消焦点文件加载；未下发参数')}}
- progress(n,total){if(this.applying)this.message(`正在下发焦点延时表：${n}/${total} 条；请勿关闭页面`)}
+ progress(n,total){if(this.applying)this.message(`正在切换 DDR 预存焦点：${n}/${total} 条；请勿关闭页面`)}
  async perform(action){
   if(this.busy||!this.canApply())return;const entry=this.catalog?.get(Number(this.el('focus-depth').value));if(!entry)return;
   const generation=++this.generation;this.busy=true;let loading=true;this.setLoading(true);this.render();this.message('正在加载并校验 '+entry.focus_mm+' mm 延时表…');
   try{
-   const profile=await this.json(entry.url,400000),commands=prepare(this.parameters,entry,profile);
-   if(generation!==this.generation)return;
-   this.setLoading(false);loading=false;if(!this.canApply())throw Error('控制状态已变化；未下发焦点，请查询状态');
-   if(action==='draft'){this.onDraft(profile);this.message(entry.focus_mm+' mm 延时表已载入编辑区，尚未发送硬件');return}
+   let commands;
+   if(action==='draft'){
+    const profile=await this.json(entry.url,400000);prepare(this.parameters,entry,profile);
+    if(generation!==this.generation)return;
+    this.onDraft(profile);this.message(entry.focus_mm+' mm 延时表已载入编辑区，尚未发送硬件');return;
+   }
+   commands=[`FOCUS SET ${entry.focus_mm} 0x${entry.crc32}`];
+   this.setLoading(false);loading=false;if(!this.canApply())throw Error('控制状态已变化；未切换焦点');
    this.applying=true;this.message('正在停扫、关闭高压并下发焦点，请勿关闭页面…');
    const succeeded=await this.apply(commands,entry.focus_mm);
    if(succeeded){this.el('focus-applied').textContent=`本页最近成功下发：${entry.focus_mm} mm · ${new Date().toLocaleTimeString()}（ACK 确认，非硬件焦点回读）`;this.message('焦点参数已确认下发；扫描、高压及上传保持停止，请手动恢复。')}
