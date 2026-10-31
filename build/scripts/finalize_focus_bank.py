@@ -10,6 +10,7 @@ import zlib
 ROOT=Path(__file__).resolve().parents[2]
 def validate(stage, reference):
     c=(stage/'focus_bank_data.c').read_text(encoding='utf-8-sig')
+    c='\n'.join(line.rstrip() for line in c.splitlines())+'\n'
     profiles=[];seen=set()
     for depth in range(20,171,10):
         raw=(stage/f'{depth}.bin').read_bytes()
