@@ -76,7 +76,7 @@ ELF 检查读取实际文件字节：16 张表均在只读应用 DDR 内，合�
 | build | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build\ultrasound_psram_udp.bin` | `5142ddbe9bfdda43a3ad46a80f2b8b7449cf57699193bb75ba40c97384ce6e47` |
 | build-throughput-fast-socket-exp-combined | `D:\MyProjects\zynq_prj\ultrasound_B_mode_imaging\esp32c61\build-throughput-fast-socket-exp-combined\ultrasound_psram_udp.bin` | `c91aa15dc36176850e85aa59cd1349e7878b80f08455860482a8de4e8a15d0af` |
 
-Vitis IDE 默认目录及独立 USB/SDIO 构建均成功，应用分配区末端为 `0x002850D0`。16 张表均已通过 ELF 实际字节 CRC/SHA 与只读 DDR 地址检查。两份 ESP32 应用均为 1252976 B，应用分区剩余 283024 B。
+Vitis IDE 默认目录及独立 USB/SDIO 构建均成功，应用分配区末端为 `0x002850D0`。16 张表均已通过 ELF 实际字节 CRC/SHA 与只读 DDR 地址检查。当前两份 ESP32 应用均为 1252912 B，应用分区剩余 283088 B。
 
 完整主机回归：Python 回归共 274 项：273 项通过、1 项历史样本测试跳过；新增导出器专项 3 项另行通过。网页完整回归 83 项通过后，新增快速事务专项通过（总计 84 项）。焦点核心模块行覆盖率 100%、分支取向覆盖率 92.11%。PS 实际解析和 MMIO 桩覆盖事务归属、CRC拒绝、排空/状态门控、16384字顺序和末字、自定义失效；同时回归 USB/SDIO、CPU/温度、电源及传输功能。
 
