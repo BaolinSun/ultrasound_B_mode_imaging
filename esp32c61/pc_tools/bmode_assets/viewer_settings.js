@@ -12,10 +12,10 @@ function paintDepth(){const depth=Number(el('display-depth').value),valid=Number
  for(const value of depthPresets){const button=el('depth-preset-'+value);button.disabled=locked;button.setAttribute('aria-pressed',String(valid&&depth===value))}
 }
 function chooseDepth(value){if(displayInputsLocked||!displayConfig)return;const depth=Math.max(10,Math.min(188,value));if(depth===Number(el('display-depth').value))return;el('display-depth').value=String(depth);paintDepth();editDisplay()}
-function displayLock(value,inputs=false){displayBusy=value;for(const id of ['display-import','display-reload','display-export'])el(id).disabled=value;if(inputs||!value){displayInputsLocked=value;for(const id of ['dr','brightness','contrast','noise','tgc','depth','points','lut'])el('display-'+id).disabled=value}paintDepth()}
+function displayLock(value,inputs=false){displayBusy=value;for(const id of ['display-import','display-reload','display-export'])el(id).disabled=value;if(inputs||!value){displayInputsLocked=value;for(const id of ['dr','brightness','contrast','noise','tgc','depth','points','lut'])el('display-'+id).disabled=value}paintDepth();paintTgcLock()}
 async function settingsApi(body){const r=await fetch('/api/viewer/settings',{cache:'no-store',...(body?{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok)throw Error(d.error||'显示设置请求失败');return d}
-function showDisplaySettings(result){displayConfig=result.settings;displayVersion=result.revision;for(const[id,key]of Object.entries(displayFields)){el('display-'+id).value=displayConfig[key];el('value-'+id).textContent=displayConfig[key]}
- el('display-tgc').checked=displayConfig.tgc_enabled;el('display-depth').value=displayConfig.depth_mm;paintDepth();el('display-points').value=JSON.stringify(displayConfig.tgc_points);el('display-lut').value=JSON.stringify(displayConfig.lut);plotTgc();
+function showDisplaySettings(result){displayConfig=result.settings;displayVersion=result.revision;tgcUndo=null;for(const[id,key]of Object.entries(displayFields)){el('display-'+id).value=displayConfig[key];el('value-'+id).textContent=displayConfig[key]}
+ el('display-tgc').checked=displayConfig.tgc_enabled;el('display-depth').value=displayConfig.depth_mm;paintDepth();el('display-points').value=JSON.stringify(displayConfig.tgc_points);el('display-lut').value=JSON.stringify(displayConfig.lut);plotTgc();syncTgc();
 }
 function editedDisplay(){if(!displayConfig)throw Error('请先读取显示设置');const s=JSON.parse(JSON.stringify(displayConfig));for(const[id,key]of Object.entries(displayFields))s[key]=Number(el('display-'+id).value);s.tgc_enabled=el('display-tgc').checked;s.depth_mm=Number(el('display-depth').value);s.tgc_points=JSON.parse(el('display-points').value);s.lut=JSON.parse(el('display-lut').value);return s}
 function plotTgc(){try{const pts=JSON.parse(el('display-points').value);if(!Array.isArray(pts))return;const svg=el('tgc-plot');svg.replaceChildren();const line=document.createElementNS('http://www.w3.org/2000/svg','polyline');line.setAttribute('points',pts.map(p=>`${Number(p[0])/6143*600},${60-Number(p[1])*2.3}`).join(' '));line.setAttribute('fill','none');line.setAttribute('stroke','#74d7de');line.setAttribute('stroke-width','2');svg.append(line)}catch{displayMessage('TGC 需要合法的 JSON 控制点数组',true)}}
@@ -53,11 +53,11 @@ function renderDisplayStatus(s){
 
 }
 for(const id of Object.keys(displayFields))el('display-'+id).addEventListener('input',()=>{el('value-'+id).textContent=el('display-'+id).value;editDisplay()});
-el('display-points').addEventListener('input',()=>{plotTgc();editDisplay()});
+el('display-points').addEventListener('input',()=>{plotTgc();syncTgc();editDisplay()});
 el('display-depth').addEventListener('input',()=>{paintDepth();editDisplay()});
 el('depth-less').addEventListener('click',()=>chooseDepth(Number(el('display-depth').value)-5));el('depth-more').addEventListener('click',()=>chooseDepth(Number(el('display-depth').value)+5));
 for(const value of depthPresets)el('depth-preset-'+value).addEventListener('click',()=>chooseDepth(value));
-el('display-lut').addEventListener('input',editDisplay);el('display-tgc').addEventListener('change',editDisplay);el('display-reload').addEventListener('click',reloadDisplay);
+el('display-lut').addEventListener('input',editDisplay);el('display-tgc').addEventListener('change',()=>{syncTgc();editDisplay()});el('display-reload').addEventListener('click',reloadDisplay);
 el('display-import').addEventListener('change',async()=>{if(displayBusy)return;displayLock(true,true);try{const file=el('display-import').files[0];if(!file)return;if(file.size>2*1024*1024)throw Error('配置文件上限 2 MiB');if(!displayConfig)throw Error('请先读取显示设置');const source=JSON.parse(await file.text()),profile={};
  if(source.viewer!==undefined)profile.viewer=source.viewer;else if(source.version===1&&source.dynamic_range_db!==undefined)profile.viewer=source;
  if(source.bram?.sin_beta!==undefined)profile.bram={sin_beta:source.bram.sin_beta};if(!profile.viewer&&!profile.bram)throw Error('文件没有 viewer 设置或 sin_beta 角度表');
@@ -66,4 +66,38 @@ el('display-import').addEventListener('change',async()=>{if(displayBusy)return;d
  }catch(e){displayMessage(e.message+'；未自动重发。',true)}finally{displayLock(false);el('display-import').value=''}});
 el('display-export').addEventListener('click',()=>{try{const text=JSON.stringify({format_version:1,viewer:editedDisplay()},null,2),url=URL.createObjectURL(new Blob([text],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='ultrasound-display.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){displayMessage(e.message,true)}});
 el('lut-file').addEventListener('change',async()=>{try{const file=el('lut-file').files[0];if(!file)return;if(file.size>16384)throw Error('LUT 文件上限 16 KiB');const text=await file.text(),start=text.indexOf('['),end=text.lastIndexOf(']'),values=start>=0?JSON.parse(text.slice(start,end+1)):text.trim().split(/[\s,]+/).map(Number);if(!Array.isArray(values)||values.length!==256||values.some(v=>!Number.isInteger(v)||v<0||v>255))throw Error('LUT 需要 256 个 0～255 整数');el('display-lut').value=JSON.stringify(values);editDisplay()}catch(e){displayMessage(e.message,true)}finally{el('lut-file').value=''}});
+
+// Positions are ORIGINAL 25 MHz samples: clipping depth and decimation must not move TGC.
+const tgcPositions=Array.from({length:8},(_,i)=>Math.round(i*6143/7));
+const tgcOriginal=[[0,0],[512,0],[1024,0],[2048,0],[3072,0],[3247,0],[4096,8],[4608,13],[5120,17],[5632,21],[6143,24]];
+const tgcProfiles={
+ default:{name:'原默认',points:tgcOriginal},flat:{name:'平直',gains:[0,0,0,0,0,0,0,0]},
+ deep:{name:'深部增强',gains:[-6,-3,0,3,6,10,15,20]},near:{name:'浅部增强',gains:[20,15,10,6,3,0,-3,-6]},
+ gentle:{name:'渐进增强',gains:[0,2,4,6,8,10,12,14]},middle:{name:'中段增强',gains:[0,3,8,13,13,8,3,0]},
+ edges:{name:'两端增强',gains:[12,8,3,0,0,3,8,12]},reduce:{name:'整体减弱',gains:Array(8).fill(-8)},boost:{name:'整体增强',gains:Array(8).fill(8)}
+};
+let tgcUndo=null;
+function tgcPoints(profile){return profile.points||tgcPositions.map((x,i)=>[x,profile.gains[i]])}
+function tgcAt(points,x){let i=1;while(i<points.length-1&&points[i][0]<x)i++;const a=points[i-1],b=points[i];return a[1]+(b[1]-a[1])*(x-a[0])/(b[0]-a[0])}
+function readTgc(){const p=JSON.parse(el('display-points').value);validateDisplayDraft({...editedDisplay(),tgc_points:p});return p}
+function paintTgcLock(){const locked=displayInputsLocked||!displayConfig,off=!el('display-tgc').checked;
+ for(let i=0;i<8;i++)el('tgc-band-'+i).disabled=locked||off;
+ for(const key of Object.keys(tgcProfiles))el('tgc-preset-'+key).disabled=locked||off;
+ el('tgc-undo').disabled=locked||off||!tgcUndo;el('tgc-bank').setAttribute('data-enabled',String(!off));
+}
+function syncTgc(){try{const points=readTgc();let selected='自定义曲线';
+ for(let i=0;i<8;i++){const gain=tgcAt(points,tgcPositions[i]);el('tgc-band-'+i).value=String(Math.round(gain*2)/2);el('tgc-depth-'+i).textContent=(tgcPositions[i]*1540/25000000/2*1000).toFixed(1);el('tgc-value-'+i).textContent=(gain>0?'+':'')+Number(gain.toFixed(1))+' dB';el('tgc-band-'+i).setAttribute('aria-valuetext',gain.toFixed(1)+' dB')}
+ for(const [key,profile] of Object.entries(tgcProfiles)){const ref=tgcPoints(profile),match=points.length===ref.length&&points.every((p,i)=>p[0]===ref[i][0]&&Math.abs(p[1]-ref[i][1])<.000001);el('tgc-preset-'+key).setAttribute('aria-pressed',String(match));if(match)selected=profile.name}
+ el('tgc-selected').textContent='当前：'+selected+(el('display-tgc').checked?'':' · 已关闭');
+ }catch{el('tgc-selected').textContent='控制点无效，请修正 JSON 或重新读取'}paintTgcLock()}
+function setTgc(points,remember=true){if(displayInputsLocked||!displayConfig||!el('display-tgc').checked)return;
+ if(remember){try{tgcUndo=JSON.parse(el('display-points').value)}catch{tgcUndo=null}}
+ el('display-points').value=JSON.stringify(points);plotTgc();syncTgc();editDisplay();
+}
+function drawTgcIcon(key,profile){const svg=el('tgc-icon-'+key);svg.replaceChildren();for(let i=0;i<8;i++){const y=5+i*7,gain=tgcAt(tgcPoints(profile),tgcPositions[i]),x=10+(gain+24)/48*80;
+ for(const [cls,x1,x2] of [['rail',8,92],['handle',x-3,x+3]]){const line=document.createElementNS('http://www.w3.org/2000/svg','line');for(const [attr,value]of Object.entries({x1,x2,y1:y,y2:y,class:cls}))line.setAttribute(attr,String(value));svg.append(line)}}}
+for(const [key,profile]of Object.entries(tgcProfiles)){drawTgcIcon(key,profile);el('tgc-preset-'+key).addEventListener('click',()=>setTgc(tgcPoints(profile)))}
+for(let i=0;i<8;i++)el('tgc-band-'+i).addEventListener('input',()=>{const points=tgcPositions.map((x,j)=>[x,Number(el('tgc-band-'+j).value)]);setTgc(points)});
+el('tgc-undo').addEventListener('click',()=>{if(tgcUndo){const points=tgcUndo;tgcUndo=null;setTgc(points,false)}});
+
 reloadDisplay();

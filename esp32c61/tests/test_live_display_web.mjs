@@ -79,3 +79,40 @@ test('conflict suspends auto submissions until explicit reload; freeze retains a
  t.b.fail=false;await t.e['display-reload'].listeners.click();t.e['display-dr'].value='66';t.e['display-dr'].listeners.input();await t.tick();assert.equal(t.b.puts.length,2);
  t.c.frozen=true;t.e['geometry-title'].textContent='frozen geometry';t.c.renderDisplayStatus({image_display_settings:{...defaults(),depth_mm:180},settings_revision:3});assert.equal(t.e['geometry-title'].textContent,'frozen geometry');
 });
+
+
+test('nine TGC presets auto-apply bounded original-sample curves with exact default restoration',async()=>{
+ const t=setup();await t.settle();
+ const original=[[0,0],[512,0],[1024,0],[2048,0],[3072,0],[3247,0],[4096,8],[4608,13],[5120,17],[5632,21],[6143,24]];
+ for(const key of ['default','flat','deep','near','gentle','middle','edges','reduce','boost']){
+  t.e['tgc-preset-'+key].listeners.click();await t.tick();const p=t.b.settings.tgc_points;
+  assert.equal(p[0][0],0);assert.equal(p.at(-1)[0],6143);assert.ok(p.every((v,i)=>v[1]>=-24&&v[1]<=24&&(!i||v[0]>p[i-1][0])));
+  assert.equal(t.e['tgc-preset-'+key].attributes['aria-pressed'],'true');
+  if(key==='default')assert.deepEqual(p,original);
+  if(key==='flat')assert.ok(p.every(v=>v[1]===0));
+  if(key==='deep')assert.ok(p[0][1]<p.at(-1)[1]);
+ }
+ assert.equal(t.b.clearCount,0);assert.equal(t.b.puts.length,9);
+});
+
+test('TGC bands keep physical depths when display is cropped; undo and disabled guard work',async()=>{
+ const t=setup();await t.settle();const initial=structuredClone(t.b.settings.tgc_points);
+ const labels=Array.from({length:8},(_,i)=>t.e['tgc-depth-'+i].textContent);
+ assert.equal(labels[0],'0.0');assert.equal(labels[7],'189.2');
+ t.e['tgc-band-3'].value='-12.5';t.e['tgc-band-3'].listeners.input();await t.tick();
+ assert.equal(t.b.settings.tgc_points.length,8);assert.equal(t.b.settings.tgc_points[3][1],-12.5);
+ assert.equal(t.e['tgc-value-3'].textContent,'-12.5 dB');assert.match(t.e['tgc-selected'].textContent,/自定义/);
+ t.e['tgc-undo'].listeners.click();await t.tick();assert.deepEqual(t.b.settings.tgc_points,initial);
+ t.e['depth-preset-40'].listeners.click();await t.tick();assert.deepEqual(Array.from({length:8},(_,i)=>t.e['tgc-depth-'+i].textContent),labels);
+ t.e['display-tgc'].checked=false;t.e['display-tgc'].listeners.change();await t.tick();assert.equal(t.e['tgc-band-0'].disabled,true);
+ const n=t.b.puts.length;t.e['tgc-preset-deep'].listeners.click();await t.tick();assert.equal(t.b.puts.length,n);
+ t.e['display-tgc'].checked=true;t.e['display-tgc'].listeners.change();await t.tick();assert.equal(t.e['tgc-band-0'].disabled,false);
+});
+
+test('TGC preserves imported custom points until a band is edited and queues latest drag during PUT',async()=>{
+ const t=setup();await t.settle();const custom=[[0,-2],[1000,4],[6143,13]];
+ t.e['display-points'].value=JSON.stringify(custom);t.e['display-points'].listeners.input();await t.tick();assert.deepEqual(t.b.settings.tgc_points,custom);
+ let release;t.b.hold=new Promise(r=>release=r);t.e['tgc-band-7'].value='20';t.e['tgc-band-7'].listeners.input();await t.tick();
+ t.e['tgc-band-7'].value='24';t.e['tgc-band-7'].listeners.input();await t.tick();
+ t.b.hold=null;release();await t.settle();await t.tick();assert.equal(t.b.settings.tgc_points.at(-1)[1],24);
+});
